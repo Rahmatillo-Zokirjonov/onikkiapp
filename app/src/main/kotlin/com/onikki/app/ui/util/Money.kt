@@ -11,3 +11,10 @@ private val somFormat: DecimalFormat by lazy {
 
 /** "1 250 000" style formatting — thousands separated by a space, per the TZ. */
 fun formatSom(amount: Long): String = somFormat.format(amount)
+
+/** "2,95 mln" style compact formatting for amounts at or above one million so'm. */
+fun formatCompactSom(amount: Long): String {
+    if (amount < 1_000_000) return formatSom(amount)
+    val millions = amount / 1_000_000.0
+    return "%.2f mln".format(Locale.US, millions).replace('.', ',')
+}

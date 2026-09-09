@@ -30,6 +30,7 @@ interface OnIkkiColorTokens {
     val neutral300: Color
     val neutral400: Color
     val neutral500: Color
+    val neutral600: Color
     val neutral700: Color
     val neutral800: Color
 
@@ -61,6 +62,7 @@ object DarkOnIkkiColors : OnIkkiColorTokens {
     override val neutral300 = Color(0xFFCFD3E5)
     override val neutral400 = Color(0xFFB2B6CA)
     override val neutral500 = Color(0xFF9397AB)
+    override val neutral600 = Color(0xFF75798C)
     override val neutral700 = Color(0xFF595D6C)
     override val neutral800 = Color(0xFF3F424D)
 
@@ -89,6 +91,7 @@ object LightOnIkkiColors : OnIkkiColorTokens {
     override val neutral300 = Color(0xFFCFD3E5)
     override val neutral400 = Color(0xFFB2B6CA)
     override val neutral500 = Color(0xFF9397AB)
+    override val neutral600 = Color(0xFFB2B6CA)
     override val neutral700 = Color(0xFFB2B6CA)
     override val neutral800 = Color(0xFFE4E7F5)
 
