@@ -18,6 +18,7 @@ import com.onikki.app.ui.components.OnIkkiBottomNavBar
 import com.onikki.app.ui.components.OnIkkiTab
 import com.onikki.app.ui.finance.FinanceRoute
 import com.onikki.app.ui.home.HomeRoute
+import com.onikki.app.ui.screentime.ScreenTimeRoute
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
 
@@ -41,7 +42,8 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
                 composable(OnIkkiTab.PLAN.route()) { PlanSectionRoute() }
                 composable(OnIkkiTab.MONEY.route()) { FinanceRoute() }
                 composable(OnIkkiTab.NOTES.route()) { ComingSoonScreen("Qaydlar") }
-                composable(OnIkkiTab.PROFILE.route()) { ComingSoonScreen("Profil") }
+                // Provisional: Ilovalar nazorati lives here until a real Profil hub exists.
+                composable(OnIkkiTab.PROFILE.route()) { ScreenTimeRoute() }
             }
         }
         OnIkkiBottomNavBar(

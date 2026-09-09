@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">On ikki</string>
+    <string name="app_block_service_description">On ikki ilovasi siz zararli deb belgilagan ilovalarni kunlik limitdan oshganda yoki belgilangan vaqt jadvalida (ish/o\'quv vaqti, namoz vaqti) vaqtincha bloklaydi.</string>
 </resources>

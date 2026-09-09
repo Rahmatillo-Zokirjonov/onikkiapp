@@ -37,6 +37,9 @@ interface OnIkkiColorTokens {
     /** Reserved for streak counts, budget warnings, day-rating score only. */
     val warmAccent: Color
 
+    /** Card outline for the same warm-warning cases (e.g. an app over its time limit). */
+    val warmBorder: Color
+
     /** Content color to place on top of a solid [accent] fill. */
     val onAccent: Color
 }
@@ -67,6 +70,7 @@ object DarkOnIkkiColors : OnIkkiColorTokens {
     override val neutral800 = Color(0xFF3F424D)
 
     override val warmAccent = Color(0xFFE0A45F)
+    override val warmBorder = Color(0xFF7A5A2E)
     override val onAccent = background
 }
 
@@ -96,6 +100,7 @@ object LightOnIkkiColors : OnIkkiColorTokens {
     override val neutral800 = Color(0xFFE4E7F5)
 
     override val warmAccent = Color(0xFF8A5518)
+    override val warmBorder = Color(0xFFD9B184)
     override val onAccent = Color(0xFFFFFFFF)
 }
 
