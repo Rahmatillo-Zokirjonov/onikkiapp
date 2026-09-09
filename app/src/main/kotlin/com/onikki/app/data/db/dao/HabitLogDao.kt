@@ -27,6 +27,9 @@ interface HabitLogDao {
     )
     fun observeDoneCountBetween(habitId: Long, from: LocalDate, to: LocalDate): Flow<Int>
 
+    @Query("SELECT * FROM habit_logs WHERE habitId = :habitId AND date BETWEEN :from AND :to")
+    fun observeByHabitBetween(habitId: Long, from: LocalDate, to: LocalDate): Flow<List<HabitLog>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(log: HabitLog)
 }

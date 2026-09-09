@@ -16,7 +16,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.onikki.app.ui.components.OnIkkiBottomNavBar
 import com.onikki.app.ui.components.OnIkkiTab
-import com.onikki.app.ui.dailyplan.DailyPlanRoute
 import com.onikki.app.ui.home.HomeRoute
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
@@ -38,7 +37,7 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
         Box(modifier = Modifier.weight(1f)) {
             NavHost(navController = navController, startDestination = OnIkkiTab.HOME.route()) {
                 composable(OnIkkiTab.HOME.route()) { HomeRoute() }
-                composable(OnIkkiTab.PLAN.route()) { DailyPlanRoute() }
+                composable(OnIkkiTab.PLAN.route()) { PlanSectionRoute() }
                 composable(OnIkkiTab.MONEY.route()) { ComingSoonScreen("Moliya") }
                 composable(OnIkkiTab.NOTES.route()) { ComingSoonScreen("Qaydlar") }
                 composable(OnIkkiTab.PROFILE.route()) { ComingSoonScreen("Profil") }
