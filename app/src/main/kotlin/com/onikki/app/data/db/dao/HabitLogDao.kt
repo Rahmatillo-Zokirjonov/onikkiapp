@@ -19,6 +19,14 @@ interface HabitLogDao {
     @Query("SELECT * FROM habit_logs WHERE habitId = :habitId AND date = :date LIMIT 1")
     suspend fun findForDate(habitId: Long, date: LocalDate): HabitLog?
 
+    @Query("SELECT * FROM habit_logs WHERE habitId = :habitId AND date = :date LIMIT 1")
+    fun observeByHabitAndDate(habitId: Long, date: LocalDate): Flow<HabitLog?>
+
+    @Query(
+        "SELECT COUNT(*) FROM habit_logs WHERE habitId = :habitId AND date BETWEEN :from AND :to AND isDone = 1"
+    )
+    fun observeDoneCountBetween(habitId: Long, from: LocalDate, to: LocalDate): Flow<Int>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(log: HabitLog)
 }
