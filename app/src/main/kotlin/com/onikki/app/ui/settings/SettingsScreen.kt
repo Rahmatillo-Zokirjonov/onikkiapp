@@ -1,0 +1,217 @@
+package com.onikki.app.ui.settings
+
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.onikki.app.OnIkkiApplication
+import com.onikki.app.data.local.ApiKeyStore
+import com.onikki.app.data.local.LocationStore
+import com.onikki.app.ui.components.CityPickerSheet
+import com.onikki.app.ui.components.OnIkkiButton
+import com.onikki.app.ui.components.OnIkkiButtonVariant
+import com.onikki.app.ui.components.OnIkkiRowCard
+import com.onikki.app.ui.components.PermissionStatusCard
+import com.onikki.app.ui.dayreview.ApiKeySheet
+import com.onikki.app.ui.theme.LocalOnIkkiColors
+import com.onikki.app.ui.theme.OnIkkiFontFamily
+import com.onikki.app.ui.theme.OnIkkiType
+import com.onikki.app.ui.theme.muted
+import com.onikki.app.ui.util.OnResumeEffect
+
+@Composable
+fun SettingsRoute(onBack: () -> Unit = {}) {
+    val context = LocalContext.current
+    val app = context.applicationContext as OnIkkiApplication
+    val locationStore = remember { LocationStore(app) }
+    val apiKeyStore = remember { ApiKeyStore(app) }
+    val viewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModel.factory(app, locationStore, apiKeyStore)
+    )
+    val state by viewModel.uiState.collectAsState()
+
+    OnResumeEffect { viewModel.refreshPermissions() }
+
+    SettingsScreen(
+        state = state,
+        onBack = onBack,
+        onOpenCityPicker = viewModel::openCityPicker,
+        onDismissCityPicker = viewModel::dismissCityPicker,
+        onSelectCity = viewModel::selectCity,
+        onOpenUsageAccessSettings = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
+        onOpenAccessibilitySettings = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+        onOpenAppNotificationSettings = {
+            context.startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            )
+        },
+        onOpenApiKeySheet = viewModel::openApiKeySheet,
+        onDismissApiKeySheet = viewModel::dismissApiKeySheet,
+        onSaveApiKey = viewModel::saveApiKey,
+        onClearApiKey = viewModel::clearApiKey
+    )
+}
+
+@Composable
+fun SettingsScreen(
+    state: SettingsUiState,
+    onBack: () -> Unit,
+    onOpenCityPicker: () -> Unit,
+    onDismissCityPicker: () -> Unit,
+    onSelectCity: (com.onikki.app.data.local.CityLocation) -> Unit,
+    onOpenUsageAccessSettings: () -> Unit,
+    onOpenAccessibilitySettings: () -> Unit,
+    onOpenAppNotificationSettings: () -> Unit,
+    onOpenApiKeySheet: () -> Unit,
+    onDismissApiKeySheet: () -> Unit,
+    onSaveApiKey: (String) -> Unit,
+    onClearApiKey: () -> Unit
+) {
+    val colors = LocalOnIkkiColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp)
+            .padding(top = 14.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = "←",
+                color = colors.text.muted(0.6f),
+                fontSize = 18.sp,
+                fontFamily = OnIkkiFontFamily,
+                modifier = Modifier.clickable(onClick = onBack).padding(4.dp)
+            )
+            Text(text = "Sozlamalar", color = colors.text, style = OnIkkiType.screenTitle)
+        }
+
+        SectionLabel("Shahar va til")
+        OnIkkiRowCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenCityPicker)) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Shahar", color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+                Text(
+                    text = state.selectedCity.name,
+                    color = colors.text,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Text(text = "O'zgartirish", color = colors.accent, fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+        }
+        OnIkkiRowCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Til", color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+                Text(
+                    text = "O'zbek (lotin)",
+                    color = colors.text,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Text(text = "tez kunda: kirill, rus", color = colors.text.muted(0.4f), fontSize = 10.sp, fontFamily = OnIkkiFontFamily)
+        }
+
+        SectionLabel("Ruxsatlar holati")
+        PermissionStatusCard(
+            title = "Bildirishnomalar",
+            description = "Vazifa va odatlar uchun eslatmalar yuborish uchun kerak.",
+            isGranted = state.hasNotificationPermission,
+            actionLabel = "Sozlamalarga o'tish",
+            onAction = onOpenAppNotificationSettings
+        )
+        PermissionStatusCard(
+            title = "Ilova ishlatish statistikasi",
+            description = "Ilovalar nazorati bo'limi uchun kerak.",
+            isGranted = state.hasUsageAccess,
+            actionLabel = "Sozlamalarga o'tish",
+            onAction = onOpenUsageAccessSettings
+        )
+        PermissionStatusCard(
+            title = "Maxsus imkoniyat xizmati",
+            description = "Limitdan oshgan ilovalarni bloklash uchun kerak.",
+            isGranted = state.hasAccessibilityEnabled,
+            actionLabel = "Sozlamalarga o'tish",
+            onAction = onOpenAccessibilitySettings
+        )
+
+        SectionLabel("Kun yakuni AI tahlili")
+        OnIkkiRowCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Claude API kaliti", color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily)
+                Text(
+                    text = if (state.hasApiKey) "Kiritilgan" else "Kiritilmagan",
+                    color = if (state.hasApiKey) colors.accent else colors.text.muted(0.5f),
+                    fontSize = 11.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            if (state.hasApiKey) {
+                Text(
+                    text = "O'chirish",
+                    color = colors.text.muted(0.6f),
+                    fontSize = 12.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.clickable(onClick = onClearApiKey).padding(end = 10.dp)
+                )
+            }
+            OnIkkiButton(
+                text = if (state.hasApiKey) "O'zgartirish" else "Kiritish",
+                onClick = onOpenApiKeySheet,
+                variant = OnIkkiButtonVariant.SECONDARY
+            )
+        }
+    }
+
+    if (state.isCityPickerOpen) {
+        CityPickerSheet(
+            selectedCityName = state.selectedCity.name,
+            onDismiss = onDismissCityPicker,
+            onSelect = onSelectCity
+        )
+    }
+    if (state.isApiKeySheetOpen) {
+        ApiKeySheet(onDismiss = onDismissApiKeySheet, onSave = onSaveApiKey)
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    val colors = LocalOnIkkiColors.current
+    Text(
+        text = text,
+        color = colors.text,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        fontFamily = OnIkkiFontFamily,
+        modifier = Modifier.padding(top = 4.dp)
+    )
+}

@@ -31,7 +31,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.onikki.app.OnIkkiApplication
 import com.onikki.app.data.db.entity.Task
 import com.onikki.app.data.db.entity.TaskCategory
-import com.onikki.app.domain.prayer.DefaultLocation
+import com.onikki.app.data.local.CityLocation
+import com.onikki.app.data.local.LocationStore
+import com.onikki.app.data.local.UZBEKISTAN_CITIES
 import com.onikki.app.domain.prayer.PrayerTimeCalculator
 import com.onikki.app.ui.components.LinearProgressTrack
 import com.onikki.app.ui.components.OnIkkiButton
@@ -65,10 +67,13 @@ private val GROUP_ORDER = listOf("Vaqt belgilanmagan", "Ertalab", "Kunduzi", "Ke
 @Composable
 fun DailyPlanRoute() {
     val app = LocalContext.current.applicationContext as OnIkkiApplication
+    val locationStore = remember { LocationStore(app) }
+    val city by locationStore.city.collectAsState(initial = UZBEKISTAN_CITIES.first())
     val viewModel: DailyPlanViewModel = viewModel(factory = DailyPlanViewModel.factory(app.database.taskDao()))
     val state by viewModel.uiState.collectAsState()
     DailyPlanScreen(
         state = state,
+        city = city,
         onSelectDate = viewModel::selectDate,
         onToggleTask = viewModel::toggleTask,
         onOpenAddSheet = viewModel::openAddSheet,
@@ -80,6 +85,7 @@ fun DailyPlanRoute() {
 @Composable
 fun DailyPlanScreen(
     state: DailyPlanUiState,
+    city: CityLocation,
     onSelectDate: (java.time.LocalDate) -> Unit,
     onToggleTask: (Task) -> Unit,
     onOpenAddSheet: () -> Unit,
@@ -88,10 +94,8 @@ fun DailyPlanScreen(
 ) {
     val colors = LocalOnIkkiColors.current
 
-    val prayerTimes = remember(state.selectedDate) {
-        PrayerTimeCalculator.calculate(
-            state.selectedDate, DefaultLocation.LATITUDE, DefaultLocation.LONGITUDE, DefaultLocation.UTC_OFFSET_HOURS
-        )
+    val prayerTimes = remember(state.selectedDate, city) {
+        PrayerTimeCalculator.calculate(state.selectedDate, city.latitude, city.longitude, city.utcOffsetHours)
     }
     val grouped = remember(state.tasks, prayerTimes) {
         val items: List<PlanItem> = state.tasks.map { PlanItem.TaskItem(it) } +

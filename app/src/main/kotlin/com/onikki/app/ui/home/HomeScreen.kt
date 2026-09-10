@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.onikki.app.OnIkkiApplication
 import com.onikki.app.data.db.entity.Task
+import com.onikki.app.data.local.LocationStore
 import com.onikki.app.data.repository.HabitProgress
 import com.onikki.app.data.repository.HabitRepository
 import com.onikki.app.ui.components.CircularProgressRing
@@ -55,8 +56,9 @@ fun HomeRoute(onNavigateToDayReview: () -> Unit = {}) {
     val app = LocalContext.current.applicationContext as OnIkkiApplication
     val db = app.database
     val habitRepository = remember { HabitRepository(db.habitDao(), db.habitLogDao()) }
+    val locationStore = remember { LocationStore(app) }
     val viewModel: HomeViewModel = viewModel(
-        factory = HomeViewModel.factory(db.taskDao(), habitRepository, db.transactionDao())
+        factory = HomeViewModel.factory(db.taskDao(), habitRepository, db.transactionDao(), locationStore)
     )
     val state by viewModel.uiState.collectAsState()
     HomeScreen(

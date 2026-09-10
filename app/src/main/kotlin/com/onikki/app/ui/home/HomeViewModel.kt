@@ -8,9 +8,10 @@ import com.onikki.app.data.db.dao.TaskDao
 import com.onikki.app.data.db.dao.TransactionDao
 import com.onikki.app.data.db.entity.Task
 import com.onikki.app.data.db.entity.TransactionType
+import com.onikki.app.data.local.CityLocation
+import com.onikki.app.data.local.LocationStore
 import com.onikki.app.data.repository.HabitProgress
 import com.onikki.app.data.repository.HabitRepository
-import com.onikki.app.domain.prayer.DefaultLocation
 import com.onikki.app.domain.prayer.PrayerTimeCalculator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -49,16 +50,18 @@ private data class MoneyAndPlanSnapshot(
 class HomeViewModel(
     private val taskDao: TaskDao,
     private val habitRepository: HabitRepository,
-    private val transactionDao: TransactionDao
+    private val transactionDao: TransactionDao,
+    private val locationStore: LocationStore
 ) : ViewModel() {
 
     private val today: LocalDate = LocalDate.now()
 
     val uiState: StateFlow<HomeUiState> = combine(
         dataSnapshotFlow(),
-        minuteTicker()
-    ) { snapshot, _ ->
-        val (prayerName, prayerTime, minutesUntil) = nextPrayer()
+        minuteTicker(),
+        locationStore.city
+    ) { snapshot, _, city ->
+        val (prayerName, prayerTime, minutesUntil) = nextPrayer(city)
         HomeUiState(
             tasks = snapshot.tasks,
             completedCount = snapshot.tasks.count { it.isCompleted },
@@ -98,28 +101,28 @@ class HomeViewModel(
         viewModelScope.launch { habitRepository.toggleToday(progress.habit, today) }
     }
 
-    private fun nextPrayer(): Triple<String, LocalTime, Long> {
+    private fun nextPrayer(city: CityLocation): Triple<String, LocalTime, Long> {
         val now = LocalDateTime.now()
-        val todaysTimes = PrayerTimeCalculator.calculate(
-            today, DefaultLocation.LATITUDE, DefaultLocation.LONGITUDE, DefaultLocation.UTC_OFFSET_HOURS
-        )
+        val todaysTimes = PrayerTimeCalculator.calculate(today, city.latitude, city.longitude, city.utcOffsetHours)
         val upcoming = todaysTimes.asOrderedList().firstOrNull { it.second.isAfter(now.toLocalTime()) }
         if (upcoming != null) {
             val target = LocalDateTime.of(today, upcoming.second)
             return Triple(upcoming.first, upcoming.second, Duration.between(now, target).toMinutes())
         }
         val tomorrow = today.plusDays(1)
-        val tomorrowFajr = PrayerTimeCalculator.calculate(
-            tomorrow, DefaultLocation.LATITUDE, DefaultLocation.LONGITUDE, DefaultLocation.UTC_OFFSET_HOURS
-        ).fajr
+        val tomorrowFajr = PrayerTimeCalculator.calculate(tomorrow, city.latitude, city.longitude, city.utcOffsetHours).fajr
         val target = LocalDateTime.of(tomorrow, tomorrowFajr)
         return Triple("Bomdod", tomorrowFajr, Duration.between(now, target).toMinutes())
     }
 
     companion object {
-        fun factory(taskDao: TaskDao, habitRepository: HabitRepository, transactionDao: TransactionDao) =
-            viewModelFactory {
-                initializer { HomeViewModel(taskDao, habitRepository, transactionDao) }
-            }
+        fun factory(
+            taskDao: TaskDao,
+            habitRepository: HabitRepository,
+            transactionDao: TransactionDao,
+            locationStore: LocationStore
+        ) = viewModelFactory {
+            initializer { HomeViewModel(taskDao, habitRepository, transactionDao, locationStore) }
+        }
     }
 }

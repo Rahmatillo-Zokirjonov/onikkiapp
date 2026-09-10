@@ -7,11 +7,12 @@ import com.onikki.app.data.db.dao.AppUsageDao
 import com.onikki.app.data.db.dao.DailyReviewDao
 import com.onikki.app.data.db.entity.AppLimit
 import com.onikki.app.data.db.entity.AppUsage
-import com.onikki.app.domain.prayer.DefaultLocation
+import com.onikki.app.data.local.LocationStore
 import com.onikki.app.domain.prayer.PrayerTimeCalculator
 import com.onikki.app.domain.screentime.UsageStatsProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -53,7 +54,8 @@ class ScreenTimeRepository(
     private val context: Context,
     private val appUsageDao: AppUsageDao,
     private val appLimitDao: AppLimitDao,
-    private val dailyReviewDao: DailyReviewDao
+    private val dailyReviewDao: DailyReviewDao,
+    private val locationStore: LocationStore = LocationStore(context)
 ) {
     private val usageStatsProvider = UsageStatsProvider(context)
 
@@ -153,9 +155,8 @@ class ScreenTimeRepository(
         }
 
         if (rules.contains(BlockRuleFlag.PRAYER_TIMES)) {
-            val prayerTimes = PrayerTimeCalculator.calculate(
-                now.toLocalDate(), DefaultLocation.LATITUDE, DefaultLocation.LONGITUDE, DefaultLocation.UTC_OFFSET_HOURS
-            )
+            val city = locationStore.city.first()
+            val prayerTimes = PrayerTimeCalculator.calculate(now.toLocalDate(), city.latitude, city.longitude, city.utcOffsetHours)
             val hit = prayerTimes.asOrderedList().firstOrNull { (_, time) ->
                 !nowTime.isBefore(time.minusMinutes(PRAYER_BUFFER_MINUTES)) && !nowTime.isAfter(time)
             }
