@@ -1,7 +1,9 @@
 package com.onikki.app.ui.util
 
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 private val monthNamesUz = listOf(
     "yanvar", "fevral", "mart", "aprel", "may", "iyun",
@@ -34,6 +36,17 @@ fun weekdayAbbrUz(dayOfWeek: DayOfWeek): String = weekdayAbbrMap.getValue(dayOfW
 
 fun formatFullDateUz(date: LocalDate): String =
     "${date.dayOfMonth}-${monthNameUz(date.monthValue)}, ${weekdayNameUz(date.dayOfWeek)}"
+
+/** "bugun" / "kecha" / "9-sentabr" — for note timestamps and similar. */
+fun formatRelativeDateUz(epochMillis: Long): String {
+    val date = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+    val today = LocalDate.now()
+    return when (date) {
+        today -> "bugun"
+        today.minusDays(1) -> "kecha"
+        else -> "${date.dayOfMonth}-${monthNameUz(date.monthValue)}"
+    }
+}
 
 /** "2s 14d" style — soat/daqiqa, matching the mockup's countdown format. */
 fun formatMinutesAsDuration(totalMinutes: Long): String {

@@ -19,6 +19,7 @@ import com.onikki.app.ui.components.OnIkkiTab
 import com.onikki.app.ui.dayreview.DayReviewRoute
 import com.onikki.app.ui.finance.FinanceRoute
 import com.onikki.app.ui.home.HomeRoute
+import com.onikki.app.ui.notes.NotesRoute
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
 
@@ -46,7 +47,7 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
                 }
                 composable(OnIkkiTab.PLAN.route()) { PlanSectionRoute() }
                 composable(OnIkkiTab.MONEY.route()) { FinanceRoute() }
-                composable(OnIkkiTab.NOTES.route()) { ComingSoonScreen("Qaydlar") }
+                composable(OnIkkiTab.NOTES.route()) { NotesRoute() }
                 composable(OnIkkiTab.PROFILE.route()) { ProfileSectionRoute() }
                 composable(ROUTE_DAY_REVIEW) { DayReviewRoute(onBack = { navController.popBackStack() }) }
             }
