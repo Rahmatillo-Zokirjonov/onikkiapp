@@ -54,3 +54,11 @@ fun formatMinutesAsDuration(totalMinutes: Long): String {
     val m = totalMinutes % 60
     return if (h > 0) "${h}s ${m}d" else "${m}d"
 }
+
+/** "02:14:35" live H:MM:SS countdown, for the next-prayer timer. */
+fun formatHmsCountdown(totalSeconds: Long): String {
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    return "%02d:%02d:%02d".format(h, m, s)
+}

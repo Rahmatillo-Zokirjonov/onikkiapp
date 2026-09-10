@@ -19,9 +19,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -125,6 +128,10 @@ fun DailyPlanScreen(
                 variant = OnIkkiButtonVariant.PRIMARY,
                 contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp)
             )
+        }
+
+        if (state.selectedDate == java.time.LocalDate.now()) {
+            LiveNextPrayerCard(prayerTimes)
         }
 
         WeekStrip(selectedDate = state.selectedDate, onSelectDate = onSelectDate)
@@ -232,6 +239,38 @@ private fun PrayerMarkerRow(name: String, modifier: Modifier = Modifier) {
             fontSize = 10.sp,
             fontFamily = OnIkkiFontFamily
         )
+    }
+}
+
+@Composable
+private fun LiveNextPrayerCard(prayerTimes: PrayerTimeCalculator.PrayerTimes) {
+    var now by remember { mutableStateOf(java.time.LocalDateTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = java.time.LocalDateTime.now()
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
+    val upcoming = prayerTimes.asOrderedList().firstOrNull { it.second.isAfter(now.toLocalTime()) } ?: return
+    val target = java.time.LocalDateTime.of(now.toLocalDate(), upcoming.second)
+    val secondsUntil = java.time.Duration.between(now, target).seconds.coerceAtLeast(0)
+    val colors = LocalOnIkkiColors.current
+    OnIkkiCard(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text(text = "Keyingi namoz", color = colors.accent, style = OnIkkiType.kicker)
+                Text(
+                    text = "${upcoming.first} · %02d:%02d".format(upcoming.second.hour, upcoming.second.minute),
+                    color = colors.text, fontSize = 15.sp, fontFamily = OnIkkiFontFamily
+                )
+            }
+            Text(
+                text = com.onikki.app.ui.util.formatHmsCountdown(secondsUntil),
+                color = colors.text, fontSize = 18.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                fontFamily = OnIkkiFontFamily
+            )
+        }
     }
 }
 

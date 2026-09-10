@@ -36,7 +36,7 @@ data class HomeUiState(
     val expense: Long = 0,
     val nextPrayerName: String = "",
     val nextPrayerTime: LocalTime = LocalTime.MIDNIGHT,
-    val minutesUntilNextPrayer: Long = 0
+    val secondsUntilNextPrayer: Long = 0
 )
 
 private data class MoneyAndPlanSnapshot(
@@ -58,10 +58,10 @@ class HomeViewModel(
 
     val uiState: StateFlow<HomeUiState> = combine(
         dataSnapshotFlow(),
-        minuteTicker(),
+        secondTicker(),
         locationStore.city
     ) { snapshot, _, city ->
-        val (prayerName, prayerTime, minutesUntil) = nextPrayer(city)
+        val (prayerName, prayerTime, secondsUntil) = nextPrayer(city)
         HomeUiState(
             tasks = snapshot.tasks,
             completedCount = snapshot.tasks.count { it.isCompleted },
@@ -72,7 +72,7 @@ class HomeViewModel(
             expense = snapshot.expense,
             nextPrayerName = prayerName,
             nextPrayerTime = prayerTime,
-            minutesUntilNextPrayer = minutesUntil
+            secondsUntilNextPrayer = secondsUntil
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
@@ -86,10 +86,10 @@ class HomeViewModel(
         MoneyAndPlanSnapshot(tasks, habits, balance, income, expense)
     }
 
-    private fun minuteTicker(): Flow<Unit> = flow {
+    private fun secondTicker(): Flow<Unit> = flow {
         while (true) {
             emit(Unit)
-            delay(60_000)
+            delay(1_000)
         }
     }
 
@@ -103,16 +103,17 @@ class HomeViewModel(
 
     private fun nextPrayer(city: CityLocation): Triple<String, LocalTime, Long> {
         val now = LocalDateTime.now()
-        val todaysTimes = PrayerTimeCalculator.calculate(today, city.latitude, city.longitude, city.utcOffsetHours)
+        val currentDate = LocalDate.now()
+        val todaysTimes = PrayerTimeCalculator.calculate(currentDate, city.latitude, city.longitude, city.utcOffsetHours)
         val upcoming = todaysTimes.asOrderedList().firstOrNull { it.second.isAfter(now.toLocalTime()) }
         if (upcoming != null) {
-            val target = LocalDateTime.of(today, upcoming.second)
-            return Triple(upcoming.first, upcoming.second, Duration.between(now, target).toMinutes())
+            val target = LocalDateTime.of(currentDate, upcoming.second)
+            return Triple(upcoming.first, upcoming.second, Duration.between(now, target).seconds)
         }
-        val tomorrow = today.plusDays(1)
+        val tomorrow = currentDate.plusDays(1)
         val tomorrowFajr = PrayerTimeCalculator.calculate(tomorrow, city.latitude, city.longitude, city.utcOffsetHours).fajr
         val target = LocalDateTime.of(tomorrow, tomorrowFajr)
-        return Triple("Bomdod", tomorrowFajr, Duration.between(now, target).toMinutes())
+        return Triple("Bomdod", tomorrowFajr, Duration.between(now, target).seconds)
     }
 
     companion object {

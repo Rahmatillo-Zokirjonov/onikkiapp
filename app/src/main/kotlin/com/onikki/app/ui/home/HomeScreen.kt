@@ -47,7 +47,7 @@ import com.onikki.app.ui.theme.OnIkkiFontFamily
 import com.onikki.app.ui.theme.OnIkkiType
 import com.onikki.app.ui.theme.muted
 import com.onikki.app.ui.util.formatFullDateUz
-import com.onikki.app.ui.util.formatMinutesAsDuration
+import com.onikki.app.ui.util.formatHmsCountdown
 import com.onikki.app.ui.util.formatSom
 import java.time.LocalDate
 
@@ -90,7 +90,7 @@ fun HomeScreen(
         NextPrayerCard(
             prayerName = state.nextPrayerName,
             prayerTime = state.nextPrayerTime,
-            minutesUntil = state.minutesUntilNextPrayer
+            secondsUntil = state.secondsUntilNextPrayer
         )
         TodayPlanSection(
             tasks = state.tasks,
@@ -156,7 +156,7 @@ private fun GreetingHeader() {
 }
 
 @Composable
-private fun NextPrayerCard(prayerName: String, prayerTime: java.time.LocalTime, minutesUntil: Long) {
+private fun NextPrayerCard(prayerName: String, prayerTime: java.time.LocalTime, secondsUntil: Long) {
     val colors = LocalOnIkkiColors.current
     OnIkkiRowCard(
         modifier = Modifier.fillMaxWidth(),
@@ -179,7 +179,7 @@ private fun NextPrayerCard(prayerName: String, prayerTime: java.time.LocalTime, 
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = formatMinutesAsDuration(minutesUntil.coerceAtLeast(0)),
+                text = formatHmsCountdown(secondsUntil.coerceAtLeast(0)),
                 color = colors.text,
                 fontSize = 20.sp,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
