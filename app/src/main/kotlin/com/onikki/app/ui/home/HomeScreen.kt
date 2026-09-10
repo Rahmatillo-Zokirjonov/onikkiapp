@@ -51,7 +51,7 @@ import com.onikki.app.ui.util.formatSom
 import java.time.LocalDate
 
 @Composable
-fun HomeRoute() {
+fun HomeRoute(onNavigateToDayReview: () -> Unit = {}) {
     val app = LocalContext.current.applicationContext as OnIkkiApplication
     val db = app.database
     val habitRepository = remember { HabitRepository(db.habitDao(), db.habitLogDao()) }
@@ -62,7 +62,8 @@ fun HomeRoute() {
     HomeScreen(
         state = state,
         onToggleTask = viewModel::toggleTask,
-        onToggleHabit = viewModel::toggleHabitToday
+        onToggleHabit = viewModel::toggleHabitToday,
+        onOpenDayReview = onNavigateToDayReview
     )
 }
 
@@ -70,7 +71,8 @@ fun HomeRoute() {
 fun HomeScreen(
     state: HomeUiState,
     onToggleTask: (Task) -> Unit,
-    onToggleHabit: (HabitProgress) -> Unit
+    onToggleHabit: (HabitProgress) -> Unit,
+    onOpenDayReview: () -> Unit = {}
 ) {
     val colors = LocalOnIkkiColors.current
     Column(
@@ -96,6 +98,24 @@ fun HomeScreen(
         )
         HabitsSection(habits = state.habits, onToggleHabit = onToggleHabit)
         BalanceCard(balance = state.balance, income = state.income, expense = state.expense)
+        DayReviewEntryRow(onClick = onOpenDayReview)
+    }
+}
+
+@Composable
+private fun DayReviewEntryRow(onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    OnIkkiRowCard(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+    ) {
+        Text(
+            text = "Kun yakuni",
+            color = colors.text,
+            fontSize = 14.sp,
+            fontFamily = OnIkkiFontFamily,
+            modifier = Modifier.weight(1f)
+        )
+        Text(text = "→", color = colors.text.muted(0.5f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
     }
 }
 
