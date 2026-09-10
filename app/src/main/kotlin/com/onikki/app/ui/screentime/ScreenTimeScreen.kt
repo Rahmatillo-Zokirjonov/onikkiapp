@@ -231,7 +231,7 @@ private fun AppUsageCard(
     val colors = LocalOnIkkiColors.current
     val limit = row.limit
     val isHarmful = limit?.isHarmful == true
-    val isOverLimit = isHarmful && limit != null && row.minutesUsed >= limit.dailyLimitMinutes
+    val isOverLimit = isHarmful && row.minutesUsed >= (limit?.dailyLimitMinutes ?: 0)
     val percentOfDay = if (totalMinutesToday <= 0) 0 else (row.minutesUsed * 100 / totalMinutesToday)
 
     OnIkkiCard(

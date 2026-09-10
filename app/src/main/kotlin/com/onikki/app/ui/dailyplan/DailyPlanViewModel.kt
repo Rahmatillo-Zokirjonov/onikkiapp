@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package com.onikki.app.ui.dailyplan
 
 import androidx.lifecycle.ViewModel

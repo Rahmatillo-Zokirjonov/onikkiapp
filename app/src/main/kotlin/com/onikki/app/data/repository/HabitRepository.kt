@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package com.onikki.app.data.repository
 
 import com.onikki.app.data.db.dao.HabitDao
