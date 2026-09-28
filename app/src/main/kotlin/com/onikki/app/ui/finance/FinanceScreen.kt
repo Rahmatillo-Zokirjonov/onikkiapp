@@ -39,6 +39,7 @@ import com.onikki.app.data.db.entity.TransactionType
 import com.onikki.app.data.db.entity.Wallet
 import com.onikki.app.data.repository.BudgetProgress
 import com.onikki.app.data.repository.CategorySlice
+import com.onikki.app.ui.components.AddFab
 import com.onikki.app.ui.components.LinearProgressTrack
 import com.onikki.app.ui.components.OnIkkiCard
 import com.onikki.app.ui.theme.LocalOnIkkiColors
@@ -111,21 +112,6 @@ fun FinanceScreen(
 }
 
 private const val RECENT_TRANSACTION_COUNT = 6
-
-/** The mockup's round floating "+" — shared by the finance sub-screens too. */
-@Composable
-fun AddFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val colors = LocalOnIkkiColors.current
-    Box(
-        modifier = modifier
-            .size(52.dp)
-            .background(colors.accent, CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text = "+", color = colors.onAccent, fontSize = 26.sp, fontWeight = FontWeight.Medium)
-    }
-}
 
 @Composable
 private fun PeriodSegmentedControl(selected: MoneyPeriod, onSelect: (MoneyPeriod) -> Unit) {

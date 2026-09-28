@@ -30,6 +30,7 @@ import com.onikki.app.data.db.entity.DebtStatus
 import com.onikki.app.data.db.entity.SavingsGoal
 import com.onikki.app.data.db.entity.Transaction
 import com.onikki.app.data.db.entity.TransactionType
+import com.onikki.app.ui.components.AddFab
 import com.onikki.app.ui.components.LinearProgressTrack
 import com.onikki.app.ui.components.OnIkkiCard
 import com.onikki.app.ui.components.SubScreenHeader
