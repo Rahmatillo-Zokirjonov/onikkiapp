@@ -19,9 +19,6 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions ORDER BY date DESC, id DESC")
     fun observeAll(): Flow<List<Transaction>>
 
-    @Query("SELECT * FROM transactions ORDER BY date DESC, id DESC LIMIT :limit")
-    fun observeRecent(limit: Int): Flow<List<Transaction>>
-
     @Query("SELECT COALESCE(SUM(CASE WHEN type = 'KIRIM' THEN amount ELSE -amount END), 0) FROM transactions")
     fun observeBalance(): Flow<Long>
 
@@ -46,6 +43,12 @@ interface TransactionDao {
             "WHERE type = 'CHIQIM' AND category = :category AND date BETWEEN :from AND :to"
     )
     fun observeSpentForCategory(category: String, from: LocalDate, to: LocalDate): Flow<Long>
+
+    @Query(
+        "SELECT category FROM transactions WHERE type = :type " +
+            "GROUP BY category ORDER BY COUNT(*) DESC LIMIT :limit"
+    )
+    fun observeTopCategories(type: TransactionType, limit: Int): Flow<List<String>>
 
     @Insert
     suspend fun insert(transaction: Transaction): Long

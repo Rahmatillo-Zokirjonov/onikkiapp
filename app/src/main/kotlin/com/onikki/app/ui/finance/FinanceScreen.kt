@@ -19,9 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -31,19 +28,17 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.onikki.app.OnIkkiApplication
+import com.onikki.app.data.db.entity.CategoryBudget
+import com.onikki.app.data.db.entity.SavingsGoal
 import com.onikki.app.data.db.entity.Transaction
 import com.onikki.app.data.db.entity.TransactionType
 import com.onikki.app.data.db.entity.Wallet
 import com.onikki.app.data.repository.BudgetProgress
 import com.onikki.app.data.repository.CategorySlice
-import com.onikki.app.data.repository.FinanceRepository
 import com.onikki.app.ui.components.LinearProgressTrack
 import com.onikki.app.ui.components.OnIkkiCard
 import com.onikki.app.ui.theme.LocalOnIkkiColors
@@ -52,33 +47,18 @@ import com.onikki.app.ui.theme.OnIkkiShapes
 import com.onikki.app.ui.theme.OnIkkiType
 import com.onikki.app.ui.theme.muted
 import com.onikki.app.ui.util.formatCompactSom
+import com.onikki.app.ui.util.formatRelativeDateUz
 import com.onikki.app.ui.util.formatSom
 import kotlin.math.roundToInt
-
-@Composable
-fun FinanceRoute() {
-    val app = LocalContext.current.applicationContext as OnIkkiApplication
-    val financeRepository = remember {
-        FinanceRepository(app.database.transactionDao(), app.database.categoryBudgetDao())
-    }
-    val viewModel: FinanceViewModel = viewModel(factory = FinanceViewModel.factory(financeRepository))
-    val state by viewModel.uiState.collectAsState()
-    FinanceScreen(
-        state = state,
-        onSelectPeriod = viewModel::selectPeriod,
-        onOpenAddSheet = viewModel::openAddSheet,
-        onDismissAddSheet = viewModel::dismissAddSheet,
-        onSaveTransaction = viewModel::addTransaction
-    )
-}
 
 @Composable
 fun FinanceScreen(
     state: FinanceUiState,
     onSelectPeriod: (MoneyPeriod) -> Unit,
-    onOpenAddSheet: () -> Unit,
-    onDismissAddSheet: () -> Unit,
-    onSaveTransaction: (amount: Long, type: TransactionType, category: String, wallet: Wallet, note: String?) -> Unit
+    onOpenSheet: (FinanceSheet) -> Unit,
+    onOpenAllTransactions: () -> Unit,
+    onOpenDebts: () -> Unit,
+    onOpenSavings: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
@@ -87,7 +67,8 @@ fun FinanceScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp)
-                .padding(top = 14.dp, bottom = 16.dp),
+                // Extra bottom space so the floating "+" never covers the last transaction row.
+                .padding(top = 14.dp, bottom = 84.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
@@ -99,27 +80,50 @@ fun FinanceScreen(
                 PeriodSegmentedControl(selected = state.period, onSelect = onSelectPeriod)
             }
 
-            BalanceCard(balance = state.balance, cash = state.cashBalance, card = state.cardBalance)
+            BalanceCard(
+                balance = state.balance,
+                cash = state.cashBalance,
+                card = state.cardBalance,
+                trend = state.balanceTrend
+            )
             ExpenseBreakdownCard(total = state.expenseTotal, slices = state.expenseSlices)
-            BudgetLimitsCard(budgets = state.budgets)
-            RecentTransactionsSection(transactions = state.recentTransactions)
+            BudgetLimitsCard(
+                budgets = state.budgets,
+                onAdd = { onOpenSheet(FinanceSheet.BudgetEdit(null)) },
+                onEdit = { onOpenSheet(FinanceSheet.BudgetEdit(it)) }
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DebtSummaryCard(totals = state.debtTotals, onClick = onOpenDebts, modifier = Modifier.weight(1f))
+                SavingsSummaryCard(goals = state.goals, onClick = onOpenSavings, modifier = Modifier.weight(1f))
+            }
+            RecentTransactionsSection(
+                transactions = state.transactions.take(RECENT_TRANSACTION_COUNT),
+                onOpenAll = onOpenAllTransactions,
+                onEdit = { onOpenSheet(FinanceSheet.TransactionEdit(it)) }
+            )
         }
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 18.dp, bottom = 16.dp)
-                .size(52.dp)
-                .clickable(onClick = onOpenAddSheet)
-                .background(colors.accent, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(text = "+", color = colors.onAccent, fontSize = 26.sp, fontWeight = FontWeight.Medium)
-        }
+        AddFab(
+            onClick = { onOpenSheet(FinanceSheet.TransactionEdit(null)) },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 16.dp)
+        )
     }
+}
 
-    if (state.isAddSheetOpen) {
-        AddTransactionSheet(onDismiss = onDismissAddSheet, onSave = onSaveTransaction)
+private const val RECENT_TRANSACTION_COUNT = 6
+
+/** The mockup's round floating "+" — shared by the finance sub-screens too. */
+@Composable
+fun AddFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = LocalOnIkkiColors.current
+    Box(
+        modifier = modifier
+            .size(52.dp)
+            .background(colors.accent, CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = "+", color = colors.onAccent, fontSize = 26.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -151,7 +155,7 @@ private fun PeriodSegmentedControl(selected: MoneyPeriod, onSelect: (MoneyPeriod
 }
 
 @Composable
-private fun BalanceCard(balance: Long, cash: Long, card: Long) {
+private fun BalanceCard(balance: Long, cash: Long, card: Long, trend: List<Long>) {
     val colors = LocalOnIkkiColors.current
     OnIkkiCard(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -176,7 +180,10 @@ private fun BalanceCard(balance: Long, cash: Long, card: Long) {
                     )
                 }
             }
-            FilledSparkline(strokeColor = colors.accent, fillColor = colors.accent900)
+            // Only drawn once there's real movement to show — a flat or empty line says nothing.
+            if (trend.distinct().size > 1) {
+                FilledSparkline(points = trend, strokeColor = colors.accent, fillColor = colors.accent900)
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MiniStat(label = "Naqd", amount = cash, modifier = Modifier.weight(1f))
@@ -205,27 +212,27 @@ private fun MiniStat(label: String, amount: Long, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun FilledSparkline(strokeColor: Color, fillColor: Color) {
+private fun FilledSparkline(points: List<Long>, strokeColor: Color, fillColor: Color) {
     Canvas(modifier = Modifier.size(width = 92.dp, height = 40.dp)) {
-        val s = size.width / 92f
-        val points = listOf(
-            2f to 32f, 13f to 27f, 24f to 29f, 35f to 18f,
-            46f to 23f, 57f to 13f, 68f to 16f, 84f to 5f
-        )
+        val stroke = 2.dp.toPx()
+        val min = points.min()
+        val range = (points.max() - min).coerceAtLeast(1L).toFloat()
+        val stepX = size.width / (points.size - 1)
+        val usableHeight = size.height - stroke * 2
+        val offsets = points.mapIndexed { index, value ->
+            Offset(index * stepX, stroke + usableHeight * (1f - (value - min) / range))
+        }
         val line = Path().apply {
-            points.forEachIndexed { index, (x, y) ->
-                val offset = Offset(x * s, y * s)
-                if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
-            }
+            offsets.forEachIndexed { index, o -> if (index == 0) moveTo(o.x, o.y) else lineTo(o.x, o.y) }
         }
         val fill = Path().apply {
             addPath(line)
-            lineTo(points.last().first * s, size.height)
-            lineTo(points.first().first * s, size.height)
+            lineTo(offsets.last().x, size.height)
+            lineTo(offsets.first().x, size.height)
             close()
         }
         drawPath(fill, color = fillColor)
-        drawPath(line, color = strokeColor, style = Stroke(width = 2f * s, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawPath(line, color = strokeColor, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }
 
@@ -327,24 +334,68 @@ private fun DonutChart(
 }
 
 @Composable
-private fun BudgetLimitsCard(budgets: List<BudgetProgress>) {
-    if (budgets.isEmpty()) return
+fun FinanceSectionHeader(title: String, actionLabel: String?, onAction: () -> Unit) {
     val colors = LocalOnIkkiColors.current
-    Column {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(
-            text = "Budjet limitlari",
+            text = title,
             color = colors.text,
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
-            fontFamily = OnIkkiFontFamily,
-            modifier = Modifier.padding(bottom = 8.dp)
+            fontFamily = OnIkkiFontFamily
         )
-        OnIkkiCard(modifier = Modifier.fillMaxWidth(), gap = 10.dp) {
+        if (actionLabel != null) {
+            Text(
+                text = actionLabel,
+                color = colors.accent,
+                fontSize = 12.sp,
+                fontFamily = OnIkkiFontFamily,
+                modifier = Modifier.clickable(onClick = onAction).padding(4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun BudgetLimitsCard(
+    budgets: List<BudgetProgress>,
+    onAdd: () -> Unit,
+    onEdit: (CategoryBudget) -> Unit
+) {
+    val colors = LocalOnIkkiColors.current
+    Column {
+        FinanceSectionHeader(title = "Budjet limitlari", actionLabel = "+ Limit", onAction = onAdd)
+        if (budgets.isEmpty()) {
+            OnIkkiCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onAdd), gap = 4.dp) {
+                Text(
+                    text = "Kategoriya uchun oylik limit belgilang",
+                    color = colors.text,
+                    fontSize = 13.sp,
+                    fontFamily = OnIkkiFontFamily
+                )
+                Text(
+                    text = "Limitga yaqinlashganda shu yerda ogohlantiramiz.",
+                    color = colors.text.muted(0.55f),
+                    fontSize = 11.sp,
+                    fontFamily = OnIkkiFontFamily
+                )
+            }
+            return@Column
+        }
+        OnIkkiCard(modifier = Modifier.fillMaxWidth(), gap = 12.dp) {
             budgets.forEach { progress ->
                 val limit = progress.budget.monthlyLimit
                 val ratio = if (limit <= 0) 0f else progress.spent.toFloat() / limit.toFloat()
                 val isWarning = limit > 0 && progress.spent >= (limit * 0.9)
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                val over = progress.spent - limit
+                Column(
+                    modifier = Modifier.fillMaxWidth().clickable { onEdit(progress.budget) },
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(
                             text = progress.budget.category,
@@ -364,6 +415,14 @@ private fun BudgetLimitsCard(budgets: List<BudgetProgress>) {
                         trackColor = colors.neutral800,
                         progressColor = if (isWarning) colors.warmAccent else colors.accent
                     )
+                    if (isWarning) {
+                        Text(
+                            text = if (over > 0) "Limitdan ${formatSom(over)} so'm oshdi" else "Limitga ${formatSom(-over)} so'm qoldi",
+                            color = colors.warmAccent,
+                            fontSize = 11.sp,
+                            fontFamily = OnIkkiFontFamily
+                        )
+                    }
                 }
             }
         }
@@ -371,66 +430,114 @@ private fun BudgetLimitsCard(budgets: List<BudgetProgress>) {
 }
 
 @Composable
-private fun RecentTransactionsSection(transactions: List<Transaction>) {
+private fun DebtSummaryCard(totals: DebtTotals, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = LocalOnIkkiColors.current
+    OnIkkiCard(modifier = modifier.clickable(onClick = onClick), gap = 4.dp) {
+        Text(text = "Qarz-nasiya", color = colors.accent, style = OnIkkiType.kicker)
+        if (totals.openCount == 0) {
+            Text(text = "Ochiq qarz yo'q", color = colors.text.muted(0.6f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+        } else {
+            MiniLine(label = "Menga", amount = totals.owedToMe)
+            MiniLine(label = "Mendan", amount = totals.iOwe)
+        }
+    }
+}
+
+@Composable
+private fun SavingsSummaryCard(goals: List<SavingsGoal>, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = LocalOnIkkiColors.current
+    OnIkkiCard(modifier = modifier.clickable(onClick = onClick), gap = 4.dp) {
+        Text(text = "Jamg'arma", color = colors.accent, style = OnIkkiType.kicker)
+        if (goals.isEmpty()) {
+            Text(text = "Maqsad qo'shing", color = colors.text.muted(0.6f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+        } else {
+            val saved = goals.sumOf { it.currentAmount }
+            val target = goals.sumOf { it.targetAmount }
+            MiniLine(label = "Yig'ildi", amount = saved)
+            LinearProgressTrack(
+                progress = if (target <= 0) 0f else (saved.toFloat() / target).coerceIn(0f, 1f),
+                trackColor = colors.neutral800,
+                progressColor = colors.accent,
+                height = 4.dp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MiniLine(label: String, amount: Long) {
+    val colors = LocalOnIkkiColors.current
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(text = label, color = colors.text.muted(0.55f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+        Text(text = formatCompactSom(amount), color = colors.text, fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+    }
+}
+
+@Composable
+private fun RecentTransactionsSection(
+    transactions: List<Transaction>,
+    onOpenAll: () -> Unit,
+    onEdit: (Transaction) -> Unit
+) {
     val colors = LocalOnIkkiColors.current
     Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Oxirgi tranzaksiyalar",
-                color = colors.text,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                fontFamily = OnIkkiFontFamily
-            )
-            Text(text = "Barchasi", color = colors.accent, fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
-        }
+        FinanceSectionHeader(title = "Oxirgi tranzaksiyalar", actionLabel = "Barchasi", onAction = onOpenAll)
         if (transactions.isEmpty()) {
             Text(
-                text = "Hali tranzaksiya yo'q",
+                text = "Hali tranzaksiya yo'q — pastdagi + tugmasi bilan qo'shing",
                 color = colors.text.muted(0.5f),
                 fontSize = 13.sp,
-                fontFamily = OnIkkiFontFamily,
-                modifier = Modifier.padding(top = 8.dp)
+                fontFamily = OnIkkiFontFamily
             )
         } else {
-            Column(modifier = Modifier.padding(top = 7.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                transactions.forEach { tx -> TransactionRow(tx) }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                transactions.forEach { tx -> TransactionRow(tx, onClick = { onEdit(tx) }, showDate = true) }
             }
         }
     }
 }
 
 @Composable
-private fun TransactionRow(transaction: Transaction) {
+fun TransactionRow(transaction: Transaction, onClick: () -> Unit, showDate: Boolean) {
     val colors = LocalOnIkkiColors.current
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+    val isIncome = transaction.type == TransactionType.KIRIM
+    val subtitle = listOfNotNull(
+        if (transaction.wallet == Wallet.NAQD) "Naqd" else "Karta",
+        if (showDate) formatRelativeDateUz(transaction.date) else null,
+        transaction.note
+    ).joinToString(" · ")
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(11.dp)
+    ) {
         Box(
             modifier = Modifier
-                .size(28.dp)
+                .size(32.dp)
                 .background(colors.surface, RoundedCornerShape(9.dp)),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = transaction.category.take(1).uppercase(),
                 color = colors.accent300,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontFamily = OnIkkiFontFamily
             )
         }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = transaction.category, color = colors.text, fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+            Text(
+                text = subtitle,
+                color = colors.text.muted(0.5f),
+                fontSize = 11.sp,
+                fontFamily = OnIkkiFontFamily,
+                maxLines = 1
+            )
+        }
         Text(
-            text = transaction.category,
-            color = colors.text,
-            fontSize = 13.sp,
-            fontFamily = OnIkkiFontFamily,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = (if (transaction.type == TransactionType.CHIQIM) "− " else "+ ") + formatSom(transaction.amount),
-            color = colors.text,
+            text = (if (isIncome) "+ " else "− ") + formatSom(transaction.amount),
+            color = if (isIncome) colors.accent else colors.text,
             fontSize = 13.sp,
             fontFamily = OnIkkiFontFamily
         )

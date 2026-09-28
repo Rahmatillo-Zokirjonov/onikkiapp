@@ -61,7 +61,12 @@ fun DayReviewRoute(onBack: () -> Unit = {}) {
             context = app,
             taskDao = app.database.taskDao(),
             habitRepository = HabitRepository(app.database.habitDao(), app.database.habitLogDao()),
-            financeRepository = FinanceRepository(app.database.transactionDao(), app.database.categoryBudgetDao()),
+            financeRepository = FinanceRepository(
+                app.database.transactionDao(),
+                app.database.categoryBudgetDao(),
+                app.database.debtDao(),
+                app.database.savingsGoalDao()
+            ),
             dailyReviewDao = app.database.dailyReviewDao(),
             apiKeyStore = ApiKeyStore(app)
         )

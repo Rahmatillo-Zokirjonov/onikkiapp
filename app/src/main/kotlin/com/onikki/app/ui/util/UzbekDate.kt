@@ -38,8 +38,10 @@ fun formatFullDateUz(date: LocalDate): String =
     "${date.dayOfMonth}-${monthNameUz(date.monthValue)}, ${weekdayNameUz(date.dayOfWeek)}"
 
 /** "bugun" / "kecha" / "9-sentabr" — for note timestamps and similar. */
-fun formatRelativeDateUz(epochMillis: Long): String {
-    val date = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+fun formatRelativeDateUz(epochMillis: Long): String =
+    formatRelativeDateUz(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate())
+
+fun formatRelativeDateUz(date: LocalDate): String {
     val today = LocalDate.now()
     return when (date) {
         today -> "bugun"
