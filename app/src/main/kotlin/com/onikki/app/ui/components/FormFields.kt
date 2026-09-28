@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,7 +39,10 @@ import com.onikki.app.ui.theme.OnIkkiType
 import com.onikki.app.ui.theme.muted
 import com.onikki.app.ui.util.ThousandsSeparatorTransformation
 import com.onikki.app.ui.util.formatFullDateUz
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.res.Configuration
+import android.content.res.Resources
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -142,7 +146,7 @@ fun DatePickerField(
 
     if (showPicker) {
         // Force Uzbek month names and a Monday week start regardless of the phone's system language.
-        CompositionLocalProvider(LocalConfiguration provides uzbekConfiguration()) {
+        ProvideUzbekLocale {
             UzbekDatePickerDialog(
                 date = date,
                 onDismiss = { showPicker = false },
@@ -177,7 +181,7 @@ private fun UzbekDatePickerDialog(date: LocalDate?, onDismiss: () -> Unit, onCon
     ) {
         // A Dialog is its own window and re-provides the system configuration, so the Uzbek
         // locale has to be applied again inside it, not just around the dialog call.
-        CompositionLocalProvider(LocalConfiguration provides uzbekConfiguration()) {
+        ProvideUzbekLocale {
             DatePicker(
                 state = pickerState,
                 showModeToggle = false,
@@ -192,8 +196,22 @@ private fun UzbekDatePickerDialog(date: LocalDate?, onDismiss: () -> Unit, onCon
     }
 }
 
+/**
+ * Renders [content] as if the phone were set to Uzbek: Material pickers read their locale from
+ * [LocalConfiguration] and their built-in labels ("Hour", "Select date"...) from [LocalContext]'s
+ * resources, so both are swapped. Needed because the app is Uzbek-only regardless of system language.
+ */
 @Composable
-private fun uzbekConfiguration(): Configuration {
-    val base = LocalConfiguration.current
-    return remember(base) { Configuration(base).apply { setLocale(UZBEK_LOCALE) } }
+fun ProvideUzbekLocale(content: @Composable () -> Unit) {
+    val baseConfig = LocalConfiguration.current
+    val baseContext = LocalContext.current
+    val uzConfig = remember(baseConfig) { Configuration(baseConfig).apply { setLocale(UZBEK_LOCALE) } }
+    val uzContext = remember(baseContext, uzConfig) { UzbekContext(baseContext, uzConfig) }
+    CompositionLocalProvider(LocalConfiguration provides uzConfig, LocalContext provides uzContext, content = content)
+}
+
+/** Keeps the original context (activity, theme) but answers resource lookups in Uzbek. */
+private class UzbekContext(base: Context, config: Configuration) : ContextWrapper(base) {
+    private val uzResources: Resources = base.createConfigurationContext(config).resources
+    override fun getResources(): Resources = uzResources
 }

@@ -20,6 +20,17 @@ interface TaskDao {
     @Query("SELECT COUNT(*) FROM tasks WHERE date = :date AND isCompleted = 1")
     fun observeCompletedCount(date: LocalDate): Flow<Int>
 
+    /** Every task in [from]..[to] — feeds the week strip's per-day indicators. */
+    @Query("SELECT * FROM tasks WHERE date BETWEEN :from AND :to")
+    fun observeBetween(from: LocalDate, to: LocalDate): Flow<List<Task>>
+
+    /** Unfinished tasks left behind on days before [today]. */
+    @Query("SELECT * FROM tasks WHERE date < :today AND isCompleted = 0 ORDER BY date ASC, time IS NULL, time ASC")
+    fun observeOverdue(today: LocalDate): Flow<List<Task>>
+
+    @Query("UPDATE tasks SET date = :date WHERE date < :date AND isCompleted = 0")
+    suspend fun moveUnfinishedBefore(date: LocalDate): Int
+
     @Insert
     suspend fun insert(task: Task): Long
 

@@ -16,33 +16,59 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.temporal.TemporalAdjusters
+
+/** Which task the add/edit sheet is showing; [task] null means "new task". */
+data class TaskSheetTarget(val task: Task?)
+
+/** Per-day summary for the week strip's indicator dot. */
+data class DayLoad(val total: Int, val done: Int)
 
 data class DailyPlanUiState(
+    val today: LocalDate = LocalDate.now(),
     val selectedDate: LocalDate = LocalDate.now(),
     val tasks: List<Task> = emptyList(),
     val completedCount: Int = 0,
     val totalCount: Int = 0,
-    val isAddSheetOpen: Boolean = false
+    val weekLoad: Map<LocalDate, DayLoad> = emptyMap(),
+    val overdue: List<Task> = emptyList(),
+    val sheet: TaskSheetTarget? = null
 )
+
+private fun mondayOf(date: LocalDate): LocalDate = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
 class DailyPlanViewModel(private val taskDao: TaskDao) : ViewModel() {
 
-    private val selectedDate = MutableStateFlow(LocalDate.now())
-    private val isAddSheetOpen = MutableStateFlow(false)
+    private val today: LocalDate = LocalDate.now()
+    private val selectedDate = MutableStateFlow(today)
+    private val sheet = MutableStateFlow<TaskSheetTarget?>(null)
+
+    private val weekLoadFlow = selectedDate.flatMapLatest { date ->
+        val monday = mondayOf(date)
+        taskDao.observeBetween(monday, monday.plusDays(6))
+    }
 
     val uiState: StateFlow<DailyPlanUiState> = combine(
         selectedDate,
         selectedDate.flatMapLatest { taskDao.observeByDate(it) },
-        isAddSheetOpen
-    ) { date, tasks, sheetOpen ->
+        weekLoadFlow,
+        taskDao.observeOverdue(today),
+        sheet
+    ) { date, tasks, weekTasks, overdue, openSheet ->
         DailyPlanUiState(
+            today = today,
             selectedDate = date,
             tasks = tasks,
             completedCount = tasks.count { it.isCompleted },
             totalCount = tasks.size,
-            isAddSheetOpen = sheetOpen
+            weekLoad = weekTasks.groupBy { it.date }.mapValues { (_, day) ->
+                DayLoad(total = day.size, done = day.count { it.isCompleted })
+            },
+            overdue = overdue,
+            sheet = openSheet
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DailyPlanUiState())
 
@@ -50,25 +76,57 @@ class DailyPlanViewModel(private val taskDao: TaskDao) : ViewModel() {
         selectedDate.value = date
     }
 
+    /** Moves the selection by whole weeks, keeping the same weekday. */
+    fun shiftWeek(weeks: Long) {
+        selectedDate.value = selectedDate.value.plusWeeks(weeks)
+    }
+
+    fun goToToday() {
+        selectedDate.value = today
+    }
+
     fun toggleTask(task: Task) {
         viewModelScope.launch { taskDao.setCompleted(task.id, !task.isCompleted) }
     }
 
-    fun openAddSheet() {
-        isAddSheetOpen.value = true
+    fun openNewTask() {
+        sheet.value = TaskSheetTarget(null)
     }
 
-    fun dismissAddSheet() {
-        isAddSheetOpen.value = false
+    fun openTask(task: Task) {
+        sheet.value = TaskSheetTarget(task)
     }
 
-    fun addTask(title: String, time: LocalTime, category: TaskCategory) {
+    fun dismissSheet() {
+        sheet.value = null
+    }
+
+    fun saveTask(existing: Task?, title: String, date: LocalDate, time: LocalTime?, category: TaskCategory) {
         if (title.isBlank()) return
         viewModelScope.launch {
-            taskDao.insert(
-                Task(title = title.trim(), date = selectedDate.value, time = time, category = category)
-            )
-            isAddSheetOpen.value = false
+            if (existing == null) {
+                taskDao.insert(Task(title = title.trim(), date = date, time = time, category = category))
+            } else {
+                taskDao.update(existing.copy(title = title.trim(), date = date, time = time, category = category))
+            }
+            sheet.value = null
+            // Follow the task if it was moved to (or created on) another day, so it doesn't seem to vanish.
+            selectedDate.value = date
+        }
+    }
+
+    fun deleteTask(task: Task) {
+        viewModelScope.launch {
+            taskDao.delete(task)
+            sheet.value = null
+        }
+    }
+
+    /** "Bugunga ko'chirish": carry every unfinished task from earlier days over to today. */
+    fun moveOverdueToToday() {
+        viewModelScope.launch {
+            taskDao.moveUnfinishedBefore(today)
+            selectedDate.value = today
         }
     }
 

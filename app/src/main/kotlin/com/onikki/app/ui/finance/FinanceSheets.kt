@@ -1,20 +1,12 @@
 package com.onikki.app.ui.finance
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,76 +26,20 @@ import com.onikki.app.data.db.entity.Transaction
 import com.onikki.app.data.db.entity.TransactionType
 import com.onikki.app.data.db.entity.Wallet
 import com.onikki.app.ui.components.AmountField
+import com.onikki.app.ui.components.ChoiceChips
 import com.onikki.app.ui.components.DatePickerField
 import com.onikki.app.ui.components.OnIkkiButton
 import com.onikki.app.ui.components.OnIkkiButtonVariant
+import com.onikki.app.ui.components.OnIkkiSheet
+import com.onikki.app.ui.components.SheetActions
+import com.onikki.app.ui.components.SheetErrorText
+import com.onikki.app.ui.components.SheetFieldLabel
 import com.onikki.app.ui.components.SuggestionChips
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
 import com.onikki.app.ui.theme.muted
 import com.onikki.app.ui.util.formatSom
 import java.time.LocalDate
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FinanceSheetScaffold(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    val colors = LocalOnIkkiColors.current
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = colors.surface
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(text = title, color = colors.text, fontFamily = OnIkkiFontFamily, fontSize = 18.sp)
-            content()
-        }
-    }
-}
-
-@Composable
-private fun FieldLabel(text: String) {
-    val colors = LocalOnIkkiColors.current
-    Text(text = text, color = colors.text.muted(0.6f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
-}
-
-@Composable
-private fun ErrorText(message: String?) {
-    if (message == null) return
-    val colors = LocalOnIkkiColors.current
-    Text(text = message, color = colors.accent, fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
-}
-
-/** Save + (for existing items) a delete that needs a second tap to confirm. */
-@Composable
-private fun SheetActions(onSave: () -> Unit, onDelete: (() -> Unit)?) {
-    var confirmingDelete by remember { mutableStateOf(false) }
-    Row(modifier = Modifier.padding(top = 6.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (onDelete != null) {
-            OnIkkiButton(
-                text = if (confirmingDelete) "Rostdan o'chirish?" else "O'chirish",
-                onClick = { if (confirmingDelete) onDelete() else confirmingDelete = true },
-                variant = OnIkkiButtonVariant.SECONDARY,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        OnIkkiButton(text = "Saqlash", onClick = onSave, modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun <T> ChoiceRow(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.forEach { (value, label) ->
-            FilterChip(selected = value == selected, onClick = { onSelect(value) }, label = { Text(label) })
-        }
-    }
-}
 
 @Composable
 fun TransactionSheet(
@@ -123,11 +59,11 @@ fun TransactionSheet(
     var note by rememberSaveable(key) { mutableStateOf(transaction?.note ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    FinanceSheetScaffold(
+    OnIkkiSheet(
         title = if (transaction == null) "Yangi tranzaksiya" else "Tranzaksiyani tahrirlash",
         onDismiss = onDismiss
     ) {
-        ChoiceRow(
+        ChoiceChips(
             options = listOf(TransactionType.CHIQIM to "Chiqim", TransactionType.KIRIM to "Kirim"),
             selected = type,
             onSelect = { type = it }
@@ -145,8 +81,8 @@ fun TransactionSheet(
             selected = category,
             onSelect = { category = it; error = null }
         )
-        FieldLabel("Hamyon")
-        ChoiceRow(
+        SheetFieldLabel("Hamyon")
+        ChoiceChips(
             options = listOf(Wallet.NAQD to "Naqd", Wallet.KARTA to "Karta"),
             selected = wallet,
             onSelect = { wallet = it }
@@ -159,7 +95,7 @@ fun TransactionSheet(
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
-        ErrorText(error)
+        SheetErrorText(error)
         SheetActions(
             onSave = {
                 val amount = amountText.toLongOrNull()
@@ -187,7 +123,7 @@ fun BudgetSheet(
     var limitText by rememberSaveable(key) { mutableStateOf(budget?.monthlyLimit?.toString() ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    FinanceSheetScaffold(title = if (budget == null) "Oylik limit" else "Limitni tahrirlash", onDismiss = onDismiss) {
+    OnIkkiSheet(title = if (budget == null) "Oylik limit" else "Limitni tahrirlash", onDismiss = onDismiss) {
         OutlinedTextField(
             value = category,
             onValueChange = { category = it; error = null },
@@ -197,8 +133,8 @@ fun BudgetSheet(
         )
         SuggestionChips(options = expenseCategories, selected = category, onSelect = { category = it; error = null })
         AmountField(value = limitText, onValueChange = { limitText = it; error = null }, label = "Oylik limit")
-        FieldLabel("Limitning 90% iga yetganda ogohlantirish ko'rsatiladi.")
-        ErrorText(error)
+        SheetFieldLabel("Limitning 90% iga yetganda ogohlantirish ko'rsatiladi.")
+        SheetErrorText(error)
         SheetActions(
             onSave = {
                 val limit = limitText.toLongOrNull()
@@ -229,8 +165,8 @@ fun DebtSheet(
     var isClosed by rememberSaveable(key) { mutableStateOf(debt?.status == DebtStatus.YOPILGAN) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    FinanceSheetScaffold(title = if (debt == null) "Yangi qarz" else "Qarzni tahrirlash", onDismiss = onDismiss) {
-        ChoiceRow(
+    OnIkkiSheet(title = if (debt == null) "Yangi qarz" else "Qarzni tahrirlash", onDismiss = onDismiss) {
+        ChoiceChips(
             options = listOf(DebtDirection.MENGA_QARZDOR to "Menga qarzdor", DebtDirection.MEN_QARZDORMAN to "Men qarzdorman"),
             selected = direction,
             onSelect = { direction = it }
@@ -256,7 +192,7 @@ fun DebtSheet(
                 Switch(checked = isClosed, onCheckedChange = { isClosed = it })
             }
         }
-        ErrorText(error)
+        SheetErrorText(error)
         SheetActions(
             onSave = {
                 val amount = amountText.toLongOrNull()
@@ -291,7 +227,7 @@ fun GoalSheet(
     var deadline by rememberSaveable(key) { mutableStateOf(goal?.deadline) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    FinanceSheetScaffold(title = if (goal == null) "Yangi maqsad" else "Maqsadni tahrirlash", onDismiss = onDismiss) {
+    OnIkkiSheet(title = if (goal == null) "Yangi maqsad" else "Maqsadni tahrirlash", onDismiss = onDismiss) {
         OutlinedTextField(
             value = name,
             onValueChange = { name = it; error = null },
@@ -302,7 +238,7 @@ fun GoalSheet(
         AmountField(value = targetText, onValueChange = { targetText = it; error = null }, label = "Maqsad summasi")
         AmountField(value = currentText, onValueChange = { currentText = it }, label = "Hozir yig'ilgan (ixtiyoriy)")
         DatePickerField(label = "Muddat", date = deadline, onDateChange = { deadline = it }, allowClear = true)
-        ErrorText(error)
+        SheetErrorText(error)
         SheetActions(
             onSave = {
                 val target = targetText.toLongOrNull()
@@ -324,7 +260,7 @@ fun GoalAdjustSheet(goal: SavingsGoal, onDismiss: () -> Unit, onAdjust: (delta: 
     var amountText by rememberSaveable(goal.id) { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    FinanceSheetScaffold(title = goal.name, onDismiss = onDismiss) {
+    OnIkkiSheet(title = goal.name, onDismiss = onDismiss) {
         Text(
             text = "${formatSom(goal.currentAmount)} / ${formatSom(goal.targetAmount)} so'm",
             color = colors.text.muted(0.6f),
@@ -332,7 +268,7 @@ fun GoalAdjustSheet(goal: SavingsGoal, onDismiss: () -> Unit, onAdjust: (delta: 
             fontFamily = OnIkkiFontFamily
         )
         AmountField(value = amountText, onValueChange = { amountText = it; error = null }, label = "Summa")
-        ErrorText(error)
+        SheetErrorText(error)
         Row(modifier = Modifier.padding(top = 6.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OnIkkiButton(
                 text = "Yechib olish",
