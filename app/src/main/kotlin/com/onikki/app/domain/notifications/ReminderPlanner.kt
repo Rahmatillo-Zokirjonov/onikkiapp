@@ -2,6 +2,7 @@ package com.onikki.app.domain.notifications
 
 import com.onikki.app.data.db.entity.Debt
 import com.onikki.app.data.db.entity.DebtStatus
+import com.onikki.app.data.db.entity.Note
 import com.onikki.app.data.db.entity.Task
 import com.onikki.app.data.local.NotificationSettings
 import com.onikki.app.domain.prayer.PrayerTimeCalculator
@@ -9,7 +10,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, REFRESH }
+enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, NOTE, REFRESH }
 
 /**
  * One alarm to set. [key] is stable across re-plans so the same reminder is replaced, not duplicated.
@@ -39,6 +40,7 @@ object ReminderPlanner {
         settings: NotificationSettings,
         tasks: List<Task>,
         debts: List<Debt>,
+        notes: List<Note>,
         prayerTimesFor: (LocalDate) -> PrayerTimeCalculator.PrayerTimes
     ): List<PlannedReminder> {
         val horizon = now.plusHours(HORIZON_HOURS)
@@ -80,6 +82,13 @@ object ReminderPlanner {
                 val at = debt.dueDate!!.atTime(DEBT_REMINDER_TIME)
                 if (inWindow(at)) result += PlannedReminder("debt:${debt.id}:${debt.dueDate}", ReminderType.DEBT, at, refId = debt.id)
             }
+        }
+
+        // Note reminders are the user's own explicit choice per note — no global switch, no lead time.
+        // The time is part of the key, so moving/snoozing a reminder replaces the old alarm.
+        notes.forEach { note ->
+            val at = note.remindAt ?: return@forEach
+            if (inWindow(at)) result += PlannedReminder("note:${note.id}:$at", ReminderType.NOTE, at, refId = note.id)
         }
 
         val nextMidnight = now.toLocalDate().plusDays(1).atTime(0, 5)

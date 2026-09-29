@@ -6,12 +6,14 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.onikki.app.data.db.dao.NoteDao
 import com.onikki.app.data.db.entity.Note
+import com.onikki.app.data.db.entity.NotePriority
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDateTime
 
 /** The note open in the editor; [note] null means a brand-new note. */
 data class NoteEditorTarget(val note: Note?)
@@ -19,7 +21,9 @@ data class NoteEditorTarget(val note: Note?)
 data class TagCount(val tag: String, val count: Int)
 
 data class NotesUiState(
+    val allNotes: List<Note> = emptyList(),
     val visibleNotes: List<Note> = emptyList(),
+    val isLoaded: Boolean = false,
     val totalCount: Int = 0,
     val tags: List<TagCount> = emptyList(),
     val selectedTag: String? = null,
@@ -60,6 +64,8 @@ class NotesViewModel(private val noteDao: NoteDao) : ViewModel() {
         // A filter tag that no longer exists (its last note was deleted/retagged) would show an empty list forever.
         val activeTag = tag?.takeIf { t -> tagCounts.any { it.tag == t } }
         NotesUiState(
+            allNotes = notes,
+            isLoaded = true,
             visibleNotes = notes.filter { (activeTag == null || activeTag in it.tags) && it.matches(q) },
             totalCount = notes.size,
             tags = tagCounts,
@@ -93,22 +99,51 @@ class NotesViewModel(private val noteDao: NoteDao) : ViewModel() {
      * Called when leaving the editor. A new note with nothing in it is simply discarded; clearing an
      * existing note's text keeps the saved version rather than silently wiping it.
      */
-    fun saveAndClose(existing: Note?, title: String, content: String, tags: List<String>) {
+    fun saveAndClose(
+        existing: Note?,
+        title: String,
+        content: String,
+        tags: List<String>,
+        remindAt: LocalDateTime?,
+        priority: NotePriority
+    ) {
         val cleanTitle = title.trim()
         val cleanContent = content.trim()
         val cleanTags = tags.map(::sanitizeTag).filter { it.isNotBlank() }.distinct()
         val isEmpty = cleanTitle.isBlank() && cleanContent.isBlank()
+        val reminder = remindAt?.withSecond(0)?.withNano(0)
         viewModelScope.launch {
             when {
                 isEmpty -> Unit
                 existing == null -> noteDao.insert(
-                    Note(title = cleanTitle, content = cleanContent, tags = cleanTags, createdAt = System.currentTimeMillis())
+                    Note(
+                        title = cleanTitle,
+                        content = cleanContent,
+                        tags = cleanTags,
+                        createdAt = System.currentTimeMillis(),
+                        remindAt = reminder,
+                        priority = priority
+                    )
                 )
-                existing.title != cleanTitle || existing.content != cleanContent || existing.tags != cleanTags ->
-                    noteDao.update(existing.copy(title = cleanTitle, content = cleanContent, tags = cleanTags))
+                existing.title != cleanTitle || existing.content != cleanContent || existing.tags != cleanTags ||
+                    existing.remindAt != reminder || existing.priority != priority ->
+                    noteDao.update(
+                        existing.copy(
+                            title = cleanTitle,
+                            content = cleanContent,
+                            tags = cleanTags,
+                            remindAt = reminder,
+                            priority = priority
+                        )
+                    )
             }
             editor.value = null
         }
+    }
+
+    /** Opens a note requested from a reminder (notification / alert screen). */
+    fun openFromReminder(noteId: Long, notes: List<Note>) {
+        notes.firstOrNull { it.id == noteId }?.let { editor.value = NoteEditorTarget(it) }
     }
 
     fun delete(note: Note) {

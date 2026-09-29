@@ -7,7 +7,9 @@ import com.onikki.app.OnIkkiApplication
 import com.onikki.app.data.db.entity.DebtDirection
 import com.onikki.app.data.db.entity.DebtStatus
 import com.onikki.app.data.db.entity.TaskCategory
+import com.onikki.app.domain.notifications.NoteReminderNotifier
 import com.onikki.app.domain.notifications.ReminderChannel
+import com.onikki.app.domain.notifications.snoozeNoteReminder
 import com.onikki.app.domain.notifications.ReminderNotifier
 import com.onikki.app.domain.notifications.ReminderScheduler
 import com.onikki.app.domain.notifications.ReminderType
@@ -35,6 +37,8 @@ class ReminderReceiver : BroadcastReceiver() {
                 when (intent.action) {
                     ACTION_REMIND -> handleReminder(context, intent)
                     ACTION_TASK_DONE -> handleTaskDone(context, intent)
+                    ACTION_NOTE_SNOOZE -> snoozeNote(context, intent.getLongExtra(EXTRA_REF_ID, 0))
+                    ACTION_NOTE_DISMISS -> NoteReminderNotifier.cancel(context, intent.getLongExtra(EXTRA_REF_ID, 0))
                 }
                 ReminderScheduler(context).resync()
             } finally {
@@ -102,6 +106,13 @@ class ReminderReceiver : BroadcastReceiver() {
                 )
             }
 
+            ReminderType.NOTE -> {
+                val note = db.noteDao().findById(refId) ?: return
+                // The key carries the time it was planned for; an edited/cleared reminder must not fire.
+                if (note.remindAt == null || key != "note:${note.id}:${note.remindAt}") return
+                NoteReminderNotifier.show(context, note)
+            }
+
             ReminderType.DEBT -> {
                 val debt = db.debtDao().findById(refId) ?: return
                 if (debt.status != DebtStatus.OCHIQ) return
@@ -122,6 +133,11 @@ class ReminderReceiver : BroadcastReceiver() {
         intent.getStringExtra(EXTRA_KEY)?.let { ReminderNotifier.cancel(context, it) }
     }
 
+    private suspend fun snoozeNote(context: Context, noteId: Long) {
+        NoteReminderNotifier.cancel(context, noteId)
+        snoozeNoteReminder(context, noteId)
+    }
+
     private fun hhmm(time: LocalTime) = "%02d:%02d".format(time.hour, time.minute)
 
     /** Rounds up: an alarm set "10 min before" fires a few seconds late, and should still read "10", not "9". */
@@ -130,6 +146,8 @@ class ReminderReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_REMIND = "com.onikki.app.action.REMIND"
         const val ACTION_TASK_DONE = "com.onikki.app.action.TASK_DONE"
+        const val ACTION_NOTE_SNOOZE = "com.onikki.app.action.NOTE_SNOOZE"
+        const val ACTION_NOTE_DISMISS = "com.onikki.app.action.NOTE_DISMISS"
         const val EXTRA_KEY = "key"
         const val EXTRA_TYPE = "type"
         const val EXTRA_REF_ID = "ref_id"

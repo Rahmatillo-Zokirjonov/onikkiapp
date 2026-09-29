@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,6 +21,7 @@ import com.onikki.app.ui.components.OnIkkiTab
 import com.onikki.app.ui.dayreview.DayReviewRoute
 import com.onikki.app.ui.finance.FinanceSectionRoute
 import com.onikki.app.ui.home.HomeRoute
+import com.onikki.app.ui.notes.NoteDeepLink
 import com.onikki.app.ui.notes.NotesRoute
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
@@ -34,6 +37,18 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
     val currentRoute = backStackEntry?.destination?.route
     val activeTab = OnIkkiTab.entries.firstOrNull { it.route() == currentRoute } ?: OnIkkiTab.HOME
     val isTabRoute = currentRoute == null || OnIkkiTab.entries.any { it.route() == currentRoute }
+
+    // A reminder asked to open a note → go to the Qaydlar tab; NotesRoute then opens the note itself.
+    val requestedNote by NoteDeepLink.requested.collectAsState()
+    LaunchedEffect(requestedNote) {
+        if (requestedNote != null && currentRoute != OnIkkiTab.NOTES.route()) {
+            navController.navigate(OnIkkiTab.NOTES.route()) {
+                popUpTo(OnIkkiTab.HOME.route()) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
 
     Column(
         modifier = Modifier

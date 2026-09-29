@@ -37,7 +37,8 @@ class ReminderScheduler(private val context: Context) {
         val today = now.toLocalDate()
         val tasks = db.taskDao().observeBetween(today, today.plusDays(2)).first()
         val debts = db.debtDao().observeAll().first()
-        val plan = ReminderPlanner.plan(now, settings, tasks, debts) { day ->
+        val notes = db.noteDao().observeWithReminder().first()
+        val plan = ReminderPlanner.plan(now, settings, tasks, debts, notes) { day ->
             PrayerTimeCalculator.calculate(day, city.latitude, city.longitude, city.utcOffsetHours)
         }
         apply(plan)

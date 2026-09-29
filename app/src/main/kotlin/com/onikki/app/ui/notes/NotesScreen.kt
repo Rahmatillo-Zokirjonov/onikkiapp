@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.onikki.app.OnIkkiApplication
 import com.onikki.app.data.db.entity.Note
+import com.onikki.app.data.db.entity.NotePriority
 import com.onikki.app.ui.components.AddFab
 import com.onikki.app.ui.components.OnIkkiCard
 import com.onikki.app.ui.theme.LocalOnIkkiColors
@@ -43,6 +45,8 @@ import com.onikki.app.ui.theme.OnIkkiShapes
 import com.onikki.app.ui.theme.OnIkkiType
 import com.onikki.app.ui.theme.muted
 import com.onikki.app.ui.util.formatRelativeDateUz
+import com.onikki.app.ui.util.formatReminderUz
+import java.time.LocalDateTime
 
 @Composable
 fun NotesRoute() {
@@ -50,12 +54,23 @@ fun NotesRoute() {
     val viewModel: NotesViewModel = viewModel(factory = NotesViewModel.factory(app.database.noteDao()))
     val state by viewModel.uiState.collectAsState()
 
+    // A reminder (notification / alert screen) asked to open a specific note.
+    val requestedNote by NoteDeepLink.requested.collectAsState()
+    LaunchedEffect(requestedNote, state.isLoaded) {
+        val id = requestedNote ?: return@LaunchedEffect
+        if (!state.isLoaded) return@LaunchedEffect
+        viewModel.openFromReminder(id, state.allNotes)
+        NoteDeepLink.consume()
+    }
+
     val editor = state.editor
     if (editor != null) {
         NoteEditorScreen(
             note = editor.note,
             existingTags = state.tags.map { it.tag },
-            onClose = { title, content, tags -> viewModel.saveAndClose(editor.note, title, content, tags) },
+            onClose = { title, content, tags, remindAt, priority ->
+                viewModel.saveAndClose(editor.note, title, content, tags, remindAt, priority)
+            },
             onDelete = viewModel::delete
         )
     } else {
@@ -231,6 +246,7 @@ private fun NoteCard(note: Note, selectedTag: String?, onClick: () -> Unit, onTa
                 modifier = Modifier.padding(start = 8.dp, top = 3.dp)
             )
         }
+        note.remindAt?.takeIf { it.isAfter(LocalDateTime.now()) }?.let { at -> ReminderBadge(at, note.priority) }
         if (preview.isNotBlank()) {
             Text(
                 text = preview,
@@ -264,4 +280,20 @@ private fun NoteCard(note: Note, selectedTag: String?, onClick: () -> Unit, onTa
             }
         }
     }
+}
+
+@Composable
+fun ReminderBadge(at: LocalDateTime, priority: NotePriority, modifier: Modifier = Modifier) {
+    val colors = LocalOnIkkiColors.current
+    val urgent = priority == NotePriority.JUDA_MUHIM
+    val level = if (priority == NotePriority.ODDIY) "" else " · ${priority.label.lowercase()}"
+    Text(
+        text = "🔔 ${formatReminderUz(at)}$level",
+        color = if (urgent) colors.warmAccent else colors.accent,
+        fontSize = 11.sp,
+        fontFamily = OnIkkiFontFamily,
+        modifier = modifier
+            .border(BorderStroke(1.dp, if (urgent) colors.warmBorder else colors.accent700), RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+    )
 }

@@ -36,7 +36,7 @@ import com.onikki.app.data.db.entity.Transaction
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -59,7 +59,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { INSTANCE = it }
             }
@@ -79,5 +79,13 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
             "UPDATE habit_logs SET count = " +
                 "(SELECT MAX(dailyTarget, 1) FROM habits WHERE habits.id = habit_logs.habitId) WHERE isDone = 1"
         )
+    }
+}
+
+/** v3: optional per-note reminder with a priority level. */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE notes ADD COLUMN remindAt TEXT")
+        db.execSQL("ALTER TABLE notes ADD COLUMN priority TEXT NOT NULL DEFAULT 'ODDIY'")
     }
 }

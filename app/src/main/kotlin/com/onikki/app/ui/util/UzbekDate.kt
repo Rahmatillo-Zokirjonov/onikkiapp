@@ -68,3 +68,16 @@ fun formatHmsCountdown(totalSeconds: Long): String {
     val s = totalSeconds % 60
     return "%02d:%02d:%02d".format(h, m, s)
 }
+
+/** "Bugun 21:00", "Ertaga 09:00", "3-oktabr 09:00" (year added only when it isn't this year). */
+fun formatReminderUz(at: java.time.LocalDateTime, today: LocalDate = LocalDate.now()): String {
+    val time = "%02d:%02d".format(at.hour, at.minute)
+    val date = at.toLocalDate()
+    val day = when (date) {
+        today -> "Bugun"
+        today.plusDays(1) -> "Ertaga"
+        today.minusDays(1) -> "Kecha"
+        else -> "${date.dayOfMonth}-${monthNameUz(date.monthValue)}" + if (date.year != today.year) " ${date.year}" else ""
+    }
+    return "$day $time"
+}

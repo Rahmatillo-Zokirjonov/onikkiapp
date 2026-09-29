@@ -44,10 +44,13 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.onikki.app.data.db.entity.Note
+import com.onikki.app.data.db.entity.NotePriority
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
 import com.onikki.app.ui.theme.muted
 import com.onikki.app.ui.util.formatRelativeDateUz
+import com.onikki.app.ui.util.formatReminderUz
+import java.time.LocalDateTime
 
 /**
  * Full-screen note editor. Leaving it (back arrow or system back) saves — there's no separate
@@ -57,7 +60,7 @@ import com.onikki.app.ui.util.formatRelativeDateUz
 fun NoteEditorScreen(
     note: Note?,
     existingTags: List<String>,
-    onClose: (title: String, content: String, tags: List<String>) -> Unit,
+    onClose: (title: String, content: String, tags: List<String>, remindAt: LocalDateTime?, priority: NotePriority) -> Unit,
     onDelete: (Note) -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
@@ -67,6 +70,9 @@ fun NoteEditorScreen(
     var content by rememberSaveable(key) { mutableStateOf(note?.content ?: "") }
     var tags by rememberSaveable(key) { mutableStateOf(note?.tags ?: emptyList()) }
     var tagInput by rememberSaveable(key) { mutableStateOf("") }
+    var remindAt by rememberSaveable(key) { mutableStateOf(note?.remindAt) }
+    var priority by rememberSaveable(key) { mutableStateOf(note?.priority ?: NotePriority.ODDIY) }
+    var reminderSheetOpen by rememberSaveable(key) { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
 
     fun commitTagInput() {
@@ -81,7 +87,7 @@ fun NoteEditorScreen(
         if (closed) return
         closed = true
         commitTagInput()
-        onClose(title, content, tags)
+        onClose(title, content, tags, remindAt, priority)
     }
 
     BackHandler(onBack = ::close)
@@ -183,6 +189,8 @@ fun NoteEditorScreen(
                 onRemove = { removed -> tags = tags - removed }
             )
 
+            ReminderRow(remindAt = remindAt, priority = priority, onClick = { reminderSheetOpen = true })
+
             BasicTextField(
                 value = content,
                 onValueChange = { content = it },
@@ -198,6 +206,34 @@ fun NoteEditorScreen(
                 }
             )
         }
+    }
+
+    if (reminderSheetOpen) {
+        NoteReminderSheet(
+            remindAt = remindAt,
+            priority = priority,
+            onDismiss = { reminderSheetOpen = false },
+            onSave = { at, level -> remindAt = at; priority = level; reminderSheetOpen = false },
+            onRemove = { remindAt = null; priority = NotePriority.ODDIY; reminderSheetOpen = false }
+        )
+    }
+}
+
+/** Off by default: a quiet link until the user sets a reminder; then its time and level. */
+@Composable
+private fun ReminderRow(remindAt: LocalDateTime?, priority: NotePriority, onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val upcoming = remindAt?.takeIf { it.isAfter(LocalDateTime.now()) }
+    if (upcoming != null) {
+        ReminderBadge(upcoming, priority, Modifier.clickable(onClick = onClick))
+    } else {
+        Text(
+            text = if (remindAt != null) "🔔 Eslatma o'tdi (${formatReminderUz(remindAt)}) — yangisini qo'yish" else "🔔 Eslatma qo'shish",
+            color = colors.text.muted(0.45f),
+            fontSize = 13.sp,
+            fontFamily = OnIkkiFontFamily,
+            modifier = Modifier.clickable(onClick = onClick).padding(vertical = 2.dp)
+        )
     }
 }
 

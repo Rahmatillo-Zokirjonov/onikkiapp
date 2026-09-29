@@ -28,4 +28,13 @@ object PermissionChecker {
             ?: return false
         return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
     }
+
+    /** "Boshqa ilovalar ustidan ko'rsatish" — lets a "Juda muhim" note alert open over whatever app is in use. */
+    fun canDrawOverlays(context: Context): Boolean = Settings.canDrawOverlays(context)
+
+    /** Android 14 can withhold full-screen alerts (used on the lock screen); earlier versions always allow them. */
+    fun canUseFullScreenIntent(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true
+        return context.getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent()
+    }
 }
