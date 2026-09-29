@@ -40,6 +40,7 @@ class ReminderReceiver : BroadcastReceiver() {
                     ACTION_REMIND -> handleReminder(context, intent)
                     ACTION_TASK_DONE -> handleTaskDone(context, intent)
                     ACTION_PLANNED_PAID -> handlePlannedPaid(context, intent)
+                    ACTION_SMS_NOTE -> handleSmsNote(context, intent)
                     ACTION_NOTE_SNOOZE -> snoozeNote(context, intent.getLongExtra(EXTRA_REF_ID, 0))
                     ACTION_NOTE_DISMISS -> NoteReminderNotifier.cancel(context, intent.getLongExtra(EXTRA_REF_ID, 0))
                 }
@@ -150,6 +151,16 @@ class ReminderReceiver : BroadcastReceiver() {
         }
     }
 
+    /** Inline reply on a bank-SMS notification: the typed text becomes the transaction's note. */
+    private suspend fun handleSmsNote(context: Context, intent: Intent) {
+        val id = intent.getLongExtra(EXTRA_REF_ID, 0)
+        val note = androidx.core.app.RemoteInput.getResultsFromIntent(intent)
+            ?.getCharSequence(com.onikki.app.domain.sms.SmsNotifier.KEY_NOTE)?.toString()?.trim()
+        if (id == 0L || note.isNullOrBlank()) return
+        (context.applicationContext as OnIkkiApplication).database.smsImportDao().setNote(id, note)
+        com.onikki.app.domain.sms.SmsNotifier.showNoteSaved(context, id, note)
+    }
+
     /** "To'landi" straight from the notification: pays the planned amount from its wallet (or cash). */
     private suspend fun handlePlannedPaid(context: Context, intent: Intent) {
         val db = (context.applicationContext as OnIkkiApplication).database
@@ -183,6 +194,7 @@ class ReminderReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_REMIND = "com.onikki.app.action.REMIND"
         const val ACTION_TASK_DONE = "com.onikki.app.action.TASK_DONE"
+        const val ACTION_SMS_NOTE = "com.onikki.app.action.SMS_NOTE"
         const val ACTION_PLANNED_PAID = "com.onikki.app.action.PLANNED_PAID"
         const val ACTION_NOTE_SNOOZE = "com.onikki.app.action.NOTE_SNOOZE"
         const val ACTION_NOTE_DISMISS = "com.onikki.app.action.NOTE_DISMISS"

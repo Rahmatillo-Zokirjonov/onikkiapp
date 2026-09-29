@@ -2,6 +2,11 @@
 
 package com.onikki.app.ui.finance
 
+import kotlinx.coroutines.flow.flowOf
+import com.onikki.app.data.local.BankSmsSettingsStore
+import com.onikki.app.data.local.BankSmsSettings
+import com.onikki.app.data.db.entity.MerchantCategory
+import com.onikki.app.data.db.dao.SmsImportDao
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -74,7 +79,9 @@ data class FinanceUiState(
     val planned: List<PlannedExpense> = emptyList(),
     val expenseCategories: List<String> = emptyList(),
     val incomeCategories: List<String> = emptyList(),
-    val sheet: FinanceSheet? = null
+    val sheet: FinanceSheet? = null,
+    val bankSmsEnabled: Boolean = false,
+    val smsUnnotedCount: Int = 0
 ) {
     val today: LocalDate get() = LocalDate.now()
     val upcomingPlanned: List<PlannedExpense> get() = planned.filter { it.paidDate == null }
@@ -121,7 +128,11 @@ private data class Lists(
     val incomeCategories: List<String>
 )
 
-class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() {
+class FinanceViewModel(
+    private val repository: FinanceRepository,
+    private val smsImportDao: SmsImportDao? = null,
+    private val bankSmsStore: BankSmsSettingsStore? = null
+) : ViewModel() {
 
     private val today: LocalDate = LocalDate.now()
     private val period = MutableStateFlow(MoneyPeriod.MONTH)
@@ -158,7 +169,12 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
         )
     }
 
-    val uiState: StateFlow<FinanceUiState> = combine(overviewFlow, listsFlow, sheet) { overview, lists, openSheet ->
+    private val smsFlow = combine(
+        bankSmsStore?.settings ?: flowOf(BankSmsSettings()),
+        smsImportDao?.observeUnnoted() ?: flowOf(emptyList())
+    ) { settings, unnoted -> settings.enabled to unnoted.size }
+
+    val uiState: StateFlow<FinanceUiState> = combine(overviewFlow, listsFlow, sheet, smsFlow) { overview, lists, openSheet, (smsOn, unnoted) ->
         val openDebts = lists.debts.filter { it.status == DebtStatus.OCHIQ }
         FinanceUiState(
             period = overview.period,
@@ -179,7 +195,9 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
             planned = lists.planned,
             expenseCategories = lists.expenseCategories,
             incomeCategories = lists.incomeCategories,
-            sheet = openSheet
+            sheet = openSheet,
+            bankSmsEnabled = smsOn,
+            smsUnnotedCount = unnoted
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
 
@@ -223,7 +241,14 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
                 note = note,
                 accountId = account.id
             )
-        launchAndClose { repository.saveTransaction(updated) }
+        launchAndClose {
+            repository.saveTransaction(updated)
+            // Re-categorising an SMS purchase teaches the shop's category for next time.
+            val merchant = existing?.merchant
+            if (merchant != null && existing.category != updated.category) {
+                smsImportDao?.rememberCategory(MerchantCategory(merchant.uppercase(), updated.category))
+            }
+        }
     }
 
     fun deleteTransaction(transaction: Transaction) = launchAndClose { repository.deleteTransaction(transaction) }
@@ -340,8 +365,8 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
     fun skipPlanned(expense: PlannedExpense) = launchAndClose { repository.skipPlannedExpense(expense) }
 
     companion object {
-        fun factory(repository: FinanceRepository) = viewModelFactory {
-            initializer { FinanceViewModel(repository) }
+        fun factory(repository: FinanceRepository, smsImportDao: SmsImportDao, bankSmsStore: BankSmsSettingsStore) = viewModelFactory {
+            initializer { FinanceViewModel(repository, smsImportDao, bankSmsStore) }
         }
     }
 }

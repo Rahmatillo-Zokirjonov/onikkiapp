@@ -19,7 +19,11 @@ data class Transaction(
     val date: LocalDate,
     val note: String? = null,
     /** The [Account] this moved money in/out of. Accounts 1 (Naqd) and 2 (Karta) always exist. */
-    @ColumnInfo(defaultValue = "1") val accountId: Long = DEFAULT_CASH_ACCOUNT_ID
+    @ColumnInfo(defaultValue = "1") val accountId: Long = DEFAULT_CASH_ACCOUNT_ID,
+    /** Shop / sender name as the bank SMS gave it; drives category learning. Null for manual entries. */
+    val merchant: String? = null,
+    /** Created automatically from a bank SMS (shows in the "izohsiz" review list until noted). */
+    @ColumnInfo(defaultValue = "0") val fromSms: Boolean = false
 )
 
 const val DEFAULT_CASH_ACCOUNT_ID = 1L

@@ -1,5 +1,6 @@
 package com.onikki.app.ui.finance
 
+import com.onikki.app.ui.components.OnIkkiRowCard
 import java.time.temporal.ChronoUnit
 import java.time.LocalDate
 import androidx.compose.foundation.layout.width
@@ -68,7 +69,8 @@ fun FinanceScreen(
     onOpenAllTransactions: () -> Unit,
     onOpenDebts: () -> Unit,
     onOpenSavings: () -> Unit,
-    onOpenPlanned: () -> Unit
+    onOpenPlanned: () -> Unit,
+    onOpenBankSms: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
@@ -97,6 +99,7 @@ fun FinanceScreen(
                 onEditAccount = { onOpenSheet(FinanceSheet.AccountEdit(it)) },
                 onAddAccount = { onOpenSheet(FinanceSheet.AccountEdit(null)) }
             )
+            BankSmsEntryCard(enabled = state.bankSmsEnabled, unnoted = state.smsUnnotedCount, onClick = onOpenBankSms)
             PlannedSummaryCard(
                 planned = state.upcomingPlanned,
                 onOpenAll = onOpenPlanned,
@@ -535,6 +538,7 @@ fun TransactionRow(transaction: Transaction, accountName: String?, onClick: () -
     val isIncome = transaction.type == TransactionType.KIRIM
     val subtitle = listOfNotNull(
         accountName ?: if (transaction.wallet == Wallet.NAQD) "Naqd" else "Karta",
+        transaction.merchant?.takeIf { transaction.note.isNullOrBlank() },
         if (showDate) formatRelativeDateUz(transaction.date) else null,
         transaction.note
     ).joinToString(" · ")
@@ -671,5 +675,41 @@ fun PlannedRow(expense: PlannedExpense, today: LocalDate, onClick: () -> Unit, o
                     .padding(horizontal = 9.dp, vertical = 5.dp)
             )
         }
+    }
+}
+
+/** Entry to Bank SMS: an invitation while it's off, a "N ta izohsiz" nudge while notes are pending. */
+@Composable
+private fun BankSmsEntryCard(enabled: Boolean, unnoted: Int, onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    if (enabled && unnoted == 0) {
+        Text(
+            text = "💳 Bank SMS yoqilgan",
+            color = colors.text.muted(0.5f),
+            fontSize = 12.sp,
+            fontFamily = OnIkkiFontFamily,
+            modifier = Modifier.clickable(onClick = onClick).padding(vertical = 2.dp)
+        )
+        return
+    }
+    OnIkkiRowCard(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        borderColor = if (unnoted > 0) colors.warmBorder else colors.cardBorder
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (enabled) "💳 $unnoted ta to'lovga izoh yozilmagan" else "💳 Karta SMS'larini ulash",
+                color = colors.text,
+                fontSize = 14.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+            Text(
+                text = if (enabled) "Nima uchun ekanini bir bosishda belgilang" else "To'lov va tushumlar SMS'dan avtomatik yoziladi",
+                color = colors.text.muted(0.5f),
+                fontSize = 11.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+        }
+        Text(text = "→", color = colors.text.muted(0.5f), fontFamily = OnIkkiFontFamily)
     }
 }

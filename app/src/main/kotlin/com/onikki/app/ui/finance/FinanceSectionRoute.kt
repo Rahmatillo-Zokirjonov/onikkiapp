@@ -1,5 +1,6 @@
 package com.onikki.app.ui.finance
 
+import com.onikki.app.data.local.BankSmsSettingsStore
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -13,7 +14,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.onikki.app.OnIkkiApplication
 import com.onikki.app.data.repository.FinanceRepository
 
-private enum class FinanceDestination { OVERVIEW, TRANSACTIONS, DEBTS, SAVINGS, PLANNED }
+private enum class FinanceDestination { OVERVIEW, TRANSACTIONS, DEBTS, SAVINGS, PLANNED, BANK_SMS }
 
 /** The Moliya tab: overview plus its sub-screens, sharing one ViewModel and one sheet host. */
 @Composable
@@ -26,7 +27,9 @@ fun FinanceSectionRoute() {
             db.accountDao(), db.plannedExpenseDao()
         )
     }
-    val viewModel: FinanceViewModel = viewModel(factory = FinanceViewModel.factory(repository))
+    val viewModel: FinanceViewModel = viewModel(
+        factory = FinanceViewModel.factory(repository, app.database.smsImportDao(), BankSmsSettingsStore(app))
+    )
     val state by viewModel.uiState.collectAsState()
     var destination by rememberSaveable { mutableStateOf(FinanceDestination.OVERVIEW) }
     val backToOverview = { destination = FinanceDestination.OVERVIEW }
@@ -41,7 +44,13 @@ fun FinanceSectionRoute() {
             onOpenAllTransactions = { destination = FinanceDestination.TRANSACTIONS },
             onOpenDebts = { destination = FinanceDestination.DEBTS },
             onOpenSavings = { destination = FinanceDestination.SAVINGS },
-            onOpenPlanned = { destination = FinanceDestination.PLANNED }
+            onOpenPlanned = { destination = FinanceDestination.PLANNED },
+            onOpenBankSms = { destination = FinanceDestination.BANK_SMS }
+        )
+        FinanceDestination.BANK_SMS -> BankSmsScreen(
+            expenseCategories = state.expenseCategories,
+            incomeCategories = state.incomeCategories,
+            onBack = backToOverview
         )
         FinanceDestination.PLANNED -> PlannedExpensesScreen(
             planned = state.planned,

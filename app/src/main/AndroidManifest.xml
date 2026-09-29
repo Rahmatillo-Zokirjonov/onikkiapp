@@ -24,6 +24,11 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
+    <!-- Bank card SMS → Moliya (parsed on the phone only). Off until the user enables it. Note: Google Play
+         allows these only for default SMS apps — fine for direct APK distribution. -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+
     <!-- Android 11+ package visibility: list every launchable app so any of them can be put under control. -->
     <queries>
         <intent>
@@ -76,6 +81,15 @@
         <receiver
             android:name=".receiver.ReminderReceiver"
             android:exported="false" />
+
+        <receiver
+            android:name=".receiver.SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".receiver.RescheduleReceiver"

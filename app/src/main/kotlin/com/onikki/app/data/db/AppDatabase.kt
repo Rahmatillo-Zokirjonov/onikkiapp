@@ -11,6 +11,7 @@ import com.onikki.app.data.db.dao.AccountDao
 import com.onikki.app.data.db.dao.AppLimitDao
 import com.onikki.app.data.db.dao.AppUsageDao
 import com.onikki.app.data.db.dao.BlockZoneDao
+import com.onikki.app.data.db.dao.SmsImportDao
 import com.onikki.app.data.db.dao.VocabWordDao
 import com.onikki.app.data.db.dao.CategoryBudgetDao
 import com.onikki.app.data.db.dao.DailyReviewDao
@@ -26,6 +27,8 @@ import com.onikki.app.data.db.entity.Account
 import com.onikki.app.data.db.entity.AppLimit
 import com.onikki.app.data.db.entity.AppUsage
 import com.onikki.app.data.db.entity.BlockZone
+import com.onikki.app.data.db.entity.MerchantCategory
+import com.onikki.app.data.db.entity.SmsImport
 import com.onikki.app.data.db.entity.VocabWord
 import com.onikki.app.data.db.entity.CategoryBudget
 import com.onikki.app.data.db.entity.DailyReview
@@ -43,9 +46,9 @@ import com.onikki.app.data.db.entity.Transaction
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
-        BlockZone::class, VocabWord::class
+        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -65,6 +68,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun plannedExpenseDao(): PlannedExpenseDao
     abstract fun blockZoneDao(): BlockZoneDao
     abstract fun vocabWordDao(): VocabWordDao
+    abstract fun smsImportDao(): SmsImportDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -72,7 +76,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -176,5 +180,20 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
             "score INTEGER", "mood INTEGER", "reflection TEXT", "habitsCompleted INTEGER",
             "habitsTotal INTEGER", "spent INTEGER", "finishedAt INTEGER"
         ).forEach { column -> db.execSQL("ALTER TABLE daily_reviews ADD COLUMN $column") }
+    }
+}
+
+/** v7 (bank SMS): transactions remember the shop and whether they came from an SMS; SMS log + shop→category memory. */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE transactions ADD COLUMN merchant TEXT")
+        db.execSQL("ALTER TABLE transactions ADD COLUMN fromSms INTEGER NOT NULL DEFAULT 0")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `sms_imports` (`hash` TEXT NOT NULL, `sender` TEXT NOT NULL, `body` TEXT NOT NULL, " +
+                "`receivedAt` INTEGER NOT NULL, `status` TEXT NOT NULL, `transactionId` INTEGER, PRIMARY KEY(`hash`))"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `merchant_categories` (`merchant` TEXT NOT NULL, `category` TEXT NOT NULL, PRIMARY KEY(`merchant`))"
+        )
     }
 }
