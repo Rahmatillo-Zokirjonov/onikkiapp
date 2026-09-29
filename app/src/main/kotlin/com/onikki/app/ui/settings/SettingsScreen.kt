@@ -218,7 +218,7 @@ fun SettingsScreen(
         )
         PermissionStatusCard(
             title = "Maxsus imkoniyat xizmati",
-            description = "Limitdan oshgan ilovalarni bloklash uchun kerak.",
+            description = "Tanlangan ilovalarni limit, vaqt yoki hudud bo'yicha bloklash uchun kerak.",
             isGranted = state.hasAccessibilityEnabled,
             actionLabel = "Sozlamalarga o'tish",
             onAction = onOpenAccessibilitySettings

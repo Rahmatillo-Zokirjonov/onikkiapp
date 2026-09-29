@@ -136,7 +136,7 @@ fun OnboardingScreen(
         )
         PermissionStatusCard(
             title = "Maxsus imkoniyat xizmati",
-            description = "\"Zararli\" deb belgilangan ilovalarni limitdan oshganda bloklash uchun kerak (Sozlamalar > Maxsus imkoniyatlar).",
+            description = "Tanlangan ilovalarni limit, vaqt yoki hudud bo'yicha bloklash uchun kerak (Sozlamalar > Maxsus imkoniyatlar).",
             isGranted = state.hasAccessibilityEnabled,
             actionLabel = "Sozlamalarga o'tish",
             onAction = onOpenAccessibilitySettings
