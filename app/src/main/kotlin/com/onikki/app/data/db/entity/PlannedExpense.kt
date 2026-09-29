@@ -1,5 +1,6 @@
 package com.onikki.app.data.db.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import java.time.LocalDate
@@ -17,8 +18,9 @@ enum class RepeatKind(val label: String) {
 }
 
 /**
- * A future expense to remember (rent, internet, a birthday gift...). Paying it records a real
- * transaction; a repeating one then moves [dueDate] to the next period, a one-time one gets [paidDate].
+ * A future money event to remember — a payment (CHIQIM) or money expected in (KIRIM: salary, a debt
+ * being repaid...); the "expense" name is historical. Marking it done records a real transaction;
+ * a repeating one then moves [dueDate] to the next period, a one-time one gets [paidDate].
  */
 @Entity(tableName = "planned_expenses")
 data class PlannedExpense(
@@ -35,5 +37,10 @@ data class PlannedExpense(
     val remindDaysBefore: Int = 1,
     val remindTime: LocalTime = LocalTime.of(9, 0),
     /** Set when a one-time expense is paid; it then leaves the upcoming list. */
-    val paidDate: LocalDate? = null
-)
+    val paidDate: LocalDate? = null,
+    @ColumnInfo(defaultValue = "'CHIQIM'") val type: TransactionType = TransactionType.CHIQIM
+) {
+    val isIncome: Boolean get() = type == TransactionType.KIRIM
+    /** "To'landi" for payments, "Olindi" for incoming money. */
+    val doneLabel: String get() = if (isIncome) "Olindi" else "To'landi"
+}

@@ -592,13 +592,13 @@ private fun PlannedSummaryCard(
     val dueThisMonth = planned.filter { !it.dueDate.isAfter(monthEnd) }
     Column {
         FinanceSectionHeader(
-            title = "Rejali xarajatlar",
+            title = "Kelgusi pullar",
             actionLabel = if (planned.isEmpty()) "+ Qo'shish" else "Barchasi",
             onAction = if (planned.isEmpty()) onAdd else onOpenAll
         )
         if (planned.isEmpty()) {
             Text(
-                text = "Kelgusi to'lovlarni (ijara, internet, kredit...) belgilab qo'ying — vaqtida eslatamiz.",
+                text = "To'lashingiz (ijara, internet, kredit) yoki olishingiz kerak bo'lgan pullarni (maosh, qarz qaytishi) belgilang — o'sha kuni eslatamiz.",
                 color = colors.text.muted(0.5f),
                 fontSize = 13.sp,
                 fontFamily = OnIkkiFontFamily
@@ -607,8 +607,13 @@ private fun PlannedSummaryCard(
         }
         OnIkkiCard(modifier = Modifier.fillMaxWidth(), gap = 10.dp) {
             if (dueThisMonth.isNotEmpty()) {
+                val outgoing = dueThisMonth.filter { !it.isIncome }.sumOf { it.amount }
+                val incoming = dueThisMonth.filter { it.isIncome }.sumOf { it.amount }
                 Text(
-                    text = "Oy oxirigacha: ${formatSom(dueThisMonth.sumOf { it.amount })} so'm · ${dueThisMonth.size} ta to'lov",
+                    text = "Oy oxirigacha: " + listOfNotNull(
+                        incoming.takeIf { it > 0 }?.let { "+ ${formatSom(it)}" },
+                        outgoing.takeIf { it > 0 }?.let { "− ${formatSom(it)}" }
+                    ).joinToString(" · ") + " so'm",
                     color = colors.text.muted(0.55f),
                     fontSize = 11.sp,
                     fontFamily = OnIkkiFontFamily
@@ -625,7 +630,7 @@ fun PlannedRow(expense: PlannedExpense, today: LocalDate, onClick: () -> Unit, o
     val days = ChronoUnit.DAYS.between(today, expense.dueDate)
     val overdue = expense.paidDate == null && days < 0
     val whenText = when {
-        expense.paidDate != null -> "To'langan · ${formatRelativeDateUz(expense.paidDate)}"
+        expense.paidDate != null -> "${if (expense.isIncome) "Olingan" else "To'langan"} · ${formatRelativeDateUz(expense.paidDate)}"
         days < 0 -> "${-days} kun kechikdi"
         days == 0L -> "Bugun"
         days == 1L -> "Ertaga"
@@ -648,10 +653,15 @@ fun PlannedRow(expense: PlannedExpense, today: LocalDate, onClick: () -> Unit, o
                 fontFamily = OnIkkiFontFamily
             )
         }
-        Text(text = formatSom(expense.amount), color = colors.text, fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+        Text(
+            text = (if (expense.isIncome) "+ " else "− ") + formatSom(expense.amount),
+            color = if (expense.isIncome) colors.accent else colors.text,
+            fontSize = 13.sp,
+            fontFamily = OnIkkiFontFamily
+        )
         if (onPay != null && expense.paidDate == null) {
             Text(
-                text = "To'lash",
+                text = expense.doneLabel,
                 color = colors.accent,
                 fontSize = 12.sp,
                 fontFamily = OnIkkiFontFamily,

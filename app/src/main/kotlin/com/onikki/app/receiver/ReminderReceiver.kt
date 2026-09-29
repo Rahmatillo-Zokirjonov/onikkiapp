@@ -130,9 +130,10 @@ class ReminderReceiver : BroadcastReceiver() {
                 val wallet = expense.accountId?.let { db.accountDao().findById(it)?.name }?.let { " · $it" } ?: ""
                 ReminderNotifier.show(
                     context, key, ReminderChannel.FINANCE,
-                    title = "${expense.title} — to'lov $whenText",
+                    title = if (expense.isIncome) "${expense.title} — $whenText olinishi kerak" else "${expense.title} — to'lov $whenText",
                     text = "${formatSom(expense.amount)} so'm$wallet",
-                    plannedIdForPaidAction = expense.id
+                    plannedIdForPaidAction = expense.id,
+                    plannedDoneLabel = expense.doneLabel
                 )
             }
 

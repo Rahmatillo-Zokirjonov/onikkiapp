@@ -140,7 +140,7 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 }
 
 /**
- * v5 (Ilovalar nazorati): custom block windows, place-based blocks, strict mode, the word/text unlock
+ * v5 (Ilovalar nazorati + planned incomes): custom block windows, place-based blocks, strict mode, the word/text unlock
  * challenge, and the English–Uzbek word list. The old fixed "WORK_HOURS" rule becomes a 09:00–18:00 window.
  */
 val MIGRATION_4_5 = object : Migration(4, 5) {
@@ -155,6 +155,8 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         db.execSQL(
             "UPDATE app_limits SET scheduleStart = '09:00', scheduleEnd = '18:00' WHERE blockedHours LIKE '%WORK_HOURS%'"
         )
+        // Planned money can now be incoming too (salary, a debt being repaid).
+        db.execSQL("ALTER TABLE planned_expenses ADD COLUMN type TEXT NOT NULL DEFAULT 'CHIQIM'")
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS `block_zones` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
                 "`name` TEXT NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `radiusMeters` INTEGER NOT NULL)"

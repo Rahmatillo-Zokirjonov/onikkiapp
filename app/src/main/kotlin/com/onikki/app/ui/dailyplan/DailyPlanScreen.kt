@@ -1,5 +1,6 @@
 package com.onikki.app.ui.dailyplan
 
+import com.onikki.app.data.db.entity.PlannedExpense
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,6 +49,7 @@ import com.onikki.app.ui.theme.OnIkkiShapes
 import com.onikki.app.ui.theme.OnIkkiType
 import com.onikki.app.ui.theme.muted
 import com.onikki.app.ui.util.formatRelativeDateUz
+import com.onikki.app.ui.util.formatSom
 import com.onikki.app.ui.util.monthNameUz
 import com.onikki.app.ui.util.weekdayAbbrUz
 import java.time.DayOfWeek
@@ -74,7 +76,7 @@ fun DailyPlanRoute() {
     val app = LocalContext.current.applicationContext as OnIkkiApplication
     val locationStore = remember { LocationStore(app) }
     val city by locationStore.city.collectAsState(initial = UZBEKISTAN_CITIES.first())
-    val viewModel: DailyPlanViewModel = viewModel(factory = DailyPlanViewModel.factory(app.database.taskDao()))
+    val viewModel: DailyPlanViewModel = viewModel(factory = DailyPlanViewModel.factory(app.database))
     val state by viewModel.uiState.collectAsState()
     DailyPlanScreen(
         state = state,
@@ -85,7 +87,8 @@ fun DailyPlanRoute() {
         onToggleTask = viewModel::toggleTask,
         onNewTask = viewModel::openNewTask,
         onOpenTask = viewModel::openTask,
-        onMoveOverdue = viewModel::moveOverdueToToday
+        onMoveOverdue = viewModel::moveOverdueToToday,
+        onCompleteMoney = viewModel::completeMoney
     )
 
     state.sheet?.let { target ->
@@ -109,7 +112,8 @@ fun DailyPlanScreen(
     onToggleTask: (Task) -> Unit,
     onNewTask: () -> Unit,
     onOpenTask: (Task) -> Unit,
-    onMoveOverdue: () -> Unit
+    onMoveOverdue: () -> Unit,
+    onCompleteMoney: (PlannedExpense) -> Unit = {}
 ) {
     val isToday = state.selectedDate == state.today
     val colors = LocalOnIkkiColors.current
@@ -162,6 +166,10 @@ fun DailyPlanScreen(
 
         if (isToday && state.overdue.isNotEmpty()) {
             OverdueCard(overdue = state.overdue, onMoveToToday = onMoveOverdue, onOpenTask = onOpenTask)
+        }
+
+        if (state.money.isNotEmpty()) {
+            MoneyPlanCard(items = state.money, today = state.today, onComplete = onCompleteMoney)
         }
 
         if (state.totalCount > 0) OnIkkiCard(modifier = Modifier.fillMaxWidth()) {
@@ -460,4 +468,34 @@ private fun LoadDot(load: DayLoad?, selected: Boolean) {
         else -> colors.text.muted(0.3f)
     }
     Box(modifier = Modifier.padding(top = 4.dp).size(5.dp).background(color, CircleShape))
+}
+
+/** Planned payments/incomes from Moliya that fall on this day — "To'landi"/"Olindi" records them. */
+@Composable
+private fun MoneyPlanCard(items: List<PlannedExpense>, today: LocalDate, onComplete: (PlannedExpense) -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    OnIkkiCard(modifier = Modifier.fillMaxWidth(), borderColor = colors.warmBorder, gap = 9.dp) {
+        Text(text = "PUL REJALARI", color = colors.warmAccent, style = OnIkkiType.kicker)
+        items.forEach { item ->
+            val overdueDays = java.time.temporal.ChronoUnit.DAYS.between(item.dueDate, today)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = item.title, color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily, maxLines = 1)
+                    Text(
+                        text = (if (item.isIncome) "+ " else "− ") + formatSom(item.amount) + " so'm" +
+                            if (overdueDays > 0) " · $overdueDays kun kechikdi" else "",
+                        color = if (overdueDays > 0) colors.warmAccent else colors.text.muted(0.55f),
+                        fontSize = 12.sp,
+                        fontFamily = OnIkkiFontFamily
+                    )
+                }
+                OnIkkiButton(
+                    text = item.doneLabel,
+                    onClick = { onComplete(item) },
+                    variant = OnIkkiButtonVariant.SECONDARY,
+                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
 }

@@ -113,9 +113,10 @@ fun FinanceSectionRoute() {
             expense = sheet.expense,
             accounts = state.accounts,
             expenseCategories = state.expenseCategories,
+            incomeCategories = state.incomeCategories,
             onDismiss = viewModel::dismissSheet,
-            onSave = { title, amount, category, accountId, dueDate, repeat, remind, daysBefore, time ->
-                viewModel.savePlanned(sheet.expense, title, amount, category, accountId, dueDate, repeat, remind, daysBefore, time)
+            onSave = { type, title, amount, category, accountId, dueDate, repeat, remind, daysBefore, time ->
+                viewModel.savePlanned(sheet.expense, type, title, amount, category, accountId, dueDate, repeat, remind, daysBefore, time)
             },
             onDelete = { sheet.expense?.let(viewModel::deletePlanned) }
         )

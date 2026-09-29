@@ -2,6 +2,10 @@
 
 package com.onikki.app.ui.dailyplan
 
+import com.onikki.app.data.repository.payPlanned
+import com.onikki.app.data.db.entity.DEFAULT_CASH_ACCOUNT_ID
+import com.onikki.app.data.db.entity.PlannedExpense
+import com.onikki.app.data.db.AppDatabase
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -35,12 +39,17 @@ data class DailyPlanUiState(
     val totalCount: Int = 0,
     val weekLoad: Map<LocalDate, DayLoad> = emptyMap(),
     val overdue: List<Task> = emptyList(),
+    /** Planned payments/incomes due on the selected day (today also shows overdue ones). */
+    val money: List<PlannedExpense> = emptyList(),
     val sheet: TaskSheetTarget? = null
 )
 
 private fun mondayOf(date: LocalDate): LocalDate = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
-class DailyPlanViewModel(private val taskDao: TaskDao) : ViewModel() {
+class DailyPlanViewModel(
+    private val taskDao: TaskDao,
+    private val db: AppDatabase
+) : ViewModel() {
 
     private val today: LocalDate = LocalDate.now()
     private val selectedDate = MutableStateFlow(today)
@@ -51,13 +60,21 @@ class DailyPlanViewModel(private val taskDao: TaskDao) : ViewModel() {
         taskDao.observeBetween(monday, monday.plusDays(6))
     }
 
+    private val tasksAndMoney = combine(
+        selectedDate.flatMapLatest { taskDao.observeByDate(it) },
+        db.plannedExpenseDao().observeAll()
+    ) { tasks, planned -> tasks to planned }
+
     val uiState: StateFlow<DailyPlanUiState> = combine(
         selectedDate,
-        selectedDate.flatMapLatest { taskDao.observeByDate(it) },
+        tasksAndMoney,
         weekLoadFlow,
         taskDao.observeOverdue(today),
         sheet
-    ) { date, tasks, weekTasks, overdue, openSheet ->
+    ) { date, (tasks, planned), weekTasks, overdue, openSheet ->
+        val money = planned.filter { it.paidDate == null }.filter {
+            it.dueDate == date || (date == today && it.dueDate.isBefore(today))
+        }.sortedBy { it.dueDate }
         DailyPlanUiState(
             today = today,
             selectedDate = date,
@@ -68,6 +85,7 @@ class DailyPlanViewModel(private val taskDao: TaskDao) : ViewModel() {
                 DayLoad(total = day.size, done = day.count { it.isCompleted })
             },
             overdue = overdue,
+            money = money,
             sheet = openSheet
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DailyPlanUiState())
@@ -122,6 +140,15 @@ class DailyPlanViewModel(private val taskDao: TaskDao) : ViewModel() {
         }
     }
 
+    /** Marks a planned payment/income done from the plan: full amount, its wallet (or cash), today. */
+    fun completeMoney(expense: PlannedExpense) {
+        viewModelScope.launch {
+            val accounts = db.accountDao()
+            val account = expense.accountId?.let { accounts.findById(it) } ?: accounts.findById(DEFAULT_CASH_ACCOUNT_ID) ?: return@launch
+            payPlanned(db.transactionDao(), db.plannedExpenseDao(), expense, account, expense.amount, today)
+        }
+    }
+
     /** "Bugunga ko'chirish": carry every unfinished task from earlier days over to today. */
     fun moveOverdueToToday() {
         viewModelScope.launch {
@@ -131,8 +158,8 @@ class DailyPlanViewModel(private val taskDao: TaskDao) : ViewModel() {
     }
 
     companion object {
-        fun factory(taskDao: TaskDao) = viewModelFactory {
-            initializer { DailyPlanViewModel(taskDao) }
+        fun factory(db: AppDatabase) = viewModelFactory {
+            initializer { DailyPlanViewModel(db.taskDao(), db) }
         }
     }
 }

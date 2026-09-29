@@ -317,6 +317,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
 
     fun savePlanned(
         existing: PlannedExpense?,
+        type: TransactionType,
         title: String,
         amount: Long,
         category: String,
@@ -339,6 +340,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
             remindEnabled = remindEnabled,
             remindDaysBefore = remindDaysBefore,
             remindTime = remindTime,
+            type = type,
             // Moving a paid one-time expense to a new date reopens it.
             paidDate = if (existing?.paidDate != null && dueDate != existing.dueDate) null else base.paidDate
         )

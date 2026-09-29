@@ -62,7 +62,8 @@ object ReminderNotifier {
         title: String,
         text: String,
         taskIdForDoneAction: Long? = null,
-        plannedIdForPaidAction: Long? = null
+        plannedIdForPaidAction: Long? = null,
+        plannedDoneLabel: String = "To'landi"
     ) {
         // Silently skip when the user hasn't granted/has revoked notifications — nothing else to do offline.
         if (!PermissionChecker.hasNotificationPermission(context)) return
@@ -105,7 +106,7 @@ object ReminderNotifier {
                     .putExtra(ReminderReceiver.EXTRA_KEY, key),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            builder.addAction(0, "To'landi", paid)
+            builder.addAction(0, plannedDoneLabel, paid)
         }
 
         @Suppress("MissingPermission") // checked above via PermissionChecker

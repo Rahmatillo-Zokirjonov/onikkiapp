@@ -176,7 +176,7 @@ suspend fun payPlanned(
     transactionDao.insert(
         Transaction(
             amount = amount,
-            type = TransactionType.CHIQIM,
+            type = expense.type,
             category = expense.category,
             wallet = account.kind.toWallet(),
             date = date,

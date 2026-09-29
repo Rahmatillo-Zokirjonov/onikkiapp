@@ -1,5 +1,6 @@
 package com.onikki.app.ui.finance
 
+import com.onikki.app.data.db.entity.TransactionType
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.clickable
@@ -140,15 +141,17 @@ fun PlannedExpenseSheet(
     expense: PlannedExpense?,
     accounts: List<AccountBalance>,
     expenseCategories: List<String>,
+    incomeCategories: List<String>,
     onDismiss: () -> Unit,
     onSave: (
-        title: String, amount: Long, category: String, accountId: Long?, dueDate: LocalDate,
+        type: TransactionType, title: String, amount: Long, category: String, accountId: Long?, dueDate: LocalDate,
         repeat: RepeatKind, remindEnabled: Boolean, remindDaysBefore: Int, remindTime: LocalTime
     ) -> Unit,
     onDelete: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     val key = expense?.id
+    var type by rememberSaveable(key) { mutableStateOf(expense?.type ?: TransactionType.CHIQIM) }
     var title by rememberSaveable(key) { mutableStateOf(expense?.title ?: "") }
     var amountText by rememberSaveable(key) { mutableStateOf(expense?.amount?.toString() ?: "") }
     var category by rememberSaveable(key) { mutableStateOf(expense?.category ?: "") }
@@ -161,19 +164,34 @@ fun PlannedExpenseSheet(
     val timeState = rememberTimePickerState(initialHour = initialTime.hour, initialMinute = initialTime.minute, is24Hour = true)
     var error by remember { mutableStateOf<String?>(null) }
 
-    OnIkkiSheet(title = if (expense == null) "Rejali xarajat" else "Rejali xarajatni tahrirlash", onDismiss = onDismiss) {
+    val income = type == TransactionType.KIRIM
+    OnIkkiSheet(title = if (expense == null) "Kelgusi pul" else "Rejani tahrirlash", onDismiss = onDismiss) {
+        ChoiceChips(
+            options = listOf(TransactionType.CHIQIM to "To'lashim kerak", TransactionType.KIRIM to "Olishim kerak"),
+            selected = type,
+            onSelect = { type = it }
+        )
         OutlinedTextField(
             value = title,
             onValueChange = { title = it; error = null },
-            label = { Text("Nima uchun (masalan: Uy ijarasi)") },
+            label = { Text(if (income) "Nima / kimdan (masalan: Maosh)" else "Nima uchun (masalan: Uy ijarasi)") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
         if (expense == null) {
             SuggestionChips(
-                options = listOf("Uy ijarasi", "Internet", "Telefon", "Kommunal", "Kredit", "O'qish to'lovi"),
+                options = if (income) listOf("Maosh", "Avans", "Qarz qaytishi", "Stipendiya", "Ijara daromadi")
+                else listOf("Uy ijarasi", "Internet", "Telefon", "Kommunal", "Kredit", "O'qish to'lovi"),
                 selected = title,
-                onSelect = { title = it; if (category.isBlank()) category = if (it == "Internet" || it == "Telefon") "Kommunal" else it; error = null }
+                onSelect = {
+                    title = it
+                    if (category.isBlank()) category = when (it) {
+                        "Internet", "Telefon" -> "Kommunal"
+                        "Avans" -> "Maosh"
+                        else -> it
+                    }
+                    error = null
+                }
             )
         }
         AmountField(value = amountText, onValueChange = { amountText = it; error = null }, label = "Summa")
@@ -184,15 +202,15 @@ fun PlannedExpenseSheet(
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
-        SuggestionChips(options = expenseCategories, selected = category, onSelect = { category = it })
-        DatePickerField(label = "To'lov sanasi", date = dueDate, onDateChange = { it?.let { picked -> dueDate = picked } })
+        SuggestionChips(options = if (income) incomeCategories else expenseCategories, selected = category, onSelect = { category = it })
+        DatePickerField(label = if (income) "Qachon olinadi" else "To'lov sanasi", date = dueDate, onDateChange = { it?.let { picked -> dueDate = picked } })
         SheetFieldLabel("Takrorlanishi")
         Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             RepeatKind.entries.forEach { option ->
                 FilterChip(selected = repeat == option, onClick = { repeat = option }, label = { Text(option.label) })
             }
         }
-        SheetFieldLabel("Qaysi hamyondan")
+        SheetFieldLabel(if (income) "Qaysi hamyonga" else "Qaysi hamyondan")
         AccountPicker(accounts, accountId, onSelect = { accountId = it }, allowNone = true, onSelectNone = { accountId = null })
 
         Row(modifier = Modifier.fillMaxWidth().clickable { remind = !remind }, verticalAlignment = Alignment.CenterVertically) {
@@ -207,7 +225,8 @@ fun PlannedExpenseSheet(
             }
             ProvideUzbekLocale { TimeInput(state = timeState) }
             Text(
-                text = if (daysBefore == 0) "To'lov kuni eslatiladi." else "Oldindan va to'lov kunining o'zida eslatiladi.",
+                text = if (daysBefore == 0) "O'sha kuni eslatiladi va Kunlik rejada ko'rinadi."
+                else "Oldindan va o'sha kunning o'zida eslatiladi; o'sha kuni Kunlik rejada ko'rinadi.",
                 color = colors.text.muted(0.5f),
                 fontSize = 12.sp,
                 fontFamily = OnIkkiFontFamily
@@ -218,10 +237,10 @@ fun PlannedExpenseSheet(
             onSave = {
                 val amount = amountText.toLongOrNull()
                 when {
-                    title.isBlank() -> error = "Nima uchun ekanini yozing"
+                    title.isBlank() -> error = if (income) "Nima yoki kimdan ekanini yozing" else "Nima uchun ekanini yozing"
                     amount == null || amount <= 0 -> error = "Summani kiriting"
                     else -> onSave(
-                        title, amount, category, accountId, dueDate, repeat, remind, daysBefore,
+                        type, title, amount, category, accountId, dueDate, repeat, remind, daysBefore,
                         LocalTime.of(timeState.hour, timeState.minute)
                     )
                 }
@@ -248,9 +267,9 @@ fun PlannedPaySheet(
     var date by rememberSaveable(expense.id) { mutableStateOf(LocalDate.now()) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    OnIkkiSheet(title = "To'lash: ${expense.title}", onDismiss = onDismiss) {
+    OnIkkiSheet(title = "${expense.doneLabel}: ${expense.title}", onDismiss = onDismiss) {
         AmountField(value = amountText, onValueChange = { amountText = it; error = null }, label = "Summa")
-        SheetFieldLabel("Qaysi hamyondan")
+        SheetFieldLabel(if (expense.isIncome) "Qaysi hamyonga" else "Qaysi hamyondan")
         AccountPicker(accounts, accountId, onSelect = { accountId = it })
         accounts.firstOrNull { it.account.id == accountId }?.let { selected ->
             Text(
@@ -262,15 +281,15 @@ fun PlannedPaySheet(
         }
         DatePickerField(label = "Sana", date = date, onDateChange = { it?.let { picked -> date = picked } })
         Text(
-            text = if (expense.repeat == RepeatKind.NONE) "Chiqim sifatida yoziladi va reja yopiladi."
-            else "Chiqim sifatida yoziladi, keyingi to'lov sanasi avtomatik suriladi.",
+            text = (if (expense.isIncome) "Kirim" else "Chiqim") + if (expense.repeat == RepeatKind.NONE) " sifatida yoziladi va reja yopiladi."
+            else " sifatida yoziladi, keyingi sana avtomatik suriladi.",
             color = colors.text.muted(0.5f),
             fontSize = 12.sp,
             fontFamily = OnIkkiFontFamily
         )
         SheetErrorText(error)
         OnIkkiButton(
-            text = "To'landi",
+            text = expense.doneLabel,
             onClick = {
                 val amount = amountText.toLongOrNull()
                 val account = accounts.firstOrNull { it.account.id == accountId }?.account

@@ -418,25 +418,26 @@ fun PlannedExpensesScreen(
 
     SubScreenFrame(fabOnClick = { onOpenSheet(FinanceSheet.PlannedEdit(null)) }) {
         LazyColumn(contentPadding = ScreenPadding, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item { SubScreenHeader(title = "Rejali xarajatlar", onBack = onBack) }
+            item { SubScreenHeader(title = "Kelgusi pullar", onBack = onBack) }
             item {
+                val thisMonth = upcoming.filter { !it.dueDate.isAfter(monthEnd) }
                 OnIkkiCard(modifier = Modifier.fillMaxWidth()) {
                     Row {
                         TotalBlock(
-                            label = "Shu oy qoldi",
-                            amount = upcoming.filter { !it.dueDate.isAfter(monthEnd) }.sumOf { it.amount },
+                            label = "Shu oy olinadi",
+                            amount = thisMonth.filter { it.isIncome }.sumOf { it.amount },
                             modifier = Modifier.weight(1f)
                         )
                         TotalBlock(
-                            label = "Kechikkan",
-                            amount = upcoming.filter { it.dueDate.isBefore(today) }.sumOf { it.amount },
+                            label = "Shu oy to'lanadi",
+                            amount = thisMonth.filter { !it.isIncome }.sumOf { it.amount },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
             }
             if (planned.isEmpty()) {
-                item { EmptyText("Hali rejali xarajat yo'q. + bilan kelgusi to'lovni qo'shing — eslatma o'zi keladi.") }
+                item { EmptyText("Hali reja yo'q. + bilan to'lanadigan yoki olinadigan pulni qo'shing — eslatma o'zi keladi.") }
             }
             items(upcoming, key = { it.id }) { expense ->
                 OnIkkiCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
@@ -449,7 +450,7 @@ fun PlannedExpensesScreen(
                 }
             }
             if (paid.isNotEmpty()) {
-                item { Text(text = "TO'LANGANLAR", color = LocalOnIkkiColors.current.text.muted(0.45f), fontSize = 10.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.padding(top = 8.dp)) }
+                item { Text(text = "YAKUNLANGANLAR", color = LocalOnIkkiColors.current.text.muted(0.45f), fontSize = 10.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.padding(top = 8.dp)) }
                 items(paid, key = { "paid-${it.id}" }) { expense ->
                     PlannedRow(expense = expense, today = today, onClick = { onOpenSheet(FinanceSheet.PlannedEdit(expense)) }, onPay = null)
                 }
