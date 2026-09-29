@@ -1,6 +1,8 @@
 package com.onikki.app.ui.settings
 
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +29,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.onikki.app.OnIkkiApplication
 import com.onikki.app.data.local.ApiKeyStore
 import com.onikki.app.data.local.LocationStore
+import com.onikki.app.data.local.NotificationSettings
+import com.onikki.app.data.local.NotificationSettingsStore
 import com.onikki.app.ui.components.CityPickerSheet
 import com.onikki.app.ui.components.OnIkkiButton
 import com.onikki.app.ui.components.OnIkkiButtonVariant
@@ -45,8 +49,9 @@ fun SettingsRoute(onBack: () -> Unit = {}) {
     val app = context.applicationContext as OnIkkiApplication
     val locationStore = remember { LocationStore(app) }
     val apiKeyStore = remember { ApiKeyStore(app) }
+    val notificationSettingsStore = remember { NotificationSettingsStore(app) }
     val viewModel: SettingsViewModel = viewModel(
-        factory = SettingsViewModel.factory(app, locationStore, apiKeyStore)
+        factory = SettingsViewModel.factory(app, locationStore, apiKeyStore, notificationSettingsStore)
     )
     val state by viewModel.uiState.collectAsState()
 
@@ -69,7 +74,15 @@ fun SettingsRoute(onBack: () -> Unit = {}) {
         onOpenApiKeySheet = viewModel::openApiKeySheet,
         onDismissApiKeySheet = viewModel::dismissApiKeySheet,
         onSaveApiKey = viewModel::saveApiKey,
-        onClearApiKey = viewModel::clearApiKey
+        onClearApiKey = viewModel::clearApiKey,
+        onUpdateReminders = viewModel::updateReminders,
+        onOpenExactAlarmSettings = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.startActivity(
+                    Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}"))
+                )
+            }
+        }
     )
 }
 
@@ -86,7 +99,9 @@ fun SettingsScreen(
     onOpenApiKeySheet: () -> Unit,
     onDismissApiKeySheet: () -> Unit,
     onSaveApiKey: (String) -> Unit,
-    onClearApiKey: () -> Unit
+    onClearApiKey: () -> Unit,
+    onUpdateReminders: ((NotificationSettings) -> NotificationSettings) -> Unit,
+    onOpenExactAlarmSettings: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     Column(
@@ -138,6 +153,14 @@ fun SettingsScreen(
             }
             Text(text = "tez kunda: kirill, rus", color = colors.text.muted(0.4f), fontSize = 10.sp, fontFamily = OnIkkiFontFamily)
         }
+
+        SectionLabel("Eslatmalar")
+        ReminderSettingsSection(
+            settings = state.reminders,
+            canScheduleExact = state.canScheduleExactAlarms,
+            onUpdate = onUpdateReminders,
+            onOpenExactAlarmSettings = onOpenExactAlarmSettings
+        )
 
         SectionLabel("Ruxsatlar holati")
         PermissionStatusCard(

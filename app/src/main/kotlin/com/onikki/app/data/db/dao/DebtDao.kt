@@ -17,6 +17,9 @@ interface DebtDao {
     @Query("SELECT * FROM debts WHERE status = :status ORDER BY dueDate ASC")
     fun observeByStatus(status: DebtStatus): Flow<List<Debt>>
 
+    @Query("SELECT * FROM debts WHERE id = :id")
+    suspend fun findById(id: Long): Debt?
+
     @Insert
     suspend fun insert(debt: Debt): Long
 

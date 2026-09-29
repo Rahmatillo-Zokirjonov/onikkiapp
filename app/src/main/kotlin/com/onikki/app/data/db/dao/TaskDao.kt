@@ -31,6 +31,9 @@ interface TaskDao {
     @Query("UPDATE tasks SET date = :date WHERE date < :date AND isCompleted = 0")
     suspend fun moveUnfinishedBefore(date: LocalDate): Int
 
+    @Query("SELECT * FROM tasks WHERE id = :id")
+    suspend fun findById(id: Long): Task?
+
     @Insert
     suspend fun insert(task: Task): Long
 
