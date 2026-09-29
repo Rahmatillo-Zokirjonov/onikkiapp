@@ -30,7 +30,11 @@ private val weekdayAbbrMap = mapOf(
     DayOfWeek.SUNDAY to "Ya"
 )
 
+private val monthAbbrUz = listOf("yan", "fev", "mar", "apr", "may", "iyn", "iyl", "avg", "sen", "okt", "noy", "dek")
+
 fun monthNameUz(monthValue: Int): String = monthNamesUz[monthValue - 1]
+/** Three-letter month, unique per month (iyun/iyul would both truncate to "iyu"). */
+fun monthAbbrUz(monthValue: Int): String = monthAbbrUz[monthValue - 1]
 fun weekdayNameUz(dayOfWeek: DayOfWeek): String = weekdayNameMap.getValue(dayOfWeek)
 fun weekdayAbbrUz(dayOfWeek: DayOfWeek): String = weekdayAbbrMap.getValue(dayOfWeek)
 

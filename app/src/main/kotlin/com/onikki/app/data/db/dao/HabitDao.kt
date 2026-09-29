@@ -13,6 +13,9 @@ interface HabitDao {
     @Query("SELECT * FROM habits ORDER BY id ASC")
     fun observeAll(): Flow<List<Habit>>
 
+    @Query("SELECT * FROM habits WHERE id = :id")
+    suspend fun findById(id: Long): Habit?
+
     @Insert
     suspend fun insert(habit: Habit): Long
 
@@ -21,7 +24,4 @@ interface HabitDao {
 
     @Delete
     suspend fun delete(habit: Habit)
-
-    @Query("UPDATE habits SET streakCount = :streakCount WHERE id = :habitId")
-    suspend fun setStreak(habitId: Long, streakCount: Int)
 }

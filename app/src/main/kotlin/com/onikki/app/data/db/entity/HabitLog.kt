@@ -1,5 +1,6 @@
 package com.onikki.app.data.db.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -22,5 +23,7 @@ data class HabitLog(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val habitId: Long,
     val date: LocalDate,
-    val isDone: Boolean
+    /** Kept equal to `count >= habit.dailyTarget` on every write, for simple done/not-done queries. */
+    val isDone: Boolean,
+    @ColumnInfo(defaultValue = "0") val count: Int = 0
 )

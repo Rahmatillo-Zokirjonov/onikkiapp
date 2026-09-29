@@ -36,8 +36,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.onikki.app.OnIkkiApplication
 import com.onikki.app.data.db.entity.Task
 import com.onikki.app.data.local.LocationStore
-import com.onikki.app.data.repository.HabitProgress
 import com.onikki.app.data.repository.HabitRepository
+import com.onikki.app.domain.habits.HabitStats
 import com.onikki.app.ui.components.CircularProgressRing
 import com.onikki.app.ui.components.OnIkkiCard
 import com.onikki.app.ui.components.OnIkkiRowCard
@@ -73,7 +73,7 @@ fun HomeRoute(onNavigateToDayReview: () -> Unit = {}) {
 fun HomeScreen(
     state: HomeUiState,
     onToggleTask: (Task) -> Unit,
-    onToggleHabit: (HabitProgress) -> Unit,
+    onToggleHabit: (HabitStats) -> Unit,
     onOpenDayReview: () -> Unit = {}
 ) {
     val colors = LocalOnIkkiColors.current
@@ -238,7 +238,7 @@ private fun TodayPlanSection(
 }
 
 @Composable
-private fun HabitsSection(habits: List<HabitProgress>, onToggleHabit: (HabitProgress) -> Unit) {
+private fun HabitsSection(habits: List<HabitStats>, onToggleHabit: (HabitStats) -> Unit) {
     val colors = LocalOnIkkiColors.current
     Column {
         Text(
@@ -265,7 +265,7 @@ private fun HabitsSection(habits: List<HabitProgress>, onToggleHabit: (HabitProg
 }
 
 @Composable
-private fun HabitRingCard(progress: HabitProgress, onClick: () -> Unit) {
+private fun HabitRingCard(progress: HabitStats, onClick: () -> Unit) {
     val colors = LocalOnIkkiColors.current
     OnIkkiCard(
         modifier = Modifier
@@ -300,7 +300,7 @@ private fun HabitRingCard(progress: HabitProgress, onClick: () -> Unit) {
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
         Text(
-            text = "${progress.habit.streakCount} kun",
+            text = "${progress.currentStreak} kun",
             color = colors.warmAccent,
             fontSize = 10.sp,
             fontFamily = OnIkkiFontFamily,

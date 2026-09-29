@@ -30,6 +30,13 @@ interface HabitLogDao {
     @Query("SELECT * FROM habit_logs WHERE habitId = :habitId AND date BETWEEN :from AND :to")
     fun observeByHabitBetween(habitId: Long, from: LocalDate, to: LocalDate): Flow<List<HabitLog>>
 
+    /** Every habit's logs in a date range — one query feeds all streak/stats computation. */
+    @Query("SELECT * FROM habit_logs WHERE date BETWEEN :from AND :to")
+    fun observeAllBetween(from: LocalDate, to: LocalDate): Flow<List<HabitLog>>
+
+    @Query("UPDATE habit_logs SET isDone = (count >= :target) WHERE habitId = :habitId")
+    suspend fun syncDoneFlags(habitId: Long, target: Int)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(log: HabitLog)
 }

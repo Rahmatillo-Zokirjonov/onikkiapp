@@ -1,153 +1,88 @@
-@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-
 package com.onikki.app.data.repository
 
 import com.onikki.app.data.db.dao.HabitDao
 import com.onikki.app.data.db.dao.HabitLogDao
 import com.onikki.app.data.db.entity.Habit
 import com.onikki.app.data.db.entity.HabitLog
+import com.onikki.app.domain.habits.HABIT_LOOKBACK_DAYS
+import com.onikki.app.domain.habits.HabitDayState
+import com.onikki.app.domain.habits.HabitStats
+import com.onikki.app.domain.habits.HabitStatsCalculator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
 import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
 import kotlin.math.roundToInt
-
-data class HabitProgress(
-    val habit: Habit,
-    val isDoneToday: Boolean,
-    val completionRate: Float
-)
-
-/** [last7Days] is oldest-to-newest, size 7, last entry is today. */
-data class HabitListItem(
-    val habit: Habit,
-    val last7Days: List<Boolean>
-)
-
-/** [weeks] is oldest-to-newest, size 12, each a 0..1 completion fraction for that 7-day window. */
-data class WeeklyStreakChart(
-    val habitName: String,
-    val streakCount: Int,
-    val weeks: List<Float>
-)
-
-private const val PROGRESS_WINDOW_DAYS = 30L
-private const val STREAK_HISTORY_WEEKS = 12L
-private const val STREAK_SAFETY_CAP = 3650
 
 class HabitRepository(
     private val habitDao: HabitDao,
     private val habitLogDao: HabitLogDao
 ) {
-    /** All habits with today's done state and a rolling 30-day completion rate, live. */
-    fun observeProgress(today: LocalDate): Flow<List<HabitProgress>> =
-        habitDao.observeAll().flatMapLatest { habits ->
-            if (habits.isEmpty()) {
-                flowOf(emptyList<HabitProgress>())
-            } else {
-                val windowStart = today.minusDays(PROGRESS_WINDOW_DAYS - 1)
-                combine(
-                    habits.map { habit ->
-                        combine(
-                            habitLogDao.observeByHabitAndDate(habit.id, today),
-                            habitLogDao.observeDoneCountBetween(habit.id, windowStart, today)
-                        ) { todayLog, doneCount ->
-                            HabitProgress(
-                                habit = habit,
-                                isDoneToday = todayLog?.isDone == true,
-                                completionRate = doneCount / PROGRESS_WINDOW_DAYS.toFloat()
-                            )
-                        }
-                    }
-                ) { it.toList() }
-            }
+    /** Every habit with its computed stats (streaks, rates, history), live. One logs query for all habits. */
+    fun observeStats(today: LocalDate): Flow<List<HabitStats>> =
+        combine(
+            habitDao.observeAll(),
+            habitLogDao.observeAllBetween(today.minusDays(HABIT_LOOKBACK_DAYS - 1), today)
+        ) { habits, logs ->
+            val byHabit = logs.groupBy { it.habitId }
+            habits.map { HabitStatsCalculator.compute(it, byHabit[it.id].orEmpty(), today) }
         }
 
-    /** Every habit with its last-7-days done/not-done strip, live. */
-    fun observeHabitList(today: LocalDate): Flow<List<HabitListItem>> =
-        habitDao.observeAll().flatMapLatest { habits ->
-            if (habits.isEmpty()) {
-                flowOf(emptyList<HabitListItem>())
-            } else {
-                val weekStart = today.minusDays(6)
-                combine(
-                    habits.map { habit ->
-                        habitLogDao.observeByHabitBetween(habit.id, weekStart, today).map { logs ->
-                            val doneDates = logs.filter { it.isDone }.map { it.date }.toSet()
-                            val last7 = (0..6).map { offset -> weekStart.plusDays(offset.toLong()) in doneDates }
-                            HabitListItem(habit, last7)
-                        }
-                    }
-                ) { it.toList() }
-            }
-        }
-
-    /** The 12-week completion history for the habit with the longest current streak, live. */
-    fun observeTopStreakChart(today: LocalDate): Flow<WeeklyStreakChart?> =
-        habitDao.observeAll().flatMapLatest { habits ->
-            val top = habits.maxByOrNull { it.streakCount }
-            if (top == null) {
-                flowOf<WeeklyStreakChart?>(null)
-            } else {
-                val historyStart = today.minusDays(STREAK_HISTORY_WEEKS * 7 - 1)
-                habitLogDao.observeByHabitBetween(top.id, historyStart, today).map { logs ->
-                    val doneDates = logs.filter { it.isDone }.map { it.date }.toSet()
-                    val weeks = (0 until STREAK_HISTORY_WEEKS.toInt()).map { weekIndex ->
-                        val weekStart = historyStart.plusDays(weekIndex * 7L)
-                        val doneInWeek = (0..6).count { dayOffset -> weekStart.plusDays(dayOffset.toLong()) in doneDates }
-                        doneInWeek / 7f
-                    }
-                    WeeklyStreakChart(top.name, top.streakCount, weeks)
-                }
-            }
-        }
-
-    /** This-week completion percentage across all habits (Monday through today), live. */
-    fun observeWeekCompletionPercent(today: LocalDate): Flow<Int> =
-        habitDao.observeAll().flatMapLatest { habits ->
-            if (habits.isEmpty()) {
-                flowOf(0)
-            } else {
-                val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-                val daysElapsed = ChronoUnit.DAYS.between(monday, today) + 1
-                combine(habits.map { habit -> habitLogDao.observeDoneCountBetween(habit.id, monday, today) }) { counts ->
-                    val possible = habits.size * daysElapsed
-                    if (possible == 0L) 0 else ((counts.sum() * 100.0) / possible).roundToInt()
-                }
-            }
-        }
-
-    suspend fun addHabit(name: String, icon: String, dailyTarget: Int) {
-        habitDao.insert(Habit(name = name, icon = icon, dailyTarget = dailyTarget))
+    suspend fun addHabit(name: String, icon: String, dailyTarget: Int, activeDays: Int) {
+        habitDao.insert(Habit(name = name, icon = icon, dailyTarget = dailyTarget, activeDays = activeDays))
     }
 
-    /** Flips today's log for [habit] and recomputes its consecutive-day streak. */
-    suspend fun toggleToday(habit: Habit, today: LocalDate) {
-        val existing = habitLogDao.findForDate(habit.id, today)
-        val nowDone = existing?.isDone != true
+    suspend fun updateHabit(habit: Habit) {
+        habitDao.update(habit)
+        // Target changed → re-derive isDone for existing logs so plain done/not-done queries stay right.
+        habitLogDao.syncDoneFlags(habit.id, habit.dailyTarget.coerceAtLeast(1))
+    }
+
+    suspend fun deleteHabit(habit: Habit) = habitDao.delete(habit)
+
+    suspend fun setCount(habit: Habit, date: LocalDate, count: Int) {
+        val clamped = count.coerceIn(0, MAX_DAILY_COUNT)
+        val existing = habitLogDao.findForDate(habit.id, date)
         habitLogDao.upsert(
-            HabitLog(id = existing?.id ?: 0, habitId = habit.id, date = today, isDone = nowDone)
+            HabitLog(
+                id = existing?.id ?: 0,
+                habitId = habit.id,
+                date = date,
+                isDone = clamped >= habit.dailyTarget.coerceAtLeast(1),
+                count = clamped
+            )
         )
-        habitDao.setStreak(habit.id, computeStreak(habit.id, today))
     }
 
-    private suspend fun computeStreak(habitId: Long, from: LocalDate): Int {
-        var count = 0
-        var day = from
-        while (count < STREAK_SAFETY_CAP) {
-            val log = habitLogDao.findForDate(habitId, day)
-            if (log?.isDone == true) {
-                count++
-                day = day.minusDays(1)
-            } else {
-                break
+    /** One tap on the quick control: +1 toward the target, and back to 0 once it's reached. */
+    suspend fun tapToday(stats: HabitStats, today: LocalDate) {
+        setCount(stats.habit, today, if (stats.isDoneToday) 0 else stats.todayCount + 1)
+    }
+
+    /** Past-day correction from the history grid: a day is either fully done or cleared. */
+    suspend fun toggleDay(habit: Habit, date: LocalDate, currentlyDone: Boolean) {
+        setCount(habit, date, if (currentlyDone) 0 else habit.dailyTarget.coerceAtLeast(1))
+    }
+
+    companion object {
+        const val MAX_DAILY_COUNT = 99
+    }
+}
+
+/** This week's (Monday → today) done share of scheduled habit-days, or null when nothing was due yet. */
+fun weekCompletionPercent(stats: List<HabitStats>, today: LocalDate): Int? {
+    val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    var due = 0
+    var done = 0
+    stats.forEach { habit ->
+        habit.history.filter { !it.date.isBefore(monday) && !it.date.isAfter(today) }.forEach { day ->
+            when (day.state) {
+                HabitDayState.DONE -> { done++; due++ }
+                HabitDayState.MISSED, HabitDayState.PARTIAL -> if (day.date != today) due++
+                else -> Unit
             }
         }
-        return count
     }
+    return if (due == 0) null else ((done * 100.0) / due).roundToInt().coerceAtMost(100)
 }

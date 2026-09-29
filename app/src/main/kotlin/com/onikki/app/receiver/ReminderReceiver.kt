@@ -82,7 +82,7 @@ class ReminderReceiver : BroadcastReceiver() {
             ReminderType.HABITS -> {
                 val habits = db.habitDao().observeAll().first()
                 val doneIds = db.habitLogDao().observeByDate(today).first().filter { it.isDone }.map { it.habitId }.toSet()
-                val pendingHabits = habits.filter { it.id !in doneIds }
+                val pendingHabits = habits.filter { it.isActiveOn(today) && it.id !in doneIds }
                 if (pendingHabits.isEmpty()) return
                 ReminderNotifier.show(
                     context, key, ReminderChannel.HABITS,

@@ -10,8 +10,8 @@ import com.onikki.app.data.db.entity.Task
 import com.onikki.app.data.db.entity.TransactionType
 import com.onikki.app.data.local.CityLocation
 import com.onikki.app.data.local.LocationStore
-import com.onikki.app.data.repository.HabitProgress
 import com.onikki.app.data.repository.HabitRepository
+import com.onikki.app.domain.habits.HabitStats
 import com.onikki.app.domain.prayer.PrayerTimeCalculator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -30,7 +30,7 @@ data class HomeUiState(
     val tasks: List<Task> = emptyList(),
     val completedCount: Int = 0,
     val totalCount: Int = 0,
-    val habits: List<HabitProgress> = emptyList(),
+    val habits: List<HabitStats> = emptyList(),
     val balance: Long = 0,
     val income: Long = 0,
     val expense: Long = 0,
@@ -41,7 +41,7 @@ data class HomeUiState(
 
 private data class MoneyAndPlanSnapshot(
     val tasks: List<Task>,
-    val habits: List<HabitProgress>,
+    val habits: List<HabitStats>,
     val balance: Long,
     val income: Long,
     val expense: Long
@@ -78,7 +78,7 @@ class HomeViewModel(
 
     private fun dataSnapshotFlow(): Flow<MoneyAndPlanSnapshot> = combine(
         taskDao.observeByDate(today),
-        habitRepository.observeProgress(today),
+        habitRepository.observeStats(today),
         transactionDao.observeBalance(),
         transactionDao.observeTotalByType(TransactionType.KIRIM),
         transactionDao.observeTotalByType(TransactionType.CHIQIM)
@@ -97,8 +97,8 @@ class HomeViewModel(
         viewModelScope.launch { taskDao.setCompleted(task.id, !task.isCompleted) }
     }
 
-    fun toggleHabitToday(progress: HabitProgress) {
-        viewModelScope.launch { habitRepository.toggleToday(progress.habit, today) }
+    fun toggleHabitToday(stats: HabitStats) {
+        viewModelScope.launch { habitRepository.tapToday(stats, today) }
     }
 
     private fun nextPrayer(city: CityLocation): Triple<String, LocalTime, Long> {

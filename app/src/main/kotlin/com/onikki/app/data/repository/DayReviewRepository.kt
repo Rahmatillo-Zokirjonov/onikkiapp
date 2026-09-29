@@ -70,9 +70,10 @@ class DayReviewRepository(
         val totalTasks = taskDao.observeTotalCount(today).first()
         val completedTasks = taskDao.observeCompletedCount(today).first()
 
-        val habits = habitRepository.observeHabitList(today).first()
-        val totalHabits = habits.size
-        val completedHabits = habits.count { it.last7Days.lastOrNull() == true }
+        // Only habits scheduled today count toward the day; one done on an off-day is a bonus.
+        val habits = habitRepository.observeStats(today).first()
+        val totalHabits = habits.count { it.isActiveToday }
+        val completedHabits = habits.count { it.isActiveToday && it.isDoneToday }
 
         val monthStart = today.withDayOfMonth(1)
         val budgets = financeRepository.observeBudgetProgress(monthStart, today).first()

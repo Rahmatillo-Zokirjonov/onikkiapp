@@ -5,6 +5,8 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.onikki.app.data.db.dao.AppLimitDao
 import com.onikki.app.data.db.dao.AppUsageDao
 import com.onikki.app.data.db.dao.CategoryBudgetDao
@@ -34,7 +36,7 @@ import com.onikki.app.data.db.entity.Transaction
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -57,8 +59,25 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
+                    .addMigrations(MIGRATION_1_2)
                     .build()
                     .also { INSTANCE = it }
             }
+    }
+}
+
+/**
+ * v2: habits get weekday scheduling, logs get a per-day count (for "8 stakan" style targets).
+ * Existing "done" logs are backfilled to the habit's full target so they stay done.
+ */
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE habits ADD COLUMN activeDays INTEGER NOT NULL DEFAULT 127")
+        db.execSQL("ALTER TABLE habits ADD COLUMN createdAt TEXT")
+        db.execSQL("ALTER TABLE habit_logs ADD COLUMN count INTEGER NOT NULL DEFAULT 0")
+        db.execSQL(
+            "UPDATE habit_logs SET count = " +
+                "(SELECT MAX(dailyTarget, 1) FROM habits WHERE habits.id = habit_logs.habitId) WHERE isDone = 1"
+        )
     }
 }
