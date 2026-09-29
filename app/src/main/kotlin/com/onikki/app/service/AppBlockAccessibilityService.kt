@@ -4,7 +4,9 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.accessibility.AccessibilityEvent
 import com.onikki.app.OnIkkiApplication
+import com.onikki.app.data.repository.AppGate
 import com.onikki.app.data.repository.ScreenTimeRepository
+import com.onikki.app.domain.screentime.ZoneLocationTracker
 import com.onikki.app.ui.blocked.BlockedScreenActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,8 +18,8 @@ private const val RELAUNCH_DEBOUNCE_MS = 2_000L
 
 /**
  * Detects the foreground app (TYPE_WINDOW_STATE_CHANGED) and launches
- * [BlockedScreenActivity] on top of it when [ScreenTimeRepository.resolveBlockReason]
- * says it should be blocked (TZ 3.6). Requires the user to enable this service by
+ * [BlockedScreenActivity] on top of it when [ScreenTimeRepository.resolveGate]
+ * says it's blocked or needs the unlock challenge (TZ 3.6). Requires the user to enable this service by
  * hand in Settings > Accessibility — there is no runtime permission dialog for it.
  *
  * NOT exercised on a real device in this session (no Android toolchain available
@@ -39,8 +41,11 @@ class AppBlockAccessibilityService : AccessibilityService() {
             context = applicationContext,
             appUsageDao = app.database.appUsageDao(),
             appLimitDao = app.database.appLimitDao(),
-            dailyReviewDao = app.database.dailyReviewDao()
+            dailyReviewDao = app.database.dailyReviewDao(),
+            blockZoneDao = app.database.blockZoneDao()
         )
+        // Place-based blocks need a recent location; the service is the one thing always running.
+        ZoneLocationTracker.start(applicationContext)
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
@@ -54,7 +59,8 @@ class AppBlockAccessibilityService : AccessibilityService() {
         if (packageName == applicationContext.packageName) return
 
         serviceScope.launch {
-            val reason = repository.resolveBlockReason(packageName, LocalDateTime.now()) ?: return@launch
+            val gate = repository.resolveGate(packageName, LocalDateTime.now())
+            if (gate == AppGate.Allowed) return@launch
             val now = System.currentTimeMillis()
             val recentlyLaunchedSamePackage =
                 packageName == lastLaunchedPackage && (now - lastLaunchedAtMillis) < RELAUNCH_DEBOUNCE_MS
@@ -62,8 +68,13 @@ class AppBlockAccessibilityService : AccessibilityService() {
 
             lastLaunchedPackage = packageName
             lastLaunchedAtMillis = now
-            startActivity(BlockedScreenActivity.createIntent(applicationContext, packageName, reason))
+            startActivity(BlockedScreenActivity.createIntent(applicationContext, packageName, gate))
         }
+    }
+
+    override fun onDestroy() {
+        ZoneLocationTracker.stop(applicationContext)
+        super.onDestroy()
     }
 
     override fun onInterrupt() {

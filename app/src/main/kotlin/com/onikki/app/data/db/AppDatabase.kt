@@ -10,6 +10,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.onikki.app.data.db.dao.AccountDao
 import com.onikki.app.data.db.dao.AppLimitDao
 import com.onikki.app.data.db.dao.AppUsageDao
+import com.onikki.app.data.db.dao.BlockZoneDao
+import com.onikki.app.data.db.dao.VocabWordDao
 import com.onikki.app.data.db.dao.CategoryBudgetDao
 import com.onikki.app.data.db.dao.DailyReviewDao
 import com.onikki.app.data.db.dao.DebtDao
@@ -23,6 +25,8 @@ import com.onikki.app.data.db.dao.TransactionDao
 import com.onikki.app.data.db.entity.Account
 import com.onikki.app.data.db.entity.AppLimit
 import com.onikki.app.data.db.entity.AppUsage
+import com.onikki.app.data.db.entity.BlockZone
+import com.onikki.app.data.db.entity.VocabWord
 import com.onikki.app.data.db.entity.CategoryBudget
 import com.onikki.app.data.db.entity.DailyReview
 import com.onikki.app.data.db.entity.Debt
@@ -38,9 +42,10 @@ import com.onikki.app.data.db.entity.Transaction
     entities = [
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
-        AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class
+        AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
+        BlockZone::class, VocabWord::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -58,6 +63,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun accountDao(): AccountDao
     abstract fun plannedExpenseDao(): PlannedExpenseDao
+    abstract fun blockZoneDao(): BlockZoneDao
+    abstract fun vocabWordDao(): VocabWordDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -65,7 +72,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -128,6 +135,34 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
                 "`title` TEXT NOT NULL, `amount` INTEGER NOT NULL, `category` TEXT NOT NULL, `accountId` INTEGER, " +
                 "`dueDate` TEXT NOT NULL, `repeat` TEXT NOT NULL, `remindEnabled` INTEGER NOT NULL, " +
                 "`remindDaysBefore` INTEGER NOT NULL, `remindTime` TEXT NOT NULL, `paidDate` TEXT)"
+        )
+    }
+}
+
+/**
+ * v5 (Ilovalar nazorati): custom block windows, place-based blocks, strict mode, the word/text unlock
+ * challenge, and the English–Uzbek word list. The old fixed "WORK_HOURS" rule becomes a 09:00–18:00 window.
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE app_limits ADD COLUMN appName TEXT")
+        db.execSQL("ALTER TABLE app_limits ADD COLUMN scheduleStart TEXT")
+        db.execSQL("ALTER TABLE app_limits ADD COLUMN scheduleEnd TEXT")
+        db.execSQL("ALTER TABLE app_limits ADD COLUMN scheduleDays INTEGER NOT NULL DEFAULT 127")
+        db.execSQL("ALTER TABLE app_limits ADD COLUMN zoneIds TEXT")
+        db.execSQL("ALTER TABLE app_limits ADD COLUMN strictMode INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE app_limits ADD COLUMN challengeOnOpen INTEGER NOT NULL DEFAULT 0")
+        db.execSQL(
+            "UPDATE app_limits SET scheduleStart = '09:00', scheduleEnd = '18:00' WHERE blockedHours LIKE '%WORK_HOURS%'"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `block_zones` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `radiusMeters` INTEGER NOT NULL)"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `vocab_words` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`english` TEXT NOT NULL, `uzbek` TEXT NOT NULL, `correctCount` INTEGER NOT NULL, " +
+                "`wrongCount` INTEGER NOT NULL, `lastAskedAt` INTEGER NOT NULL)"
         )
     }
 }

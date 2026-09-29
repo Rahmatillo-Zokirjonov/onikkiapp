@@ -44,7 +44,7 @@ import com.onikki.app.ui.theme.muted
 import com.onikki.app.ui.util.OnResumeEffect
 
 @Composable
-fun SettingsRoute(onBack: () -> Unit = {}) {
+fun SettingsRoute(onBack: () -> Unit = {}, onOpenAppControl: () -> Unit = {}, onOpenVocabulary: () -> Unit = {}) {
     val context = LocalContext.current
     val app = context.applicationContext as OnIkkiApplication
     val locationStore = remember { LocationStore(app) }
@@ -60,6 +60,8 @@ fun SettingsRoute(onBack: () -> Unit = {}) {
     SettingsScreen(
         state = state,
         onBack = onBack,
+        onOpenAppControl = onOpenAppControl,
+        onOpenVocabulary = onOpenVocabulary,
         onOpenCityPicker = viewModel::openCityPicker,
         onDismissCityPicker = viewModel::dismissCityPicker,
         onSelectCity = viewModel::selectCity,
@@ -90,6 +92,8 @@ fun SettingsRoute(onBack: () -> Unit = {}) {
 fun SettingsScreen(
     state: SettingsUiState,
     onBack: () -> Unit,
+    onOpenAppControl: () -> Unit,
+    onOpenVocabulary: () -> Unit,
     onOpenCityPicker: () -> Unit,
     onDismissCityPicker: () -> Unit,
     onSelectCity: (com.onikki.app.data.local.CityLocation) -> Unit,
@@ -161,6 +165,32 @@ fun SettingsScreen(
             onUpdate = onUpdateReminders,
             onOpenExactAlarmSettings = onOpenExactAlarmSettings
         )
+
+        SectionLabel("Ilovalar nazorati")
+        OnIkkiRowCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenAppControl)) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Bloklash qoidalari", color = colors.text, fontSize = 15.sp, fontFamily = OnIkkiFontFamily)
+                Text(
+                    text = "Limit, vaqt, hudud, qat'iy rejim",
+                    color = colors.text.muted(0.5f),
+                    fontSize = 11.sp,
+                    fontFamily = OnIkkiFontFamily
+                )
+            }
+            Text(text = "→", color = colors.text.muted(0.5f), fontFamily = OnIkkiFontFamily)
+        }
+        OnIkkiRowCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenVocabulary)) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "So'z yodlash", color = colors.text, fontSize = 15.sp, fontFamily = OnIkkiFontFamily)
+                Text(
+                    text = "So'zlar, soni, ochiq turish vaqti, yoqish/o'chirish",
+                    color = colors.text.muted(0.5f),
+                    fontSize = 11.sp,
+                    fontFamily = OnIkkiFontFamily
+                )
+            }
+            Text(text = "→", color = colors.text.muted(0.5f), fontFamily = OnIkkiFontFamily)
+        }
 
         SectionLabel("Ruxsatlar holati")
         PermissionStatusCard(

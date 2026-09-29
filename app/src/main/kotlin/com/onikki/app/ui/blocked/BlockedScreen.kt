@@ -3,7 +3,6 @@ package com.onikki.app.ui.blocked
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,11 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -33,38 +27,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.onikki.app.data.repository.BlockReason
 import com.onikki.app.ui.components.OnIkkiButton
+import com.onikki.app.ui.components.OnIkkiButtonVariant
 import com.onikki.app.ui.components.OnIkkiCard
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
 import com.onikki.app.ui.theme.OnIkkiShapes
 import com.onikki.app.ui.theme.OnIkkiType
 import com.onikki.app.ui.theme.muted
-import kotlinx.coroutines.delay
-
-private const val WAIT_SECONDS = 15
 
 @Composable
 fun BlockedScreen(
     appName: String,
     reason: BlockReason,
+    strict: Boolean,
+    canChallenge: Boolean,
     onClose: () -> Unit,
-    onEmergencyUnlock: () -> Unit
+    onStartChallenge: () -> Unit
 ) {
     BackHandler(onBack = onClose)
     val colors = LocalOnIkkiColors.current
-    var waiting by remember { mutableStateOf(false) }
-    var secondsLeft by remember { mutableStateOf(WAIT_SECONDS) }
-
-    LaunchedEffect(waiting) {
-        if (waiting) {
-            while (secondsLeft > 0) {
-                delay(1_000)
-                secondsLeft--
-            }
-            onEmergencyUnlock()
-        }
-    }
-
     val (kicker, title, message) = blockReasonCopy(appName, reason)
 
     Box(
@@ -119,29 +100,22 @@ fun BlockedScreen(
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 13.dp)
             )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 14.dp)
-                    .clickable(enabled = !waiting) { waiting = true },
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (waiting) "$secondsLeft soniya qoldi…" else "15 soniya kutib ochish",
-                    color = colors.text.muted(0.7f),
+            when {
+                strict -> Text(
+                    text = "Qat'iy blok — bu vaqtda ochib bo'lmaydi",
+                    color = colors.text.muted(0.5f),
                     fontSize = 12.sp,
-                    fontFamily = OnIkkiFontFamily
+                    fontFamily = OnIkkiFontFamily,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 14.dp)
+                )
+                canChallenge -> OnIkkiButton(
+                    text = "So'z yodlab ochish",
+                    onClick = onStartChallenge,
+                    variant = OnIkkiButtonVariant.SECONDARY,
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
                 )
             }
-            Text(
-                text = "favqulodda holat uchun",
-                color = colors.text.muted(0.4f),
-                fontSize = 10.sp,
-                fontFamily = OnIkkiFontFamily,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-            )
         }
     }
 }
@@ -197,10 +171,15 @@ private fun blockReasonCopy(appName: String, reason: BlockReason): Triple<String
         "Bugungi limit tugadi",
         "$appName uchun bugungi limit ishlatildi."
     )
-    BlockReason.WorkHours -> Triple(
-        "Ish vaqti",
-        "Hozir ish/o'quv vaqti",
-        "$appName ish yoki o'quv soatlarida bloklangan."
+    is BlockReason.Schedule -> Triple(
+        "Bloklangan vaqt",
+        "${hhmm(reason.start)} – ${hhmm(reason.end)} oralig'ida yopiq",
+        "$appName siz belgilagan vaqtda ishlamaydi."
+    )
+    is BlockReason.Zone -> Triple(
+        "Bloklangan hudud",
+        "Siz hozir: ${reason.zoneName}",
+        "$appName bu hududda ishlamaydi."
     )
     is BlockReason.PrayerTime -> Triple(
         "Namoz vaqti",
@@ -208,3 +187,5 @@ private fun blockReasonCopy(appName: String, reason: BlockReason): Triple<String
         "$appName namoz vaqtidan oldingi tinch oynada bloklangan."
     )
 }
+
+private fun hhmm(time: java.time.LocalTime) = "%02d:%02d".format(time.hour, time.minute)

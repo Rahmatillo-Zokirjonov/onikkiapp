@@ -1,25 +1,32 @@
 package com.onikki.app.data.repository
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import com.onikki.app.data.db.dao.AppLimitDao
 import com.onikki.app.data.db.dao.AppUsageDao
+import com.onikki.app.data.db.dao.BlockZoneDao
 import com.onikki.app.data.db.dao.DailyReviewDao
 import com.onikki.app.data.db.entity.AppLimit
 import com.onikki.app.data.db.entity.AppUsage
+import com.onikki.app.data.db.entity.BlockZone
+import com.onikki.app.data.local.ChallengeSettingsStore
 import com.onikki.app.data.local.LocationStore
 import com.onikki.app.domain.prayer.PrayerTimeCalculator
 import com.onikki.app.domain.screentime.UsageStatsProvider
+import com.onikki.app.domain.screentime.ZoneLocationTracker
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.LocalTime
 import kotlin.math.roundToInt
 
-/** Schedule-based blocking rules a user can attach to an app limit (TZ 3.6). */
+/**
+ * Extra rule flags stored in AppLimit.blockedHours. WORK_HOURS is legacy (schema ≤4): the v5 migration
+ * turned it into a real 09:00–18:00 window, and it is no longer offered or evaluated.
+ */
 enum class BlockRuleFlag { WORK_HOURS, PRAYER_TIMES, UNTIL_DAY_REVIEW }
 
 fun parseBlockRules(raw: String?): Set<BlockRuleFlag> =
@@ -46,16 +53,19 @@ data class ScreenTimeOverview(
     val hasUsageAccess: Boolean
 )
 
-private val WORK_START: LocalTime = LocalTime.of(9, 0)
-private val WORK_END: LocalTime = LocalTime.of(18, 0)
 private const val PRAYER_BUFFER_MINUTES = 20L
+
+/** A launchable app on the phone, for the "add any app" picker. */
+data class InstalledApp(val packageName: String, val label: String)
 
 class ScreenTimeRepository(
     private val context: Context,
     private val appUsageDao: AppUsageDao,
     private val appLimitDao: AppLimitDao,
     private val dailyReviewDao: DailyReviewDao,
-    private val locationStore: LocationStore = LocationStore(context)
+    private val blockZoneDao: BlockZoneDao,
+    private val locationStore: LocationStore = LocationStore(context),
+    private val challengeStore: ChallengeSettingsStore = ChallengeSettingsStore(context)
 ) {
     private val usageStatsProvider = UsageStatsProvider(context)
 
@@ -114,47 +124,70 @@ class ScreenTimeRepository(
         }
     }
 
-    suspend fun setHarmful(packageName: String, isHarmful: Boolean) {
-        val existing = appLimitDao.findByPackage(packageName)
-        appLimitDao.upsert(
-            existing?.copy(isHarmful = isHarmful)
-                ?: AppLimit(packageName = packageName, dailyLimitMinutes = 30, isHarmful = isHarmful)
-        )
+    fun observeRules(): Flow<List<AppLimit>> = appLimitDao.observeAll()
+
+    fun observeZones(): Flow<List<BlockZone>> = blockZoneDao.observeAll()
+
+    suspend fun findRule(packageName: String): AppLimit? = appLimitDao.findByPackage(packageName)
+
+    suspend fun saveRule(rule: AppLimit) = appLimitDao.upsert(rule)
+
+    suspend fun deleteRule(rule: AppLimit) = appLimitDao.delete(rule)
+
+    suspend fun saveZone(zone: BlockZone) {
+        if (zone.id == 0L) blockZoneDao.insert(zone) else blockZoneDao.update(zone)
     }
 
-    suspend fun saveLimit(packageName: String, dailyLimitMinutes: Int, isHarmful: Boolean, rules: Set<BlockRuleFlag>) {
-        appLimitDao.upsert(
-            AppLimit(
-                packageName = packageName,
-                dailyLimitMinutes = dailyLimitMinutes,
-                isHarmful = isHarmful,
-                blockedHours = encodeBlockRules(rules)
-            )
-        )
+    /** Removes the place and un-links it from every app that used it. */
+    suspend fun deleteZone(zone: BlockZone) {
+        appLimitDao.getAll().filter { zone.id in it.zoneIdList }.forEach { rule ->
+            val remaining = rule.zoneIdList - zone.id
+            appLimitDao.upsert(rule.copy(zoneIds = remaining.takeIf { it.isNotEmpty() }?.joinToString(",")))
+        }
+        blockZoneDao.delete(zone)
     }
+
+    /** Every app with a launcher icon (except On ikki), sorted by name. */
+    fun installedApps(): List<InstalledApp> {
+        val pm = context.packageManager
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return pm.queryIntentActivities(launcher, 0)
+            .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+            .filter { (pkg, _) -> pkg != context.packageName }
+            .distinctBy { it.first }
+            .map { (pkg, label) -> InstalledApp(pkg, label) }
+            .sortedBy { it.label.lowercase() }
+    }
+
+    fun appLabel(packageName: String): String? = runCatching {
+        val pm = context.packageManager
+        pm.getApplicationInfo(packageName, 0).loadLabel(pm).toString()
+    }.getOrNull()
 
     suspend fun isDayReviewedToday(today: LocalDate): Boolean = dailyReviewDao.findByDate(today) != null
 
     fun observeReviewedToday(today: LocalDate): Flow<Boolean> =
         dailyReviewDao.observeByDate(today).map { it != null }
 
-    /**
-     * The single source of truth for "is this app blocked right now", shared by the
-     * accessibility service (real-time enforcement) and the UI (status display).
-     */
-    suspend fun resolveBlockReason(packageName: String, now: LocalDateTime): BlockReason? {
-        if (packageName == context.packageName) return null
-        if (BlockOverrides.isActive(packageName)) return null
-
-        val limit = appLimitDao.findByPackage(packageName) ?: return null
-        val rules = parseBlockRules(limit.blockedHours)
+    /** The first rule that blocks [rule]'s app right now, or null. Order: window, place, prayer, limit. */
+    suspend fun activeBlockReason(rule: AppLimit, now: LocalDateTime): BlockReason? {
+        val flags = parseBlockRules(rule.blockedHours)
         val nowTime = now.toLocalTime()
 
-        if (rules.contains(BlockRuleFlag.WORK_HOURS) && !nowTime.isBefore(WORK_START) && nowTime.isBefore(WORK_END)) {
-            return BlockReason.WorkHours
+        if (rule.isScheduledBlock(now.toLocalDate(), nowTime)) {
+            return BlockReason.Schedule(rule.scheduleStart!!, rule.scheduleEnd!!)
         }
 
-        if (rules.contains(BlockRuleFlag.PRAYER_TIMES)) {
+        val zoneIds = rule.zoneIdList
+        if (zoneIds.isNotEmpty()) {
+            val location = ZoneLocationTracker.currentLocation(context)
+            if (location != null) {
+                val zones = blockZoneDao.getAll().filter { it.id in zoneIds }
+                ZoneLocationTracker.zoneContaining(location, zones)?.let { return BlockReason.Zone(it.name) }
+            }
+        }
+
+        if (flags.contains(BlockRuleFlag.PRAYER_TIMES)) {
             val city = locationStore.city.first()
             val prayerTimes = PrayerTimeCalculator.calculate(now.toLocalDate(), city.latitude, city.longitude, city.utcOffsetHours)
             val hit = prayerTimes.asOrderedList().firstOrNull { (_, time) ->
@@ -163,14 +196,33 @@ class ScreenTimeRepository(
             if (hit != null) return BlockReason.PrayerTime(hit.first)
         }
 
-        if (limit.isHarmful) {
-            val usedMinutes = usageStatsProvider.minutesUsedToday(packageName)
-            if (usedMinutes >= limit.dailyLimitMinutes) {
-                val unlockedByReview = rules.contains(BlockRuleFlag.UNTIL_DAY_REVIEW) && isDayReviewedToday(now.toLocalDate())
+        if (rule.isHarmful) {
+            val usedMinutes = usageStatsProvider.minutesUsedToday(rule.packageName)
+            if (usedMinutes >= rule.dailyLimitMinutes) {
+                val unlockedByReview = flags.contains(BlockRuleFlag.UNTIL_DAY_REVIEW) && isDayReviewedToday(now.toLocalDate())
                 if (!unlockedByReview) return BlockReason.LimitReached
             }
         }
-
         return null
+    }
+
+    /**
+     * The single decision point for "what happens when this app opens", shared by the accessibility
+     * service (enforcement) and the UI (status). A strict block wins over everything — even a grace
+     * period earned by a challenge earlier; otherwise a passed challenge opens the app for a while.
+     */
+    suspend fun resolveGate(packageName: String, now: LocalDateTime): AppGate {
+        if (packageName == context.packageName) return AppGate.Allowed
+        val rule = appLimitDao.findByPackage(packageName) ?: return AppGate.Allowed
+        val reason = activeBlockReason(rule, now)
+        if (reason != null && rule.strictMode) return AppGate.Blocked(reason, strict = true, canChallenge = false)
+        if (BlockOverrides.isActive(packageName)) return AppGate.Allowed
+
+        val challenge = challengeStore.settings.first()
+        if (reason != null) {
+            return AppGate.Blocked(reason, strict = false, canChallenge = challenge.enabled && challenge.unlockBlockedApps)
+        }
+        if (rule.challengeOnOpen && challenge.enabled) return AppGate.ChallengeRequired
+        return AppGate.Allowed
     }
 }

@@ -4,17 +4,25 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.onikki.app.data.db.entity.AppLimit
+import com.onikki.app.data.db.entity.BlockZone
 import com.onikki.app.data.repository.AppUsageRow
-import com.onikki.app.data.repository.BlockRuleFlag
+import com.onikki.app.data.repository.BlockReason
+import com.onikki.app.data.repository.InstalledApp
 import com.onikki.app.data.repository.ScreenTimeRepository
-import com.onikki.app.data.repository.parseBlockRules
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.time.LocalDateTime
+
+/** An app under control, with the reason it's blocked right now (null = open). */
+data class ControlledApp(val rule: AppLimit, val label: String, val minutesToday: Int, val blockedNow: BlockReason?)
 
 data class ScreenTimeUiState(
     val hasUsageAccess: Boolean = true,
@@ -22,41 +30,55 @@ data class ScreenTimeUiState(
     val averageMinutesLast7Days: Int = 0,
     val dailyTotalsLast7Days: List<Int> = List(7) { 0 },
     val apps: List<AppUsageRow> = emptyList(),
-    val blockedApps: List<AppUsageRow> = emptyList(),
-    val reviewedToday: Boolean = false,
-    val editingApp: AppUsageRow? = null
+    val controlled: List<ControlledApp> = emptyList(),
+    val zones: List<BlockZone> = emptyList(),
+    val reviewedToday: Boolean = false
 )
 
 class ScreenTimeViewModel(private val repository: ScreenTimeRepository) : ViewModel() {
 
     private val today: LocalDate = LocalDate.now()
-    private val editingPackage = MutableStateFlow<String?>(null)
+    private val blockedNow = MutableStateFlow<Map<String, BlockReason?>>(emptyMap())
+
+    private val _installedApps = MutableStateFlow<List<InstalledApp>?>(null)
+    /** Loaded on first use of the picker (querying every package isn't free). */
+    val installedApps: StateFlow<List<InstalledApp>?> = _installedApps
 
     init {
         viewModelScope.launch { repository.syncToday() }
+        // Re-evaluate "blocked right now" whenever the rules change.
+        viewModelScope.launch {
+            repository.observeRules().collect { rules ->
+                val now = LocalDateTime.now()
+                blockedNow.value = rules.associate { it.packageName to repository.activeBlockReason(it, now) }
+            }
+        }
     }
 
     val uiState: StateFlow<ScreenTimeUiState> = combine(
         repository.observeOverview(today),
+        repository.observeRules(),
+        repository.observeZones(),
         repository.observeReviewedToday(today),
-        editingPackage
-    ) { overview, reviewed, editing ->
-        val blocked = overview.apps.filter { row ->
-            val limit = row.limit
-            limit != null &&
-                limit.isHarmful &&
-                row.minutesUsed >= limit.dailyLimitMinutes &&
-                !(parseBlockRules(limit.blockedHours).contains(BlockRuleFlag.UNTIL_DAY_REVIEW) && reviewed)
-        }
+        blockedNow
+    ) { overview, rules, zones, reviewed, blocked ->
+        val usage = overview.apps.associateBy { it.packageName }
         ScreenTimeUiState(
             hasUsageAccess = overview.hasUsageAccess,
             totalMinutesToday = overview.totalMinutesToday,
             averageMinutesLast7Days = overview.averageMinutesLast7Days,
             dailyTotalsLast7Days = overview.dailyTotalsLast7Days,
             apps = overview.apps,
-            blockedApps = blocked,
-            reviewedToday = reviewed,
-            editingApp = overview.apps.firstOrNull { it.packageName == editing }
+            controlled = rules.map { rule ->
+                ControlledApp(
+                    rule = rule,
+                    label = usage[rule.packageName]?.appName ?: rule.appName ?: repository.appLabel(rule.packageName) ?: rule.packageName,
+                    minutesToday = usage[rule.packageName]?.minutesUsed ?: 0,
+                    blockedNow = blocked[rule.packageName]
+                )
+            }.sortedBy { it.label.lowercase() },
+            zones = zones,
+            reviewedToday = reviewed
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ScreenTimeUiState())
 
@@ -64,24 +86,37 @@ class ScreenTimeViewModel(private val repository: ScreenTimeRepository) : ViewMo
         viewModelScope.launch { repository.syncToday() }
     }
 
-    fun toggleHarmful(row: AppUsageRow) {
-        viewModelScope.launch { repository.setHarmful(row.packageName, !(row.limit?.isHarmful ?: false)) }
-    }
-
-    fun openLimitEditor(row: AppUsageRow) {
-        editingPackage.value = row.packageName
-    }
-
-    fun dismissLimitEditor() {
-        editingPackage.value = null
-    }
-
-    fun saveLimit(dailyLimitMinutes: Int, isHarmful: Boolean, rules: Set<BlockRuleFlag>) {
-        val packageName = editingPackage.value ?: return
+    fun loadInstalledApps() {
+        if (_installedApps.value != null) return
         viewModelScope.launch {
-            repository.saveLimit(packageName, dailyLimitMinutes, isHarmful, rules)
-            editingPackage.value = null
+            _installedApps.value = withContext(Dispatchers.IO) { repository.installedApps() }
         }
+    }
+
+    fun labelFor(packageName: String): String = repository.appLabel(packageName) ?: packageName
+
+    suspend fun ruleFor(packageName: String): AppLimit? = repository.findRule(packageName)
+
+    fun saveRule(rule: AppLimit, onDone: () -> Unit) {
+        viewModelScope.launch {
+            repository.saveRule(rule)
+            onDone()
+        }
+    }
+
+    fun deleteRule(rule: AppLimit, onDone: () -> Unit) {
+        viewModelScope.launch {
+            repository.deleteRule(rule)
+            onDone()
+        }
+    }
+
+    fun saveZone(zone: BlockZone) {
+        viewModelScope.launch { repository.saveZone(zone) }
+    }
+
+    fun deleteZone(zone: BlockZone) {
+        viewModelScope.launch { repository.deleteZone(zone) }
     }
 
     companion object {

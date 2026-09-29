@@ -18,30 +18,43 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.onikki.app.ui.components.OnIkkiRowCard
 import com.onikki.app.ui.screentime.ScreenTimeRoute
+import com.onikki.app.ui.vocabulary.VocabularyRoute
 import com.onikki.app.ui.settings.SettingsRoute
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
 import com.onikki.app.ui.theme.OnIkkiType
 import com.onikki.app.ui.theme.muted
 
-private enum class ProfileDestination { MENU, APP_CONTROL, SETTINGS }
+private enum class ProfileDestination { MENU, APP_CONTROL, SETTINGS, VOCABULARY }
 
 @Composable
 fun ProfileSectionRoute() {
     var destination by rememberSaveable { mutableStateOf(ProfileDestination.MENU) }
+    // Vocabulary can be opened from the menu, app control or settings — back returns to where it came from.
+    var vocabularyReturn by rememberSaveable { mutableStateOf(ProfileDestination.MENU) }
+    val openVocabulary = { from: ProfileDestination -> vocabularyReturn = from; destination = ProfileDestination.VOCABULARY }
 
     when (destination) {
         ProfileDestination.MENU -> ProfileMenu(
             onOpenAppControl = { destination = ProfileDestination.APP_CONTROL },
+            onOpenVocabulary = { openVocabulary(ProfileDestination.MENU) },
             onOpenSettings = { destination = ProfileDestination.SETTINGS }
         )
-        ProfileDestination.APP_CONTROL -> ScreenTimeRoute()
-        ProfileDestination.SETTINGS -> SettingsRoute(onBack = { destination = ProfileDestination.MENU })
+        ProfileDestination.APP_CONTROL -> ScreenTimeRoute(
+            onBack = { destination = ProfileDestination.MENU },
+            onOpenVocabulary = { openVocabulary(ProfileDestination.APP_CONTROL) }
+        )
+        ProfileDestination.SETTINGS -> SettingsRoute(
+            onBack = { destination = ProfileDestination.MENU },
+            onOpenAppControl = { destination = ProfileDestination.APP_CONTROL },
+            onOpenVocabulary = { openVocabulary(ProfileDestination.SETTINGS) }
+        )
+        ProfileDestination.VOCABULARY -> VocabularyRoute(onBack = { destination = vocabularyReturn })
     }
 }
 
 @Composable
-private fun ProfileMenu(onOpenAppControl: () -> Unit, onOpenSettings: () -> Unit) {
+private fun ProfileMenu(onOpenAppControl: () -> Unit, onOpenVocabulary: () -> Unit, onOpenSettings: () -> Unit) {
     val colors = LocalOnIkkiColors.current
     Column(
         modifier = Modifier
@@ -53,7 +66,8 @@ private fun ProfileMenu(onOpenAppControl: () -> Unit, onOpenSettings: () -> Unit
     ) {
         Text(text = "Profil", color = colors.text, style = OnIkkiType.screenTitle)
 
-        MenuRow(title = "Ilovalar nazorati", subtitle = "Ekran vaqti va limitlar", onClick = onOpenAppControl)
+        MenuRow(title = "Ilovalar nazorati", subtitle = "Limit, vaqt va hudud bo'yicha blok", onClick = onOpenAppControl)
+        MenuRow(title = "So'z yodlash", subtitle = "Inglizcha so'zlar va ilova ochish sharti", onClick = onOpenVocabulary)
         MenuRow(title = "Sozlamalar", subtitle = "Shahar, ruxsatlar, AI kaliti", onClick = onOpenSettings)
     }
 }
