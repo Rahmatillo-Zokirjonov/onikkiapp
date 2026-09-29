@@ -1,5 +1,11 @@
 package com.onikki.app.ui.settings
 
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import com.onikki.app.ui.home.NameSheet
+import com.onikki.app.data.local.ProfileStore
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -127,6 +133,9 @@ fun SettingsScreen(
             )
             Text(text = "Sozlamalar", color = colors.text, style = OnIkkiType.screenTitle)
         }
+
+        SectionLabel("Profil")
+        ProfileNameRow()
 
         SectionLabel("Shahar va til")
         OnIkkiRowCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenCityPicker)) {
@@ -267,4 +276,39 @@ private fun SectionLabel(text: String) {
         fontFamily = OnIkkiFontFamily,
         modifier = Modifier.padding(top = 4.dp)
     )
+}
+
+/** The greeting name — self-contained so Settings' big state class doesn't need to grow for it. */
+@Composable
+private fun ProfileNameRow() {
+    val colors = LocalOnIkkiColors.current
+    val context = LocalContext.current
+    val store = remember { ProfileStore(context.applicationContext) }
+    val name by store.name.collectAsState(initial = "")
+    val scope = rememberCoroutineScope()
+    var editing by remember { mutableStateOf(false) }
+    OnIkkiRowCard(modifier = Modifier.fillMaxWidth().clickable { editing = true }) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = "Ism", color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+            Text(
+                text = name.ifBlank { "Kiritilmagan" },
+                color = if (name.isBlank()) colors.text.muted(0.45f) else colors.text,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                fontFamily = OnIkkiFontFamily,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        Text(text = "O'zgartirish", color = colors.accent, fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+    }
+    if (editing) {
+        NameSheet(
+            current = name,
+            onDismiss = { editing = false },
+            onSave = { newName ->
+                scope.launch { store.setName(newName) }
+                editing = false
+            }
+        )
+    }
 }

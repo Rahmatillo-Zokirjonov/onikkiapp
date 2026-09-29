@@ -1,7 +1,8 @@
 package com.onikki.app.ui.home
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,36 +13,50 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.onikki.app.OnIkkiApplication
+import com.onikki.app.data.db.entity.DailyReview
+import com.onikki.app.data.db.entity.PlannedExpense
 import com.onikki.app.data.db.entity.Task
 import com.onikki.app.data.local.LocationStore
+import com.onikki.app.data.local.ProfileStore
 import com.onikki.app.data.repository.HabitRepository
 import com.onikki.app.domain.habits.HabitStats
 import com.onikki.app.ui.components.CircularProgressRing
+import com.onikki.app.ui.components.OnIkkiButton
+import com.onikki.app.ui.components.OnIkkiButtonVariant
 import com.onikki.app.ui.components.OnIkkiCard
 import com.onikki.app.ui.components.OnIkkiRowCard
+import com.onikki.app.ui.components.OnIkkiSheet
+import com.onikki.app.ui.components.OnIkkiTab
+import com.onikki.app.ui.components.SheetActions
 import com.onikki.app.ui.components.TaskRowCard
+import com.onikki.app.ui.finance.FilledSparkline
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
 import com.onikki.app.ui.theme.OnIkkiType
@@ -49,32 +64,54 @@ import com.onikki.app.ui.theme.muted
 import com.onikki.app.ui.util.formatFullDateUz
 import com.onikki.app.ui.util.formatHmsCountdown
 import com.onikki.app.ui.util.formatSom
-import java.time.LocalDate
+import kotlinx.coroutines.launch
+import java.time.LocalDateTime
+import java.time.LocalTime
+
+private const val HOME_TASK_LIMIT = 5
 
 @Composable
-fun HomeRoute(onNavigateToDayReview: () -> Unit = {}) {
+fun HomeRoute(onNavigateToDayReview: () -> Unit = {}, onNavigateToTab: (OnIkkiTab) -> Unit = {}) {
     val app = LocalContext.current.applicationContext as OnIkkiApplication
     val db = app.database
     val habitRepository = remember { HabitRepository(db.habitDao(), db.habitLogDao()) }
     val locationStore = remember { LocationStore(app) }
-    val viewModel: HomeViewModel = viewModel(
-        factory = HomeViewModel.factory(db.taskDao(), habitRepository, db.transactionDao(), locationStore)
-    )
+    val profileStore = remember { ProfileStore(app) }
+    val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(db, habitRepository, locationStore, profileStore))
     val state by viewModel.uiState.collectAsState()
+    val scope = rememberCoroutineScope()
+    var editingName by rememberSaveable { mutableStateOf(false) }
+
     HomeScreen(
         state = state,
         onToggleTask = viewModel::toggleTask,
-        onToggleHabit = viewModel::toggleHabitToday,
-        onOpenDayReview = onNavigateToDayReview
+        onTapHabit = viewModel::tapHabit,
+        onCompleteMoney = viewModel::completeMoney,
+        onOpenDayReview = onNavigateToDayReview,
+        onOpenTab = onNavigateToTab,
+        onEditName = { editingName = true }
     )
+    if (editingName) {
+        NameSheet(
+            current = state.name,
+            onDismiss = { editingName = false },
+            onSave = { name ->
+                scope.launch { profileStore.setName(name) }
+                editingName = false
+            }
+        )
+    }
 }
 
 @Composable
 fun HomeScreen(
     state: HomeUiState,
     onToggleTask: (Task) -> Unit,
-    onToggleHabit: (HabitStats) -> Unit,
-    onOpenDayReview: () -> Unit = {}
+    onTapHabit: (HabitStats) -> Unit,
+    onCompleteMoney: (PlannedExpense) -> Unit,
+    onOpenDayReview: () -> Unit,
+    onOpenTab: (OnIkkiTab) -> Unit,
+    onEditName: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     Column(
@@ -86,109 +123,64 @@ fun HomeScreen(
             .padding(top = 14.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        GreetingHeader()
-        NextPrayerCard(
-            prayerName = state.nextPrayerName,
-            prayerTime = state.nextPrayerTime,
-            secondsUntil = state.secondsUntilNextPrayer
+        GreetingHeader(name = state.name, now = state.now, onEditName = onEditName)
+        NextPrayerCard(state)
+        AttentionCard(
+            overdueCount = state.overdueCount,
+            moneyDue = state.moneyDue,
+            today = state.now.toLocalDate(),
+            onOpenPlan = { onOpenTab(OnIkkiTab.PLAN) },
+            onCompleteMoney = onCompleteMoney
         )
-        TodayPlanSection(
-            tasks = state.tasks,
-            completedCount = state.completedCount,
-            totalCount = state.totalCount,
-            onToggleTask = onToggleTask
-        )
-        HabitsSection(habits = state.habits, onToggleHabit = onToggleHabit)
-        BalanceCard(balance = state.balance, income = state.income, expense = state.expense)
-        DayReviewEntryRow(onClick = onOpenDayReview)
+        TodayPlanSection(state, onToggleTask = onToggleTask, onOpenPlan = { onOpenTab(OnIkkiTab.PLAN) })
+        HabitsSection(habits = state.habits, onTapHabit = onTapHabit, onOpenAll = { onOpenTab(OnIkkiTab.PLAN) })
+        BalanceCard(state, onClick = { onOpenTab(OnIkkiTab.MONEY) })
+        DayReviewEntryRow(review = state.review, now = state.now, onClick = onOpenDayReview)
     }
 }
 
-@Composable
-private fun DayReviewEntryRow(onClick: () -> Unit) {
-    val colors = LocalOnIkkiColors.current
-    OnIkkiRowCard(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
-    ) {
-        Text(
-            text = "Kun yakuni",
-            color = colors.text,
-            fontSize = 14.sp,
-            fontFamily = OnIkkiFontFamily,
-            modifier = Modifier.weight(1f)
-        )
-        Text(text = "→", color = colors.text.muted(0.5f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
-    }
+// ---------------------------------------------------------------- Salomlashuv
+
+private fun greetingFor(time: LocalTime): String = when (time.hour) {
+    in 4..10 -> "Xayrli tong"
+    in 11..16 -> "Xayrli kun"
+    in 17..22 -> "Xayrli kech"
+    else -> "Assalomu alaykum"
 }
 
 @Composable
-private fun GreetingHeader() {
+private fun GreetingHeader(name: String, now: LocalDateTime, onEditName: () -> Unit) {
     val colors = LocalOnIkkiColors.current
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
-    ) {
-        Column {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Assalomu alaykum",
-                color = colors.text.muted(0.55f),
-                fontSize = 12.sp,
-                fontFamily = OnIkkiFontFamily
+                text = if (name.isBlank()) greetingFor(now.toLocalTime()) else "${greetingFor(now.toLocalTime())}, $name",
+                color = colors.text,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                fontFamily = OnIkkiFontFamily,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = formatFullDateUz(LocalDate.now()),
-                color = colors.text.muted(0.45f),
-                fontSize = 11.sp,
+                text = formatFullDateUz(now.toLocalDate()),
+                color = colors.text.muted(0.5f),
+                fontSize = 12.sp,
                 fontFamily = OnIkkiFontFamily,
-                modifier = Modifier.padding(top = 3.dp)
+                modifier = Modifier.padding(top = 2.dp)
             )
         }
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .background(colors.accent800, CircleShape),
+                .background(colors.accent800, CircleShape)
+                .clickable(onClick = onEditName),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = "O", color = colors.accent100, fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
-        }
-    }
-}
-
-@Composable
-private fun NextPrayerCard(prayerName: String, prayerTime: java.time.LocalTime, secondsUntil: Long) {
-    val colors = LocalOnIkkiColors.current
-    OnIkkiRowCard(
-        modifier = Modifier.fillMaxWidth(),
-        padding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Keyingi namoz",
-                color = colors.accent,
-                style = OnIkkiType.kicker
-            )
-            Text(
-                text = "$prayerName · %02d:%02d".format(prayerTime.hour, prayerTime.minute),
-                color = colors.text,
-                fontSize = 17.sp,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                fontFamily = OnIkkiFontFamily,
-                modifier = Modifier.padding(top = 3.dp)
-            )
-        }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = formatHmsCountdown(secondsUntil.coerceAtLeast(0)),
-                color = colors.text,
-                fontSize = 20.sp,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                fontFamily = OnIkkiFontFamily
-            )
-            Text(
-                text = "qoldi",
-                color = colors.text.muted(0.45f),
-                fontSize = 10.sp,
+                text = name.firstOrNull()?.uppercase() ?: "+",
+                color = colors.accent100,
+                fontSize = 15.sp,
                 fontFamily = OnIkkiFontFamily
             )
         }
@@ -196,157 +188,289 @@ private fun NextPrayerCard(prayerName: String, prayerTime: java.time.LocalTime, 
 }
 
 @Composable
-private fun TodayPlanSection(
-    tasks: List<Task>,
-    completedCount: Int,
-    totalCount: Int,
-    onToggleTask: (Task) -> Unit
-) {
-    val colors = LocalOnIkkiColors.current
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Bottom
-        ) {
-            Text(text = "Bugungi reja", color = colors.text, style = OnIkkiType.sectionHeader)
-            if (totalCount > 0) {
-                Text(
-                    text = "$completedCount/$totalCount bajarildi",
-                    color = colors.accent,
-                    fontSize = 11.sp,
-                    fontFamily = OnIkkiFontFamily
-                )
-            }
-        }
-        Column(
-            modifier = Modifier.padding(top = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            if (tasks.isEmpty()) {
-                Text(
-                    text = "Bugun uchun vazifa yo'q",
-                    color = colors.text.muted(0.5f),
-                    fontSize = 13.sp,
-                    fontFamily = OnIkkiFontFamily
-                )
-            } else {
-                tasks.forEach { task -> TaskRowCard(task = task, onToggle = { onToggleTask(task) }) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HabitsSection(habits: List<HabitStats>, onToggleHabit: (HabitStats) -> Unit) {
-    val colors = LocalOnIkkiColors.current
-    Column {
-        Text(
-            text = "Odatlar",
-            color = colors.text,
-            style = OnIkkiType.sectionHeader,
-            modifier = Modifier.padding(bottom = 8.dp)
+fun NameSheet(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var name by remember { mutableStateOf(current) }
+    OnIkkiSheet(title = "Sizga qanday murojaat qilaylik?", onDismiss = onDismiss) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = { if (it.length <= 30) name = it },
+            label = { Text("Ismingiz") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
         )
-        if (habits.isEmpty()) {
-            Text(
-                text = "Hali odat qo'shilmagan",
-                color = colors.text.muted(0.5f),
-                fontSize = 13.sp,
-                fontFamily = OnIkkiFontFamily
-            )
-        } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(habits, key = { it.habit.id }) { progress ->
-                    HabitRingCard(progress = progress, onClick = { onToggleHabit(progress) })
+        SheetActions(onSave = { onSave(name) }, onDelete = null)
+    }
+}
+
+// ---------------------------------------------------------------- Namoz
+
+/** Next prayer with a live countdown; tap to see all five of today's times. */
+@Composable
+private fun NextPrayerCard(state: HomeUiState) {
+    val colors = LocalOnIkkiColors.current
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    OnIkkiCard(
+        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+        padding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+        gap = 10.dp
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Keyingi namoz", color = colors.accent, style = OnIkkiType.kicker)
+                Text(
+                    text = "${state.nextPrayerName} · %02d:%02d".format(state.nextPrayerTime.hour, state.nextPrayerTime.minute),
+                    color = colors.text,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Medium,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.padding(top = 3.dp)
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = formatHmsCountdown(state.secondsUntilNextPrayer.coerceAtLeast(0)),
+                    color = colors.text,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Medium,
+                    fontFamily = OnIkkiFontFamily
+                )
+                Text(text = "qoldi", color = colors.text.muted(0.45f), fontSize = 10.sp, fontFamily = OnIkkiFontFamily)
+            }
+        }
+        if (expanded && state.prayers.isNotEmpty()) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                state.prayers.forEach { (name, time) ->
+                    val isNext = name == state.nextPrayerName && time == state.nextPrayerTime
+                    val passed = !isNext && time.isBefore(state.now.toLocalTime())
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.alpha(if (passed) 0.45f else 1f)) {
+                        Text(
+                            text = name,
+                            color = if (isNext) colors.accent else colors.text.muted(0.6f),
+                            fontSize = 11.sp,
+                            fontFamily = OnIkkiFontFamily
+                        )
+                        Text(
+                            text = "%02d:%02d".format(time.hour, time.minute),
+                            color = if (isNext) colors.accent else colors.text,
+                            fontSize = 14.sp,
+                            fontWeight = if (isNext) FontWeight.Medium else FontWeight.Normal,
+                            fontFamily = OnIkkiFontFamily
+                        )
+                    }
                 }
             }
         }
     }
 }
 
+// ---------------------------------------------------------------- Diqqat
+
+/** Things that are already late or due right now — only shown when there are some. */
 @Composable
-private fun HabitRingCard(progress: HabitStats, onClick: () -> Unit) {
+private fun AttentionCard(
+    overdueCount: Int,
+    moneyDue: List<PlannedExpense>,
+    today: java.time.LocalDate,
+    onOpenPlan: () -> Unit,
+    onCompleteMoney: (PlannedExpense) -> Unit
+) {
+    if (overdueCount == 0 && moneyDue.isEmpty()) return
     val colors = LocalOnIkkiColors.current
+    OnIkkiCard(modifier = Modifier.fillMaxWidth(), borderColor = colors.warmBorder, gap = 9.dp) {
+        Text(text = "DIQQAT", color = colors.warmAccent, style = OnIkkiType.kicker)
+        if (overdueCount > 0) {
+            Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenPlan), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "$overdueCount ta vazifa o'tgan kunlardan qolgan",
+                    color = colors.text,
+                    fontSize = 14.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(text = "→", color = colors.text.muted(0.5f), fontFamily = OnIkkiFontFamily)
+            }
+        }
+        moneyDue.take(3).forEach { item ->
+            val late = java.time.temporal.ChronoUnit.DAYS.between(item.dueDate, today)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = item.title, color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily, maxLines = 1)
+                    Text(
+                        text = (if (item.isIncome) "+ " else "− ") + formatSom(item.amount) + " so'm" +
+                            if (late > 0) " · $late kun kechikdi" else " · bugun",
+                        color = if (late > 0) colors.warmAccent else colors.text.muted(0.55f),
+                        fontSize = 12.sp,
+                        fontFamily = OnIkkiFontFamily
+                    )
+                }
+                OnIkkiButton(
+                    text = item.doneLabel,
+                    onClick = { onCompleteMoney(item) },
+                    variant = OnIkkiButtonVariant.SECONDARY,
+                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Bugungi reja
+
+@Composable
+private fun SectionTitle(title: String, trailing: String?, onTrailing: (() -> Unit)?) {
+    val colors = LocalOnIkkiColors.current
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+        Text(text = title, color = colors.text, style = OnIkkiType.sectionHeader, modifier = Modifier.weight(1f))
+        if (trailing != null) {
+            Text(
+                text = trailing,
+                color = colors.accent,
+                fontSize = 12.sp,
+                fontFamily = OnIkkiFontFamily,
+                modifier = if (onTrailing != null) Modifier.clickable(onClick = onTrailing).padding(start = 8.dp) else Modifier
+            )
+        }
+    }
+}
+
+@Composable
+private fun TodayPlanSection(state: HomeUiState, onToggleTask: (Task) -> Unit, onOpenPlan: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionTitle(
+            title = "Bugungi reja",
+            trailing = if (state.totalCount > 0) "${state.completedCount}/${state.totalCount} · Hammasi →" else "Reja →",
+            onTrailing = onOpenPlan
+        )
+        if (state.tasks.isEmpty()) {
+            OnIkkiRowCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenPlan)) {
+                Text(
+                    text = "Bugun uchun vazifa yo'q",
+                    color = colors.text.muted(0.55f),
+                    fontSize = 13.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(text = "+ Vazifa", color = colors.accent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+            }
+        } else {
+            state.tasks.take(HOME_TASK_LIMIT).forEach { task ->
+                TaskRowCard(task = task, onToggle = { onToggleTask(task) }, onClick = onOpenPlan)
+            }
+            val hidden = state.tasks.size - HOME_TASK_LIMIT
+            if (hidden > 0) {
+                Text(
+                    text = "yana $hidden ta vazifa",
+                    color = colors.text.muted(0.5f),
+                    fontSize = 12.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.clickable(onClick = onOpenPlan)
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Odatlar
+
+@Composable
+private fun HabitsSection(habits: List<HabitStats>, onTapHabit: (HabitStats) -> Unit, onOpenAll: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val due = habits.count { it.isActiveToday }
+    val done = habits.count { it.isActiveToday && it.isDoneToday }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionTitle(
+            title = "Odatlar",
+            trailing = if (habits.isEmpty()) "Qo'shish →" else "$done/$due · Hammasi →",
+            onTrailing = onOpenAll
+        )
+        if (habits.isEmpty()) {
+            Text(text = "Hali odat qo'shilmagan", color = colors.text.muted(0.5f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+        } else {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(habits, key = { it.habit.id }) { stats -> HabitTodayCard(stats, onClick = { onTapHabit(stats) }) }
+            }
+        }
+    }
+}
+
+/** Today's progress, not a long-term rate: a full ring = done today; "2/3" for counted habits. */
+@Composable
+private fun HabitTodayCard(stats: HabitStats, onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val progress = (stats.todayCount.toFloat() / stats.target).coerceIn(0f, 1f)
     OnIkkiCard(
         modifier = Modifier
-            .size(width = 96.dp, height = 108.dp)
+            .width(96.dp)
+            .alpha(if (stats.isActiveToday || stats.isDoneToday) 1f else 0.5f)
             .clickable(onClick = onClick),
         padding = PaddingValues(vertical = 12.dp, horizontal = 6.dp),
         gap = 6.dp
     ) {
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            CircularProgressRing(
-                progress = progress.completionRate,
-                trackColor = colors.neutral800,
-                progressColor = colors.accent,
-                size = 52.dp
-            ) {
+            CircularProgressRing(progress = progress, trackColor = colors.neutral800, progressColor = colors.accent, size = 52.dp) {
                 Text(
-                    text = "${(progress.completionRate * 100).toInt()}%",
-                    color = colors.text,
-                    fontSize = 13.sp,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                    text = when {
+                        stats.isDoneToday -> "✓"
+                        stats.target > 1 -> "${stats.todayCount}/${stats.target}"
+                        else -> stats.habit.icon
+                    },
+                    color = if (stats.isDoneToday) colors.accent else colors.text,
+                    fontSize = if (stats.isDoneToday) 18.sp else 13.sp,
+                    fontWeight = FontWeight.Medium,
                     fontFamily = OnIkkiFontFamily
                 )
             }
         }
         Text(
-            text = progress.habit.name,
+            text = stats.habit.name,
             color = colors.text,
             fontSize = 11.sp,
             fontFamily = OnIkkiFontFamily,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            textAlign = TextAlign.Center
         )
         Text(
-            text = "${progress.currentStreak} kun",
-            color = colors.warmAccent,
+            text = if (!stats.isActiveToday && !stats.isDoneToday) "bugun dam" else "${stats.currentStreak} kun",
+            color = if (stats.currentStreak > 0 && stats.isActiveToday) colors.warmAccent else colors.text.muted(0.45f),
             fontSize = 10.sp,
             fontFamily = OnIkkiFontFamily,
             modifier = Modifier.fillMaxWidth(),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            textAlign = TextAlign.Center
         )
     }
 }
 
+// ---------------------------------------------------------------- Balans
+
 @Composable
-private fun BalanceCard(balance: Long, income: Long, expense: Long) {
+private fun BalanceCard(state: HomeUiState, onClick: () -> Unit) {
     val colors = LocalOnIkkiColors.current
-    OnIkkiCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
-        ) {
-            Column {
-                Text(
-                    text = "Balans",
-                    color = colors.text.muted(0.55f),
-                    fontSize = 11.sp,
-                    fontFamily = OnIkkiFontFamily
-                )
+    OnIkkiCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Balans", color = colors.text.muted(0.55f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
                 Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 2.dp)) {
-                    Text(text = formatSom(balance), color = colors.text, style = OnIkkiType.amountLarge)
-                    Text(
-                        text = " so'm",
-                        color = colors.text.muted(0.55f),
-                        fontSize = 14.sp,
-                        fontFamily = OnIkkiFontFamily
-                    )
+                    Text(text = formatSom(state.balance), color = colors.text, style = OnIkkiType.amountLarge)
+                    Text(text = " so'm", color = colors.text.muted(0.55f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
                 }
             }
-            Sparkline(color = colors.accent)
+            // The real last-30-days line; hidden while there's no movement to show.
+            if (state.balanceTrend.distinct().size > 1) {
+                FilledSparkline(points = state.balanceTrend, strokeColor = colors.accent, fillColor = colors.accent900)
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             Text(
-                text = "Kirim ${formatSom(income)}",
+                text = "Shu oy: + ${formatSom(state.monthIncome)}",
                 color = colors.text.muted(0.6f),
                 fontSize = 11.sp,
                 fontFamily = OnIkkiFontFamily
             )
             Text(
-                text = "Chiqim ${formatSom(expense)}",
+                text = "− ${formatSom(state.monthExpense)}",
                 color = colors.text.muted(0.6f),
                 fontSize = 11.sp,
                 fontFamily = OnIkkiFontFamily
@@ -355,20 +479,36 @@ private fun BalanceCard(balance: Long, income: Long, expense: Long) {
     }
 }
 
+// ---------------------------------------------------------------- Kun yakuni
+
 @Composable
-private fun Sparkline(color: androidx.compose.ui.graphics.Color) {
-    Canvas(modifier = Modifier.size(width = 96.dp, height = 38.dp)) {
-        val s = size.width / 96f
-        val points = listOf(
-            2f to 30f, 14f to 24f, 26f to 27f, 38f to 16f,
-            50f to 21f, 62f to 12f, 74f to 15f, 86f to 6f
-        )
-        val path = Path().apply {
-            points.forEachIndexed { index, (x, y) ->
-                val offset = Offset(x * s, y * s)
-                if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
-            }
+private fun DayReviewEntryRow(review: DailyReview?, now: LocalDateTime, onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    // Evenings nudge harder: after 18:00 an unfinished review gets the warning border.
+    val nudge = review == null && now.hour >= 18
+    OnIkkiRowCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (nudge) Modifier.border(BorderStroke(1.dp, colors.warmBorder), androidx.compose.foundation.shape.RoundedCornerShape(14.dp)) else Modifier)
+            .clickable(onClick = onClick)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = "Kun yakuni", color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+            Text(
+                text = when {
+                    review != null -> "Bugun yakunlandi · ${review.completedCount}/${review.totalCount} vazifa"
+                    nudge -> "Kunni yakunlash vaqti"
+                    else -> "Kechqurun kunni yakunlang"
+                },
+                color = when {
+                    review != null -> colors.accent
+                    nudge -> colors.warmAccent
+                    else -> colors.text.muted(0.5f)
+                },
+                fontSize = 11.sp,
+                fontFamily = OnIkkiFontFamily
+            )
         }
-        drawPath(path, color = color, style = Stroke(width = 2f * s, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        Text(text = "→", color = colors.text.muted(0.5f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
     }
 }

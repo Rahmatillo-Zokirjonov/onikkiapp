@@ -38,6 +38,16 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
     val activeTab = OnIkkiTab.entries.firstOrNull { it.route() == currentRoute } ?: OnIkkiTab.HOME
     val isTabRoute = currentRoute == null || OnIkkiTab.entries.any { it.route() == currentRoute }
 
+    val navigateToTab: (OnIkkiTab) -> Unit = { tab ->
+        if (tab.route() != currentRoute) {
+            navController.navigate(tab.route()) {
+                popUpTo(OnIkkiTab.HOME.route()) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
     // A reminder asked to open a note → go to the Qaydlar tab; NotesRoute then opens the note itself.
     val requestedNote by NoteDeepLink.requested.collectAsState()
     LaunchedEffect(requestedNote) {
@@ -58,7 +68,10 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
         Box(modifier = Modifier.weight(1f)) {
             NavHost(navController = navController, startDestination = OnIkkiTab.HOME.route()) {
                 composable(OnIkkiTab.HOME.route()) {
-                    HomeRoute(onNavigateToDayReview = { navController.navigate(ROUTE_DAY_REVIEW) })
+                    HomeRoute(
+                        onNavigateToDayReview = { navController.navigate(ROUTE_DAY_REVIEW) },
+                        onNavigateToTab = navigateToTab
+                    )
                 }
                 composable(OnIkkiTab.PLAN.route()) { PlanSectionRoute() }
                 composable(OnIkkiTab.MONEY.route()) { FinanceSectionRoute() }
@@ -70,15 +83,7 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
         if (isTabRoute) {
             OnIkkiBottomNavBar(
                 active = activeTab,
-                onSelect = { tab ->
-                    if (tab.route() != currentRoute) {
-                        navController.navigate(tab.route()) {
-                            popUpTo(OnIkkiTab.HOME.route()) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                }
+                onSelect = navigateToTab
             )
         }
     }

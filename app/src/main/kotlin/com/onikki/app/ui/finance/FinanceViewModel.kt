@@ -22,6 +22,7 @@ import com.onikki.app.data.repository.CategorySlice
 import com.onikki.app.data.repository.FinanceRepository
 import com.onikki.app.data.repository.AccountBalance
 import com.onikki.app.data.repository.toWallet
+import com.onikki.app.data.repository.dailyBalanceTrend
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -104,24 +105,6 @@ private fun sortDebts(debts: List<Debt>): List<Debt> =
             .thenBy { it.dueDate }
     )
 
-private const val TREND_DAYS = 30
-
-/** Walks back from today's balance, undoing each day's net change to get each day's closing balance. */
-private fun balanceTrend(transactions: List<Transaction>, currentBalance: Long, today: LocalDate): List<Long> {
-    if (transactions.isEmpty()) return emptyList()
-    val netByDay = transactions.groupBy { it.date }.mapValues { (_, day) ->
-        day.sumOf { if (it.type == TransactionType.KIRIM) it.amount else -it.amount }
-    }
-    val futureNet = netByDay.filterKeys { it.isAfter(today) }.values.sum()
-    var running = currentBalance - futureNet
-    val points = ArrayList<Long>(TREND_DAYS)
-    for (daysAgo in 0 until TREND_DAYS) {
-        points.add(running)
-        running -= netByDay[today.minusDays(daysAgo.toLong())] ?: 0L
-    }
-    return points.reversed()
-}
-
 private data class Overview(
     val period: MoneyPeriod,
     val slices: List<CategorySlice>,
@@ -181,7 +164,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
             period = overview.period,
             balance = overview.accounts.sumOf { it.balance },
             accounts = overview.accounts,
-            balanceTrend = balanceTrend(lists.transactions, overview.accounts.sumOf { it.balance }, today),
+            balanceTrend = dailyBalanceTrend(lists.transactions, overview.accounts.sumOf { it.balance }, today),
             expenseTotal = overview.slices.sumOf { it.amount },
             expenseSlices = overview.slices,
             budgets = overview.budgets,

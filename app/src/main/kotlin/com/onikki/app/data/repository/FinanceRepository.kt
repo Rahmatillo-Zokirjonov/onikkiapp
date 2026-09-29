@@ -196,3 +196,21 @@ suspend fun payPlanned(
 }
 
 fun AccountKind.toWallet(): Wallet = if (this == AccountKind.NAQD) Wallet.NAQD else Wallet.KARTA
+
+const val BALANCE_TREND_DAYS = 30
+
+/** Walks back from today's balance, undoing each day's net change to get each day's closing balance. */
+fun dailyBalanceTrend(transactions: List<Transaction>, currentBalance: Long, today: LocalDate): List<Long> {
+    if (transactions.isEmpty()) return emptyList()
+    val netByDay = transactions.groupBy { it.date }.mapValues { (_, day) ->
+        day.sumOf { if (it.type == TransactionType.KIRIM) it.amount else -it.amount }
+    }
+    val futureNet = netByDay.filterKeys { it.isAfter(today) }.values.sum()
+    var running = currentBalance - futureNet
+    val points = ArrayList<Long>(BALANCE_TREND_DAYS)
+    for (daysAgo in 0 until BALANCE_TREND_DAYS) {
+        points.add(running)
+        running -= netByDay[today.minusDays(daysAgo.toLong())] ?: 0L
+    }
+    return points.reversed()
+}

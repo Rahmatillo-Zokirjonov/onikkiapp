@@ -35,6 +35,12 @@ interface TransactionDao {
     @Query("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = :type")
     fun observeTotalByType(type: TransactionType): Flow<Long>
 
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = :type AND date BETWEEN :from AND :to")
+    fun observeTotalByTypeBetween(type: TransactionType, from: LocalDate, to: LocalDate): Flow<Long>
+
+    @Query("SELECT * FROM transactions WHERE date >= :from")
+    fun observeSince(from: LocalDate): Flow<List<Transaction>>
+
     @Query(
         "SELECT category, SUM(amount) as total FROM transactions " +
             "WHERE type = 'CHIQIM' AND date BETWEEN :from AND :to " +

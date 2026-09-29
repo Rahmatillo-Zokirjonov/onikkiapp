@@ -240,7 +240,7 @@ private fun MiniStat(label: String, amount: Long, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun FilledSparkline(points: List<Long>, strokeColor: Color, fillColor: Color) {
+fun FilledSparkline(points: List<Long>, strokeColor: Color, fillColor: Color) {
     Canvas(modifier = Modifier.size(width = 92.dp, height = 40.dp)) {
         val stroke = 2.dp.toPx()
         val min = points.min()
