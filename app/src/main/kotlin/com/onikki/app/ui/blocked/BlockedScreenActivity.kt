@@ -82,6 +82,20 @@ class BlockedScreenActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Re-shown for the same app (it came back on top) → keep the screen as is, so a half-done challenge
+     * isn't reset. A different app or a different verdict → rebuild for the new one.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val samePackage = intent.getStringExtra(EXTRA_PACKAGE) == this.intent.getStringExtra(EXTRA_PACKAGE)
+        val sameGate = intent.readGate() == this.intent.readGate()
+        if (!samePackage || !sameGate) {
+            setIntent(intent)
+            recreate()
+        }
+    }
+
     private suspend fun loadChallenge(app: OnIkkiApplication, store: ChallengeSettingsStore): ChallengeSpec {
         val settings = store.settings.first()
         val words = app.database.vocabWordDao().getAll()

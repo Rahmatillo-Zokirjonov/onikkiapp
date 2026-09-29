@@ -17,15 +17,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimeInput
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,8 +43,8 @@ import com.onikki.app.data.repository.parseBlockRules
 import com.onikki.app.ui.components.OnIkkiButton
 import com.onikki.app.ui.components.OnIkkiButtonVariant
 import com.onikki.app.ui.components.OnIkkiCard
-import com.onikki.app.ui.components.ProvideUzbekLocale
 import com.onikki.app.ui.components.SubScreenHeader
+import com.onikki.app.ui.components.TimeInputDialog
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
 import com.onikki.app.ui.theme.OnIkkiShapes
@@ -236,7 +231,7 @@ fun AppRuleScreen(
     }
 
     editingTime?.let { which ->
-        TimePickDialog(
+        TimeInputDialog(
             initial = if (which == "start") start else end,
             onDismiss = { editingTime = null },
             onConfirm = { picked ->
@@ -320,18 +315,6 @@ fun DayChips(mask: Int, onChange: (Int) -> Unit) {
             }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TimePickDialog(initial: LocalTime, onDismiss: () -> Unit, onConfirm: (LocalTime) -> Unit) {
-    val state = rememberTimePickerState(initialHour = initial.hour, initialMinute = initial.minute, is24Hour = true)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = { onConfirm(LocalTime.of(state.hour, state.minute)) }) { Text("Tayyor") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Bekor") } },
-        text = { ProvideUzbekLocale { TimeInput(state = state) } }
-    )
 }
 
 /** Every launchable app, searchable; controlled ones are marked. */

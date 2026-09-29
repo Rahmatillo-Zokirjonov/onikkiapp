@@ -1,5 +1,9 @@
 package com.onikki.app.ui.components
 
+import java.time.LocalTime
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.material3.TimeInput
+import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -157,6 +161,52 @@ fun DatePickerField(
             )
         }
     }
+}
+
+/**
+ * Tappable time row opening a 24h time dialog. Used instead of an inline TimeInput inside sheets:
+ * TimeInput grabs focus on appear, pops the keyboard and scrolls the sheet away from its top fields.
+ */
+@Composable
+fun TimePickerField(label: String, time: LocalTime, onTimeChange: (LocalTime) -> Unit, modifier: Modifier = Modifier) {
+    val colors = LocalOnIkkiColors.current
+    var showPicker by remember { mutableStateOf(false) }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(BorderStroke(1.dp, colors.divider), OnIkkiShapes.medium)
+            .clickable { showPicker = true }
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Text(text = label, color = colors.text.muted(0.55f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+        Text(
+            text = "%02d:%02d".format(time.hour, time.minute),
+            color = colors.text,
+            fontSize = 15.sp,
+            fontFamily = OnIkkiFontFamily,
+            modifier = Modifier.padding(top = 2.dp)
+        )
+    }
+    if (showPicker) {
+        TimeInputDialog(
+            initial = time,
+            onDismiss = { showPicker = false },
+            onConfirm = { picked -> onTimeChange(picked); showPicker = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TimeInputDialog(initial: LocalTime, onDismiss: () -> Unit, onConfirm: (LocalTime) -> Unit) {
+    val state = rememberTimePickerState(initialHour = initial.hour, initialMinute = initial.minute, is24Hour = true)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = { onConfirm(LocalTime.of(state.hour, state.minute)) }) { Text("Tayyor") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Bekor") } },
+        // A dialog re-provides the system configuration, so the Uzbek locale is applied inside it.
+        text = { ProvideUzbekLocale { TimeInput(state = state) } }
+    )
 }
 
 private val UZBEK_LOCALE = Locale("uz", "UZ")

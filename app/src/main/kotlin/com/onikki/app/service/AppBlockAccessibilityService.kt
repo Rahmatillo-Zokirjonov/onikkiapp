@@ -11,10 +11,13 @@ import com.onikki.app.ui.blocked.BlockedScreenActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 
-private const val RELAUNCH_DEBOUNCE_MS = 2_000L
+/** A second window from the same app within this time counts as the same opening. */
+private const val SETTLE_MS = 600L
 
 /**
  * Detects the foreground app (TYPE_WINDOW_STATE_CHANGED) and launches
@@ -33,6 +36,7 @@ class AppBlockAccessibilityService : AccessibilityService() {
 
     private var lastLaunchedPackage: String? = null
     private var lastLaunchedAtMillis: Long = 0L
+    private var pendingLaunch: Job? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -58,16 +62,17 @@ class AppBlockAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return
 
-        serviceScope.launch {
+        // Coalesce bursts: an app often opens a second window right after the first (splash → main,
+        // Chrome's first-run screen), which would land on top of the block screen. Every event from
+        // the blocked app re-shows it; a burst is collapsed into one launch after it settles.
+        pendingLaunch?.cancel()
+        pendingLaunch = serviceScope.launch {
             val gate = repository.resolveGate(packageName, LocalDateTime.now())
             if (gate == AppGate.Allowed) return@launch
-            val now = System.currentTimeMillis()
-            val recentlyLaunchedSamePackage =
-                packageName == lastLaunchedPackage && (now - lastLaunchedAtMillis) < RELAUNCH_DEBOUNCE_MS
-            if (recentlyLaunchedSamePackage) return@launch
-
+            val sinceLast = System.currentTimeMillis() - lastLaunchedAtMillis
+            if (packageName == lastLaunchedPackage && sinceLast < SETTLE_MS) delay(SETTLE_MS - sinceLast)
             lastLaunchedPackage = packageName
-            lastLaunchedAtMillis = now
+            lastLaunchedAtMillis = System.currentTimeMillis()
             startActivity(BlockedScreenActivity.createIntent(applicationContext, packageName, gate))
         }
     }

@@ -1,5 +1,6 @@
 package com.onikki.app.ui.finance
 
+import com.onikki.app.ui.components.TimePickerField
 import com.onikki.app.data.db.entity.TransactionType
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
@@ -10,13 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TimeInput
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,7 +37,6 @@ import com.onikki.app.ui.components.DatePickerField
 import com.onikki.app.ui.components.OnIkkiButton
 import com.onikki.app.ui.components.OnIkkiButtonVariant
 import com.onikki.app.ui.components.OnIkkiSheet
-import com.onikki.app.ui.components.ProvideUzbekLocale
 import com.onikki.app.ui.components.SheetActions
 import com.onikki.app.ui.components.SheetErrorText
 import com.onikki.app.ui.components.SheetFieldLabel
@@ -53,13 +50,20 @@ import java.time.LocalTime
 
 /** One chip per wallet; used by the transaction, planned-expense and pay sheets. */
 @Composable
-fun AccountPicker(accounts: List<AccountBalance>, selectedId: Long?, onSelect: (Long) -> Unit, allowNone: Boolean = false, onSelectNone: () -> Unit = {}) {
+fun AccountPicker(
+    accounts: List<AccountBalance>,
+    selectedId: Long?,
+    onSelect: (Long) -> Unit,
+    allowNone: Boolean = false,
+    onSelectNone: () -> Unit = {},
+    noneLabel: String = "To'lashda tanlayman"
+) {
     Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (allowNone) {
-            FilterChip(selected = selectedId == null, onClick = onSelectNone, label = { Text("To'lashda tanlayman") })
+            FilterChip(selected = selectedId == null, onClick = onSelectNone, label = { Text(noneLabel) })
         }
         accounts.forEach { item ->
             FilterChip(
@@ -135,7 +139,6 @@ fun AccountSheet(
 
 private val DAYS_BEFORE_OPTIONS = listOf(0 to "Shu kuni", 1 to "1 kun oldin", 3 to "3 kun oldin", 7 to "1 hafta oldin")
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlannedExpenseSheet(
     expense: PlannedExpense?,
@@ -160,8 +163,7 @@ fun PlannedExpenseSheet(
     var repeat by rememberSaveable(key) { mutableStateOf(expense?.repeat ?: RepeatKind.NONE) }
     var remind by rememberSaveable(key) { mutableStateOf(expense?.remindEnabled ?: true) }
     var daysBefore by rememberSaveable(key) { mutableStateOf(expense?.remindDaysBefore ?: 1) }
-    val initialTime = expense?.remindTime ?: LocalTime.of(9, 0)
-    val timeState = rememberTimePickerState(initialHour = initialTime.hour, initialMinute = initialTime.minute, is24Hour = true)
+    var remindTime by rememberSaveable(key) { mutableStateOf(expense?.remindTime ?: LocalTime.of(9, 0)) }
     var error by remember { mutableStateOf<String?>(null) }
 
     val income = type == TransactionType.KIRIM
@@ -211,7 +213,10 @@ fun PlannedExpenseSheet(
             }
         }
         SheetFieldLabel(if (income) "Qaysi hamyonga" else "Qaysi hamyondan")
-        AccountPicker(accounts, accountId, onSelect = { accountId = it }, allowNone = true, onSelectNone = { accountId = null })
+        AccountPicker(
+            accounts, accountId, onSelect = { accountId = it }, allowNone = true, onSelectNone = { accountId = null },
+            noneLabel = if (income) "Olganda tanlayman" else "To'lashda tanlayman"
+        )
 
         Row(modifier = Modifier.fillMaxWidth().clickable { remind = !remind }, verticalAlignment = Alignment.CenterVertically) {
             Text(text = "Eslatma", color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(1f))
@@ -223,7 +228,7 @@ fun PlannedExpenseSheet(
                     FilterChip(selected = daysBefore == days, onClick = { daysBefore = days }, label = { Text(label) })
                 }
             }
-            ProvideUzbekLocale { TimeInput(state = timeState) }
+            TimePickerField(label = "Eslatma vaqti", time = remindTime, onTimeChange = { remindTime = it })
             Text(
                 text = if (daysBefore == 0) "O'sha kuni eslatiladi va Kunlik rejada ko'rinadi."
                 else "Oldindan va o'sha kunning o'zida eslatiladi; o'sha kuni Kunlik rejada ko'rinadi.",
@@ -241,7 +246,7 @@ fun PlannedExpenseSheet(
                     amount == null || amount <= 0 -> error = "Summani kiriting"
                     else -> onSave(
                         type, title, amount, category, accountId, dueDate, repeat, remind, daysBefore,
-                        LocalTime.of(timeState.hour, timeState.minute)
+                        remindTime
                     )
                 }
             },

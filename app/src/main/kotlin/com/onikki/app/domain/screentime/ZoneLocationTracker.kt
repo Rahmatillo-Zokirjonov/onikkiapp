@@ -40,17 +40,21 @@ object ZoneLocationTracker {
     fun start(context: Context) {
         if (listening || !hasPermission(context)) return
         val manager = context.getSystemService(LocationManager::class.java) ?: return
-        listOf(LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER, LocationManager.GPS_PROVIDER)
-            .filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) || it == LocationManager.PASSIVE_PROVIDER }
-            .forEach { provider ->
-                runCatching { manager.getLastKnownLocation(provider) }.getOrNull()?.let(::offer)
-                // GPS only passively (via PASSIVE_PROVIDER); actively asking it would keep the radio on.
-                if (provider != LocationManager.GPS_PROVIDER) {
-                    runCatching {
-                        manager.requestLocationUpdates(provider, MIN_INTERVAL_MS, MIN_DISTANCE_M, listener, Looper.getMainLooper())
-                    }
-                }
+        val enabled = { provider: String -> runCatching { manager.isProviderEnabled(provider) }.getOrDefault(false) }
+        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+            .forEach { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull()?.let(::offer) }
+        // Android 12+: the fused provider blends Wi-Fi, cell and GPS at "balanced" power — it notices leaving
+        // a zone reliably without keeping GPS on. Older phones: network fixes plus whatever GPS others request.
+        val active = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && enabled(LocationManager.FUSED_PROVIDER)) {
+            LocationManager.FUSED_PROVIDER
+        } else {
+            LocationManager.NETWORK_PROVIDER.takeIf(enabled)
+        }
+        listOfNotNull(active, LocationManager.PASSIVE_PROVIDER).forEach { provider ->
+            runCatching {
+                manager.requestLocationUpdates(provider, MIN_INTERVAL_MS, MIN_DISTANCE_M, listener, Looper.getMainLooper())
             }
+        }
         listening = true
     }
 

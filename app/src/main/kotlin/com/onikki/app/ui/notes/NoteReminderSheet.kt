@@ -1,5 +1,6 @@
 package com.onikki.app.ui.notes
 
+import com.onikki.app.ui.components.TimePickerField
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -13,10 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
-import androidx.compose.material3.TimeInput
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,7 +30,6 @@ import com.onikki.app.data.db.entity.NotePriority
 import com.onikki.app.domain.permissions.PermissionChecker
 import com.onikki.app.ui.components.DatePickerField
 import com.onikki.app.ui.components.OnIkkiSheet
-import com.onikki.app.ui.components.ProvideUzbekLocale
 import com.onikki.app.ui.components.SheetActions
 import com.onikki.app.ui.components.SheetErrorText
 import com.onikki.app.ui.components.SheetFieldLabel
@@ -52,7 +49,6 @@ private val PRIORITY_HINTS = mapOf(
 )
 
 /** Sets, changes or removes a note's reminder. [remindAt] null = the note has none yet. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteReminderSheet(
     remindAt: LocalDateTime?,
@@ -64,14 +60,13 @@ fun NoteReminderSheet(
     val colors = LocalOnIkkiColors.current
     val initial = remember { remindAt?.takeIf { it.isAfter(LocalDateTime.now()) } ?: defaultReminderTime() }
     var date by rememberSaveable { mutableStateOf(initial.toLocalDate()) }
-    val timeState = rememberTimePickerState(initialHour = initial.hour, initialMinute = initial.minute, is24Hour = true)
+    var time by rememberSaveable { mutableStateOf(initial.toLocalTime()) }
     var level by rememberSaveable { mutableStateOf(priority) }
     var error by remember { mutableStateOf<String?>(null) }
 
     fun applyPreset(at: LocalDateTime) {
         date = at.toLocalDate()
-        timeState.hour = at.hour
-        timeState.minute = at.minute
+        time = at.toLocalTime()
         error = null
     }
 
@@ -84,7 +79,7 @@ fun NoteReminderSheet(
             onSelect = { label -> presets.firstOrNull { it.first == label }?.let { applyPreset(it.second) } }
         )
         DatePickerField(label = "Sana", date = date, onDateChange = { it?.let { picked -> date = picked; error = null } })
-        ProvideUzbekLocale { TimeInput(state = timeState) }
+        TimePickerField(label = "Vaqt", time = time, onTimeChange = { time = it; error = null })
 
         SheetFieldLabel("Darajasi")
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -116,7 +111,7 @@ fun NoteReminderSheet(
         SheetErrorText(error)
         SheetActions(
             onSave = {
-                val at = date.atTime(timeState.hour, timeState.minute)
+                val at = date.atTime(time)
                 if (!at.isAfter(LocalDateTime.now())) error = "Bu vaqt o'tib ketgan — keyingi vaqtni tanlang" else onSave(at, level)
             },
             onDelete = if (remindAt != null) onRemove else null
