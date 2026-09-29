@@ -1,5 +1,7 @@
 package com.onikki.app.receiver
 
+import com.onikki.app.data.repository.payPlanned
+import com.onikki.app.data.db.entity.DEFAULT_CASH_ACCOUNT_ID
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -37,6 +39,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 when (intent.action) {
                     ACTION_REMIND -> handleReminder(context, intent)
                     ACTION_TASK_DONE -> handleTaskDone(context, intent)
+                    ACTION_PLANNED_PAID -> handlePlannedPaid(context, intent)
                     ACTION_NOTE_SNOOZE -> snoozeNote(context, intent.getLongExtra(EXTRA_REF_ID, 0))
                     ACTION_NOTE_DISMISS -> NoteReminderNotifier.cancel(context, intent.getLongExtra(EXTRA_REF_ID, 0))
                 }
@@ -113,6 +116,26 @@ class ReminderReceiver : BroadcastReceiver() {
                 NoteReminderNotifier.show(context, note)
             }
 
+            ReminderType.PLANNED_EXPENSE -> {
+                val expense = db.plannedExpenseDao().findById(refId) ?: return
+                if (expense.paidDate != null || !expense.remindEnabled) return
+                // Key = planned:<id>:<dueDate>:<early|due>; a paid/moved expense no longer matches.
+                if (!key.startsWith("planned:${expense.id}:${expense.dueDate}:")) return
+                val days = java.time.temporal.ChronoUnit.DAYS.between(today, expense.dueDate)
+                val whenText = when {
+                    days <= 0L -> "bugun"
+                    days == 1L -> "ertaga"
+                    else -> "$days kundan keyin"
+                }
+                val wallet = expense.accountId?.let { db.accountDao().findById(it)?.name }?.let { " · $it" } ?: ""
+                ReminderNotifier.show(
+                    context, key, ReminderChannel.FINANCE,
+                    title = "${expense.title} — to'lov $whenText",
+                    text = "${formatSom(expense.amount)} so'm$wallet",
+                    plannedIdForPaidAction = expense.id
+                )
+            }
+
             ReminderType.DEBT -> {
                 val debt = db.debtDao().findById(refId) ?: return
                 if (debt.status != DebtStatus.OCHIQ) return
@@ -124,6 +147,19 @@ class ReminderReceiver : BroadcastReceiver() {
                 )
             }
         }
+    }
+
+    /** "To'landi" straight from the notification: pays the planned amount from its wallet (or cash). */
+    private suspend fun handlePlannedPaid(context: Context, intent: Intent) {
+        val db = (context.applicationContext as OnIkkiApplication).database
+        val expense = db.plannedExpenseDao().findById(intent.getLongExtra(EXTRA_REF_ID, 0)) ?: return
+        if (expense.paidDate == null) {
+            val account = expense.accountId?.let { db.accountDao().findById(it) }
+                ?: db.accountDao().findById(DEFAULT_CASH_ACCOUNT_ID)
+                ?: return
+            payPlanned(db.transactionDao(), db.plannedExpenseDao(), expense, account, expense.amount, LocalDate.now())
+        }
+        intent.getStringExtra(EXTRA_KEY)?.let { ReminderNotifier.cancel(context, it) }
     }
 
     private suspend fun handleTaskDone(context: Context, intent: Intent) {
@@ -146,6 +182,7 @@ class ReminderReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_REMIND = "com.onikki.app.action.REMIND"
         const val ACTION_TASK_DONE = "com.onikki.app.action.TASK_DONE"
+        const val ACTION_PLANNED_PAID = "com.onikki.app.action.PLANNED_PAID"
         const val ACTION_NOTE_SNOOZE = "com.onikki.app.action.NOTE_SNOOZE"
         const val ACTION_NOTE_DISMISS = "com.onikki.app.action.NOTE_DISMISS"
         const val EXTRA_KEY = "key"

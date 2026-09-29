@@ -61,7 +61,8 @@ object ReminderNotifier {
         channel: ReminderChannel,
         title: String,
         text: String,
-        taskIdForDoneAction: Long? = null
+        taskIdForDoneAction: Long? = null,
+        plannedIdForPaidAction: Long? = null
     ) {
         // Silently skip when the user hasn't granted/has revoked notifications — nothing else to do offline.
         if (!PermissionChecker.hasNotificationPermission(context)) return
@@ -92,6 +93,19 @@ object ReminderNotifier {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             builder.addAction(0, "Bajarildi", done)
+        }
+
+        if (plannedIdForPaidAction != null) {
+            val paid = PendingIntent.getBroadcast(
+                context,
+                "paid:$key".hashCode(),
+                Intent(context, ReminderReceiver::class.java)
+                    .setAction(ReminderReceiver.ACTION_PLANNED_PAID)
+                    .putExtra(ReminderReceiver.EXTRA_REF_ID, plannedIdForPaidAction)
+                    .putExtra(ReminderReceiver.EXTRA_KEY, key),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(0, "To'landi", paid)
         }
 
         @Suppress("MissingPermission") // checked above via PermissionChecker

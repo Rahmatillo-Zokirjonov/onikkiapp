@@ -39,7 +39,8 @@ class OnIkkiApplication : Application() {
                 // Room re-emits on any write to these tables, so the date range only needs to exist, not stay current.
                 database.taskDao().observeBetween(today, today.plusDays(2)),
                 database.debtDao().observeAll(),
-                database.noteDao().observeWithReminder(),
+                // Notes + planned expenses combined into one signal (combine() takes at most 5 flows).
+                combine(database.noteDao().observeWithReminder(), database.plannedExpenseDao().observeRemindable()) { _, _ -> },
                 NotificationSettingsStore(this@OnIkkiApplication).settings,
                 LocationStore(this@OnIkkiApplication).city
             ) { _, _, _, _, _ -> }

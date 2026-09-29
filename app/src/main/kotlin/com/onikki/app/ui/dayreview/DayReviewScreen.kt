@@ -65,7 +65,9 @@ fun DayReviewRoute(onBack: () -> Unit = {}) {
                 app.database.transactionDao(),
                 app.database.categoryBudgetDao(),
                 app.database.debtDao(),
-                app.database.savingsGoalDao()
+                app.database.savingsGoalDao(),
+                app.database.accountDao(),
+                app.database.plannedExpenseDao()
             ),
             dailyReviewDao = app.database.dailyReviewDao(),
             apiKeyStore = ApiKeyStore(app)

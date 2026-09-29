@@ -13,11 +13,15 @@ import com.onikki.app.data.db.entity.DebtStatus
 import com.onikki.app.data.db.entity.SavingsGoal
 import com.onikki.app.data.db.entity.Transaction
 import com.onikki.app.data.db.entity.TransactionType
-import com.onikki.app.data.db.entity.Wallet
+import com.onikki.app.data.db.entity.Account
+import com.onikki.app.data.db.entity.AccountKind
+import com.onikki.app.data.db.entity.PlannedExpense
+import com.onikki.app.data.db.entity.RepeatKind
 import com.onikki.app.data.repository.BudgetProgress
 import com.onikki.app.data.repository.CategorySlice
 import com.onikki.app.data.repository.FinanceRepository
-import com.onikki.app.data.repository.WalletBalances
+import com.onikki.app.data.repository.AccountBalance
+import com.onikki.app.data.repository.toWallet
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +32,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
 
 enum class MoneyPeriod(val label: String) {
@@ -43,6 +48,10 @@ sealed interface FinanceSheet {
     data class DebtEdit(val debt: Debt?) : FinanceSheet
     data class GoalEdit(val goal: SavingsGoal?) : FinanceSheet
     data class GoalAdjust(val goal: SavingsGoal) : FinanceSheet
+    /** [error] is shown when a delete was refused (the wallet still has transactions). */
+    data class AccountEdit(val account: Account?, val error: String? = null) : FinanceSheet
+    data class PlannedEdit(val expense: PlannedExpense?) : FinanceSheet
+    data class PlannedPay(val expense: PlannedExpense) : FinanceSheet
 }
 
 data class DebtTotals(val owedToMe: Long = 0, val iOwe: Long = 0, val openCount: Int = 0)
@@ -50,8 +59,7 @@ data class DebtTotals(val owedToMe: Long = 0, val iOwe: Long = 0, val openCount:
 data class FinanceUiState(
     val period: MoneyPeriod = MoneyPeriod.MONTH,
     val balance: Long = 0,
-    val cashBalance: Long = 0,
-    val cardBalance: Long = 0,
+    val accounts: List<AccountBalance> = emptyList(),
     /** End-of-day balance for the last 30 days, oldest first. */
     val balanceTrend: List<Long> = emptyList(),
     val expenseTotal: Long = 0,
@@ -61,10 +69,17 @@ data class FinanceUiState(
     val debts: List<Debt> = emptyList(),
     val debtTotals: DebtTotals = DebtTotals(),
     val goals: List<SavingsGoal> = emptyList(),
+    /** Unpaid first (soonest due first), then paid one-time ones. */
+    val planned: List<PlannedExpense> = emptyList(),
     val expenseCategories: List<String> = emptyList(),
     val incomeCategories: List<String> = emptyList(),
     val sheet: FinanceSheet? = null
-)
+) {
+    val today: LocalDate get() = LocalDate.now()
+    val upcomingPlanned: List<PlannedExpense> get() = planned.filter { it.paidDate == null }
+    fun accountName(id: Long?): String? = accounts.firstOrNull { it.account.id == id }?.account?.name
+    fun account(id: Long?): Account? = accounts.firstOrNull { it.account.id == id }?.account
+}
 
 /** Common categories from the product plan, filling quick-pick chips before the user has history. */
 private val DEFAULT_EXPENSE_CATEGORIES =
@@ -110,7 +125,7 @@ private fun balanceTrend(transactions: List<Transaction>, currentBalance: Long, 
 private data class Overview(
     val period: MoneyPeriod,
     val slices: List<CategorySlice>,
-    val balances: WalletBalances,
+    val accounts: List<AccountBalance>,
     val budgets: List<BudgetProgress>
 )
 
@@ -118,6 +133,7 @@ private data class Lists(
     val transactions: List<Transaction>,
     val debts: List<Debt>,
     val goals: List<SavingsGoal>,
+    val planned: List<PlannedExpense>,
     val expenseCategories: List<String>,
     val incomeCategories: List<String>
 )
@@ -133,21 +149,27 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
             val (from, to) = periodRange(p, today)
             repository.observeExpenseBreakdown(from, to).map { p to it }
         },
-        repository.observeBalances(),
+        repository.observeAccountBalances(),
         repository.observeBudgetProgress(today.withDayOfMonth(1), today)
-    ) { (p, slices), balances, budgets -> Overview(p, slices, balances, budgets) }
+    ) { (p, slices), accounts, budgets -> Overview(p, slices, accounts, budgets) }
+
+    private val categoriesFlow = combine(
+        repository.observeTopCategories(TransactionType.CHIQIM),
+        repository.observeTopCategories(TransactionType.KIRIM)
+    ) { expenseCats, incomeCats -> expenseCats to incomeCats }
 
     private val listsFlow = combine(
         repository.observeAllTransactions(),
         repository.observeDebts(),
         repository.observeSavingsGoals(),
-        repository.observeTopCategories(TransactionType.CHIQIM),
-        repository.observeTopCategories(TransactionType.KIRIM)
-    ) { transactions, debts, goals, expenseCats, incomeCats ->
+        repository.observePlannedExpenses(),
+        categoriesFlow
+    ) { transactions, debts, goals, planned, (expenseCats, incomeCats) ->
         Lists(
             transactions = transactions,
             debts = sortDebts(debts),
             goals = goals,
+            planned = planned,
             expenseCategories = withDefaults(expenseCats, DEFAULT_EXPENSE_CATEGORIES),
             incomeCategories = withDefaults(incomeCats, DEFAULT_INCOME_CATEGORIES)
         )
@@ -157,10 +179,9 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
         val openDebts = lists.debts.filter { it.status == DebtStatus.OCHIQ }
         FinanceUiState(
             period = overview.period,
-            balance = overview.balances.total,
-            cashBalance = overview.balances.cash,
-            cardBalance = overview.balances.card,
-            balanceTrend = balanceTrend(lists.transactions, overview.balances.total, today),
+            balance = overview.accounts.sumOf { it.balance },
+            accounts = overview.accounts,
+            balanceTrend = balanceTrend(lists.transactions, overview.accounts.sumOf { it.balance }, today),
             expenseTotal = overview.slices.sumOf { it.amount },
             expenseSlices = overview.slices,
             budgets = overview.budgets,
@@ -172,6 +193,7 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
                 openCount = openDebts.size
             ),
             goals = lists.goals,
+            planned = lists.planned,
             expenseCategories = lists.expenseCategories,
             incomeCategories = lists.incomeCategories,
             sheet = openSheet
@@ -202,13 +224,22 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
         amount: Long,
         type: TransactionType,
         category: String,
-        wallet: Wallet,
+        account: Account,
         date: LocalDate,
         note: String?
     ) {
         if (amount <= 0 || category.isBlank()) return
+        val wallet = account.kind.toWallet()
         val updated = (existing ?: Transaction(amount = amount, type = type, category = category, wallet = wallet, date = date))
-            .copy(amount = amount, type = type, category = category.trim(), wallet = wallet, date = date, note = note)
+            .copy(
+                amount = amount,
+                type = type,
+                category = category.trim(),
+                wallet = wallet,
+                date = date,
+                note = note,
+                accountId = account.id
+            )
         launchAndClose { repository.saveTransaction(updated) }
     }
 
@@ -258,6 +289,70 @@ class FinanceViewModel(private val repository: FinanceRepository) : ViewModel() 
         if (delta == 0L) return
         launchAndClose { repository.adjustSavings(goal, delta) }
     }
+
+    fun saveAccount(existing: Account?, name: String, kind: AccountKind, lastDigits: String?, initialBalance: Long) {
+        if (name.isBlank()) return
+        val updated = (existing ?: Account(name = name, kind = kind, sortOrder = uiState.value.accounts.size))
+            .copy(
+                name = name.trim(),
+                kind = kind,
+                lastDigits = lastDigits?.takeIf { kind == AccountKind.KARTA && it.isNotBlank() },
+                initialBalance = initialBalance
+            )
+        launchAndClose { repository.saveAccount(updated) }
+    }
+
+    fun deleteAccount(account: Account) {
+        viewModelScope.launch {
+            if (repository.deleteAccount(account)) {
+                sheet.value = null
+            } else {
+                sheet.value = FinanceSheet.AccountEdit(
+                    account,
+                    error = "Bu hamyonda tranzaksiyalar bor — avval ularni boshqa hamyonga o'tkazing yoki o'chiring"
+                )
+            }
+        }
+    }
+
+    fun savePlanned(
+        existing: PlannedExpense?,
+        title: String,
+        amount: Long,
+        category: String,
+        accountId: Long?,
+        dueDate: LocalDate,
+        repeat: RepeatKind,
+        remindEnabled: Boolean,
+        remindDaysBefore: Int,
+        remindTime: LocalTime
+    ) {
+        if (title.isBlank() || amount <= 0) return
+        val base = existing ?: PlannedExpense(title = title, amount = amount, category = category, dueDate = dueDate)
+        val updated = base.copy(
+            title = title.trim(),
+            amount = amount,
+            category = category.trim().ifBlank { title.trim() },
+            accountId = accountId,
+            dueDate = dueDate,
+            repeat = repeat,
+            remindEnabled = remindEnabled,
+            remindDaysBefore = remindDaysBefore,
+            remindTime = remindTime,
+            // Moving a paid one-time expense to a new date reopens it.
+            paidDate = if (existing?.paidDate != null && dueDate != existing.dueDate) null else base.paidDate
+        )
+        launchAndClose { repository.savePlannedExpense(updated) }
+    }
+
+    fun deletePlanned(expense: PlannedExpense) = launchAndClose { repository.deletePlannedExpense(expense) }
+
+    fun payPlanned(expense: PlannedExpense, account: Account, amount: Long, date: LocalDate) {
+        if (amount <= 0) return
+        launchAndClose { repository.payPlannedExpense(expense, account, amount, date) }
+    }
+
+    fun skipPlanned(expense: PlannedExpense) = launchAndClose { repository.skipPlannedExpense(expense) }
 
     companion object {
         fun factory(repository: FinanceRepository) = viewModelFactory {

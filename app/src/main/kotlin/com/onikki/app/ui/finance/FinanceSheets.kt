@@ -1,5 +1,8 @@
 package com.onikki.app.ui.finance
 
+import com.onikki.app.data.repository.AccountBalance
+import com.onikki.app.data.db.entity.DEFAULT_CASH_ACCOUNT_ID
+import com.onikki.app.data.db.entity.Account
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,17 +47,20 @@ import java.time.LocalDate
 @Composable
 fun TransactionSheet(
     transaction: Transaction?,
+    accounts: List<AccountBalance>,
     expenseCategories: List<String>,
     incomeCategories: List<String>,
     onDismiss: () -> Unit,
-    onSave: (amount: Long, type: TransactionType, category: String, wallet: Wallet, date: LocalDate, note: String?) -> Unit,
+    onSave: (amount: Long, type: TransactionType, category: String, account: Account, date: LocalDate, note: String?) -> Unit,
     onDelete: () -> Unit
 ) {
     val key = transaction?.id
     var amountText by rememberSaveable(key) { mutableStateOf(transaction?.amount?.toString() ?: "") }
     var type by rememberSaveable(key) { mutableStateOf(transaction?.type ?: TransactionType.CHIQIM) }
     var category by rememberSaveable(key) { mutableStateOf(transaction?.category ?: "") }
-    var wallet by rememberSaveable(key) { mutableStateOf(transaction?.wallet ?: Wallet.NAQD) }
+    var accountId by rememberSaveable(key) {
+        mutableStateOf(transaction?.accountId ?: accounts.firstOrNull()?.account?.id ?: DEFAULT_CASH_ACCOUNT_ID)
+    }
     var date by rememberSaveable(key) { mutableStateOf(transaction?.date ?: LocalDate.now()) }
     var note by rememberSaveable(key) { mutableStateOf(transaction?.note ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -82,11 +88,7 @@ fun TransactionSheet(
             onSelect = { category = it; error = null }
         )
         SheetFieldLabel("Hamyon")
-        ChoiceChips(
-            options = listOf(Wallet.NAQD to "Naqd", Wallet.KARTA to "Karta"),
-            selected = wallet,
-            onSelect = { wallet = it }
-        )
+        AccountPicker(accounts, accountId, onSelect = { accountId = it })
         DatePickerField(label = "Sana", date = date, onDateChange = { it?.let { picked -> date = picked } })
         OutlinedTextField(
             value = note,
@@ -102,7 +104,10 @@ fun TransactionSheet(
                 when {
                     amount == null || amount <= 0 -> error = "Summani kiriting"
                     category.isBlank() -> error = "Kategoriyani tanlang yoki yozing"
-                    else -> onSave(amount, type, category, wallet, date, note.trim().ifBlank { null })
+                    else -> {
+                        val account = accounts.firstOrNull { it.account.id == accountId }?.account
+                        if (account == null) error = "Hamyonni tanlang" else onSave(amount, type, category, account, date, note.trim().ifBlank { null })
+                    }
                 }
             },
             onDelete = if (transaction != null) onDelete else null

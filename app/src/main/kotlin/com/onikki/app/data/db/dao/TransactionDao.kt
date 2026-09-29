@@ -19,7 +19,11 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions ORDER BY date DESC, id DESC")
     fun observeAll(): Flow<List<Transaction>>
 
-    @Query("SELECT COALESCE(SUM(CASE WHEN type = 'KIRIM' THEN amount ELSE -amount END), 0) FROM transactions")
+    /** Total across all wallets, including each wallet's starting balance. */
+    @Query(
+        "SELECT (SELECT COALESCE(SUM(initialBalance), 0) FROM accounts) + " +
+            "(SELECT COALESCE(SUM(CASE WHEN type = 'KIRIM' THEN amount ELSE -amount END), 0) FROM transactions)"
+    )
     fun observeBalance(): Flow<Long>
 
     @Query(

@@ -1,5 +1,9 @@
 package com.onikki.app.ui.finance
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import com.onikki.app.data.repository.AccountBalance
+import com.onikki.app.data.db.entity.PlannedExpense
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -87,16 +91,19 @@ private enum class TransactionFilter(val label: String) { ALL("Hammasi"), EXPENS
 @Composable
 fun AllTransactionsScreen(
     transactions: List<Transaction>,
+    accounts: List<AccountBalance>,
     onBack: () -> Unit,
     onOpenSheet: (FinanceSheet) -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     var filter by rememberSaveable { mutableStateOf(TransactionFilter.ALL) }
+    var accountFilter by rememberSaveable { mutableStateOf<Long?>(null) }
     val visible = when (filter) {
         TransactionFilter.ALL -> transactions
         TransactionFilter.EXPENSE -> transactions.filter { it.type == TransactionType.CHIQIM }
         TransactionFilter.INCOME -> transactions.filter { it.type == TransactionType.KIRIM }
-    }
+    }.filter { accountFilter == null || it.accountId == accountFilter }
+    val names = accounts.associate { it.account.id to it.account.name }
     val byDay = visible.groupBy { it.date }
 
     SubScreenFrame(fabOnClick = { onOpenSheet(FinanceSheet.TransactionEdit(null)) }) {
@@ -125,6 +132,23 @@ fun AllTransactionsScreen(
                     }
                 }
             }
+            if (accounts.size > 1) {
+                item {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(selected = accountFilter == null, onClick = { accountFilter = null }, label = { Text("Barcha hamyonlar") })
+                        accounts.forEach { item ->
+                            FilterChip(
+                                selected = accountFilter == item.account.id,
+                                onClick = { accountFilter = if (accountFilter == item.account.id) null else item.account.id },
+                                label = { Text(accountLabel(item.account)) }
+                            )
+                        }
+                    }
+                }
+            }
             if (visible.isEmpty()) {
                 item { EmptyText("Bu bo'limda tranzaksiya yo'q") }
             }
@@ -150,7 +174,12 @@ fun AllTransactionsScreen(
                     }
                 }
                 items(dayTransactions, key = { it.id }) { tx ->
-                    TransactionRow(tx, onClick = { onOpenSheet(FinanceSheet.TransactionEdit(tx)) }, showDate = false)
+                    TransactionRow(
+                        tx,
+                        accountName = names[tx.accountId],
+                        onClick = { onOpenSheet(FinanceSheet.TransactionEdit(tx)) },
+                        showDate = false
+                    )
                 }
             }
         }
@@ -372,4 +401,59 @@ private fun goalPaceText(goal: SavingsGoal, today: LocalDate): String? {
     if (deadline.isBefore(today)) return "Muddat o'tgan · ${formatSom(remaining)} so'm qoldi"
     val months = ((ChronoUnit.DAYS.between(today, deadline) + 29) / 30).coerceAtLeast(1)
     return "$dateLabel · oyiga ~${formatSom(remaining / months)} so'm"
+}
+
+// ---------------------------------------------------------------- Rejali xarajatlar
+
+@Composable
+fun PlannedExpensesScreen(
+    planned: List<PlannedExpense>,
+    onBack: () -> Unit,
+    onOpenSheet: (FinanceSheet) -> Unit
+) {
+    val today = LocalDate.now()
+    val upcoming = planned.filter { it.paidDate == null }
+    val paid = planned.filter { it.paidDate != null }.sortedByDescending { it.paidDate }
+    val monthEnd = today.withDayOfMonth(today.lengthOfMonth())
+
+    SubScreenFrame(fabOnClick = { onOpenSheet(FinanceSheet.PlannedEdit(null)) }) {
+        LazyColumn(contentPadding = ScreenPadding, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item { SubScreenHeader(title = "Rejali xarajatlar", onBack = onBack) }
+            item {
+                OnIkkiCard(modifier = Modifier.fillMaxWidth()) {
+                    Row {
+                        TotalBlock(
+                            label = "Shu oy qoldi",
+                            amount = upcoming.filter { !it.dueDate.isAfter(monthEnd) }.sumOf { it.amount },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TotalBlock(
+                            label = "Kechikkan",
+                            amount = upcoming.filter { it.dueDate.isBefore(today) }.sumOf { it.amount },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+            if (planned.isEmpty()) {
+                item { EmptyText("Hali rejali xarajat yo'q. + bilan kelgusi to'lovni qo'shing — eslatma o'zi keladi.") }
+            }
+            items(upcoming, key = { it.id }) { expense ->
+                OnIkkiCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
+                    PlannedRow(
+                        expense = expense,
+                        today = today,
+                        onClick = { onOpenSheet(FinanceSheet.PlannedEdit(expense)) },
+                        onPay = { onOpenSheet(FinanceSheet.PlannedPay(expense)) }
+                    )
+                }
+            }
+            if (paid.isNotEmpty()) {
+                item { Text(text = "TO'LANGANLAR", color = LocalOnIkkiColors.current.text.muted(0.45f), fontSize = 10.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.padding(top = 8.dp)) }
+                items(paid, key = { "paid-${it.id}" }) { expense ->
+                    PlannedRow(expense = expense, today = today, onClick = { onOpenSheet(FinanceSheet.PlannedEdit(expense)) }, onPay = null)
+                }
+            }
+        }
+    }
 }

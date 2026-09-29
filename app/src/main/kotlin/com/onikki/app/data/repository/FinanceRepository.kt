@@ -2,12 +2,18 @@
 
 package com.onikki.app.data.repository
 
+import com.onikki.app.data.db.dao.AccountDao
 import com.onikki.app.data.db.dao.CategoryBudgetDao
+import com.onikki.app.data.db.dao.PlannedExpenseDao
 import com.onikki.app.data.db.dao.DebtDao
 import com.onikki.app.data.db.dao.SavingsGoalDao
 import com.onikki.app.data.db.dao.TransactionDao
+import com.onikki.app.data.db.entity.Account
+import com.onikki.app.data.db.entity.AccountKind
 import com.onikki.app.data.db.entity.CategoryBudget
 import com.onikki.app.data.db.entity.Debt
+import com.onikki.app.data.db.entity.PlannedExpense
+import com.onikki.app.data.db.entity.RepeatKind
 import com.onikki.app.data.db.entity.SavingsGoal
 import com.onikki.app.data.db.entity.Transaction
 import com.onikki.app.data.db.entity.TransactionType
@@ -19,7 +25,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 
-data class WalletBalances(val total: Long, val cash: Long, val card: Long)
+data class AccountBalance(val account: Account, val balance: Long)
 
 /** [fraction] is this category's share of the period's total expense, 0..1. */
 data class CategorySlice(val category: String, val amount: Long, val fraction: Float)
@@ -34,13 +40,45 @@ class FinanceRepository(
     private val transactionDao: TransactionDao,
     private val categoryBudgetDao: CategoryBudgetDao,
     private val debtDao: DebtDao,
-    private val savingsGoalDao: SavingsGoalDao
+    private val savingsGoalDao: SavingsGoalDao,
+    private val accountDao: AccountDao,
+    private val plannedExpenseDao: PlannedExpenseDao
 ) {
-    fun observeBalances(): Flow<WalletBalances> = combine(
-        transactionDao.observeBalance(),
-        transactionDao.observeWalletBalance(Wallet.NAQD),
-        transactionDao.observeWalletBalance(Wallet.KARTA)
-    ) { total, cash, card -> WalletBalances(total, cash, card) }
+    /** Every wallet with its live balance (starting balance + its transactions). */
+    fun observeAccountBalances(): Flow<List<AccountBalance>> = combine(
+        accountDao.observeAll(),
+        accountDao.observeNetByAccount()
+    ) { accounts, nets ->
+        val netById = nets.associate { it.accountId to it.net }
+        accounts.map { AccountBalance(it, it.initialBalance + (netById[it.id] ?: 0L)) }
+    }
+
+    suspend fun saveAccount(account: Account) {
+        if (account.id == 0L) accountDao.insert(account) else accountDao.update(account)
+    }
+
+    /** Refuses (returns false) while transactions still point at the wallet — their history would be orphaned. */
+    suspend fun deleteAccount(account: Account): Boolean {
+        if (accountDao.transactionCount(account.id) > 0) return false
+        accountDao.delete(account)
+        return true
+    }
+
+    fun observePlannedExpenses(): Flow<List<PlannedExpense>> = plannedExpenseDao.observeAll()
+
+    suspend fun savePlannedExpense(expense: PlannedExpense) {
+        if (expense.id == 0L) plannedExpenseDao.insert(expense) else plannedExpenseDao.update(expense)
+    }
+
+    suspend fun deletePlannedExpense(expense: PlannedExpense) = plannedExpenseDao.delete(expense)
+
+    suspend fun payPlannedExpense(expense: PlannedExpense, account: Account, amount: Long, date: LocalDate) =
+        payPlanned(transactionDao, plannedExpenseDao, expense, account, amount, date)
+
+    /** A repeating expense skipped this time: move to the next period without recording money. */
+    suspend fun skipPlannedExpense(expense: PlannedExpense) {
+        plannedExpenseDao.update(expense.copy(dueDate = expense.repeat.next(expense.dueDate)))
+    }
 
     /** Top [MAX_CHART_CATEGORIES] expense categories for the range, the rest folded into "Boshqa". */
     fun observeExpenseBreakdown(from: LocalDate, to: LocalDate): Flow<List<CategorySlice>> =
@@ -122,3 +160,39 @@ class FinanceRepository(
         savingsGoalDao.update(goal.copy(currentAmount = (goal.currentAmount + delta).coerceAtLeast(0)))
     }
 }
+
+/**
+ * Records the payment as a real expense, then either closes a one-time plan or moves a repeating one
+ * to its next date. Shared by the Moliya screen and the reminder's "To'landi" action.
+ */
+suspend fun payPlanned(
+    transactionDao: TransactionDao,
+    plannedExpenseDao: PlannedExpenseDao,
+    expense: PlannedExpense,
+    account: Account,
+    amount: Long,
+    date: LocalDate
+) {
+    transactionDao.insert(
+        Transaction(
+            amount = amount,
+            type = TransactionType.CHIQIM,
+            category = expense.category,
+            wallet = account.kind.toWallet(),
+            date = date,
+            note = expense.title,
+            accountId = account.id
+        )
+    )
+    val updated = if (expense.repeat == RepeatKind.NONE) {
+        expense.copy(paidDate = date)
+    } else {
+        // Advance past today so paying a long-overdue monthly bill doesn't leave it still overdue.
+        var next = expense.repeat.next(expense.dueDate)
+        while (!next.isAfter(date)) next = expense.repeat.next(next)
+        expense.copy(dueDate = next)
+    }
+    plannedExpenseDao.update(updated)
+}
+
+fun AccountKind.toWallet(): Wallet = if (this == AccountKind.NAQD) Wallet.NAQD else Wallet.KARTA

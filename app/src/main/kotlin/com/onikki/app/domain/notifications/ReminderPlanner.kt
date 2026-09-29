@@ -1,5 +1,6 @@
 package com.onikki.app.domain.notifications
 
+import com.onikki.app.data.db.entity.PlannedExpense
 import com.onikki.app.data.db.entity.Debt
 import com.onikki.app.data.db.entity.DebtStatus
 import com.onikki.app.data.db.entity.Note
@@ -10,7 +11,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, NOTE, REFRESH }
+enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, NOTE, PLANNED_EXPENSE, REFRESH }
 
 /**
  * One alarm to set. [key] is stable across re-plans so the same reminder is replaced, not duplicated.
@@ -41,6 +42,7 @@ object ReminderPlanner {
         tasks: List<Task>,
         debts: List<Debt>,
         notes: List<Note>,
+        plannedExpenses: List<PlannedExpense>,
         prayerTimesFor: (LocalDate) -> PrayerTimeCalculator.PrayerTimes
     ): List<PlannedReminder> {
         val horizon = now.plusHours(HORIZON_HOURS)
@@ -89,6 +91,26 @@ object ReminderPlanner {
         notes.forEach { note ->
             val at = note.remindAt ?: return@forEach
             if (inWindow(at)) result += PlannedReminder("note:${note.id}:$at", ReminderType.NOTE, at, refId = note.id)
+        }
+
+        // Planned expenses: an early heads-up (N days before) plus one on the due date itself.
+        // Both keys carry the due date, so paying (which moves/closes it) drops the stale alarms.
+        plannedExpenses.filter { it.remindEnabled && it.paidDate == null }.forEach { expense ->
+            val dueAt = expense.dueDate.atTime(expense.remindTime)
+            if (inWindow(dueAt)) {
+                result += PlannedReminder("planned:${expense.id}:${expense.dueDate}:due", ReminderType.PLANNED_EXPENSE, dueAt, refId = expense.id)
+            }
+            if (expense.remindDaysBefore > 0) {
+                val earlyAt = dueAt.minusDays(expense.remindDaysBefore.toLong())
+                if (inWindow(earlyAt)) {
+                    result += PlannedReminder(
+                        "planned:${expense.id}:${expense.dueDate}:early",
+                        ReminderType.PLANNED_EXPENSE,
+                        earlyAt,
+                        refId = expense.id
+                    )
+                }
+            }
         }
 
         val nextMidnight = now.toLocalDate().plusDays(1).atTime(0, 5)

@@ -1,5 +1,13 @@
 package com.onikki.app.ui.finance
 
+import java.time.temporal.ChronoUnit
+import java.time.LocalDate
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import com.onikki.app.data.repository.AccountBalance
+import com.onikki.app.data.db.entity.RepeatKind
+import com.onikki.app.data.db.entity.PlannedExpense
+import com.onikki.app.data.db.entity.Account
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -59,7 +67,8 @@ fun FinanceScreen(
     onOpenSheet: (FinanceSheet) -> Unit,
     onOpenAllTransactions: () -> Unit,
     onOpenDebts: () -> Unit,
-    onOpenSavings: () -> Unit
+    onOpenSavings: () -> Unit,
+    onOpenPlanned: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
@@ -83,9 +92,16 @@ fun FinanceScreen(
 
             BalanceCard(
                 balance = state.balance,
-                cash = state.cashBalance,
-                card = state.cardBalance,
-                trend = state.balanceTrend
+                accounts = state.accounts,
+                trend = state.balanceTrend,
+                onEditAccount = { onOpenSheet(FinanceSheet.AccountEdit(it)) },
+                onAddAccount = { onOpenSheet(FinanceSheet.AccountEdit(null)) }
+            )
+            PlannedSummaryCard(
+                planned = state.upcomingPlanned,
+                onOpenAll = onOpenPlanned,
+                onAdd = { onOpenSheet(FinanceSheet.PlannedEdit(null)) },
+                onPay = { onOpenSheet(FinanceSheet.PlannedPay(it)) }
             )
             ExpenseBreakdownCard(total = state.expenseTotal, slices = state.expenseSlices)
             BudgetLimitsCard(
@@ -99,6 +115,7 @@ fun FinanceScreen(
             }
             RecentTransactionsSection(
                 transactions = state.transactions.take(RECENT_TRANSACTION_COUNT),
+                accountName = state::accountName,
                 onOpenAll = onOpenAllTransactions,
                 onEdit = { onOpenSheet(FinanceSheet.TransactionEdit(it)) }
             )
@@ -141,7 +158,13 @@ private fun PeriodSegmentedControl(selected: MoneyPeriod, onSelect: (MoneyPeriod
 }
 
 @Composable
-private fun BalanceCard(balance: Long, cash: Long, card: Long, trend: List<Long>) {
+private fun BalanceCard(
+    balance: Long,
+    accounts: List<AccountBalance>,
+    trend: List<Long>,
+    onEditAccount: (Account) -> Unit,
+    onAddAccount: () -> Unit
+) {
     val colors = LocalOnIkkiColors.current
     OnIkkiCard(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -171,9 +194,28 @@ private fun BalanceCard(balance: Long, cash: Long, card: Long, trend: List<Long>
                 FilledSparkline(points = trend, strokeColor = colors.accent, fillColor = colors.accent900)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MiniStat(label = "Naqd", amount = cash, modifier = Modifier.weight(1f))
-            MiniStat(label = "Karta", amount = card, modifier = Modifier.weight(1f))
+        // Every wallet (cash + each card); tap one to edit it, "+ Hamyon" to add a card.
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            accounts.forEach { item ->
+                MiniStat(
+                    label = accountLabel(item.account),
+                    amount = item.balance,
+                    modifier = Modifier.width(128.dp).clickable { onEditAccount(item.account) }
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .width(96.dp)
+                    .background(colors.background, OnIkkiShapes.medium)
+                    .clickable(onClick = onAddAccount)
+                    .padding(horizontal = 11.dp, vertical = 9.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "+ Hamyon", color = colors.accent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+            }
         }
     }
 }
@@ -463,6 +505,7 @@ private fun MiniLine(label: String, amount: Long) {
 @Composable
 private fun RecentTransactionsSection(
     transactions: List<Transaction>,
+    accountName: (Long) -> String?,
     onOpenAll: () -> Unit,
     onEdit: (Transaction) -> Unit
 ) {
@@ -478,18 +521,20 @@ private fun RecentTransactionsSection(
             )
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                transactions.forEach { tx -> TransactionRow(tx, onClick = { onEdit(tx) }, showDate = true) }
+                transactions.forEach { tx ->
+                    TransactionRow(tx, accountName = accountName(tx.accountId), onClick = { onEdit(tx) }, showDate = true)
+                }
             }
         }
     }
 }
 
 @Composable
-fun TransactionRow(transaction: Transaction, onClick: () -> Unit, showDate: Boolean) {
+fun TransactionRow(transaction: Transaction, accountName: String?, onClick: () -> Unit, showDate: Boolean) {
     val colors = LocalOnIkkiColors.current
     val isIncome = transaction.type == TransactionType.KIRIM
     val subtitle = listOfNotNull(
-        if (transaction.wallet == Wallet.NAQD) "Naqd" else "Karta",
+        accountName ?: if (transaction.wallet == Wallet.NAQD) "Naqd" else "Karta",
         if (showDate) formatRelativeDateUz(transaction.date) else null,
         transaction.note
     ).joinToString(" · ")
@@ -527,5 +572,94 @@ fun TransactionRow(transaction: Transaction, onClick: () -> Unit, showDate: Bool
             fontSize = 13.sp,
             fontFamily = OnIkkiFontFamily
         )
+    }
+}
+
+/** "Karta •• 1234" for cards with digits, else the wallet's name. */
+fun accountLabel(account: Account): String =
+    account.lastDigits?.let { "${account.name} •• $it" } ?: account.name
+
+@Composable
+private fun PlannedSummaryCard(
+    planned: List<PlannedExpense>,
+    onOpenAll: () -> Unit,
+    onAdd: () -> Unit,
+    onPay: (PlannedExpense) -> Unit
+) {
+    val colors = LocalOnIkkiColors.current
+    val today = LocalDate.now()
+    val monthEnd = today.withDayOfMonth(today.lengthOfMonth())
+    val dueThisMonth = planned.filter { !it.dueDate.isAfter(monthEnd) }
+    Column {
+        FinanceSectionHeader(
+            title = "Rejali xarajatlar",
+            actionLabel = if (planned.isEmpty()) "+ Qo'shish" else "Barchasi",
+            onAction = if (planned.isEmpty()) onAdd else onOpenAll
+        )
+        if (planned.isEmpty()) {
+            Text(
+                text = "Kelgusi to'lovlarni (ijara, internet, kredit...) belgilab qo'ying — vaqtida eslatamiz.",
+                color = colors.text.muted(0.5f),
+                fontSize = 13.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+            return@Column
+        }
+        OnIkkiCard(modifier = Modifier.fillMaxWidth(), gap = 10.dp) {
+            if (dueThisMonth.isNotEmpty()) {
+                Text(
+                    text = "Oy oxirigacha: ${formatSom(dueThisMonth.sumOf { it.amount })} so'm · ${dueThisMonth.size} ta to'lov",
+                    color = colors.text.muted(0.55f),
+                    fontSize = 11.sp,
+                    fontFamily = OnIkkiFontFamily
+                )
+            }
+            planned.take(3).forEach { expense -> PlannedRow(expense, today, onClick = onOpenAll, onPay = { onPay(expense) }) }
+        }
+    }
+}
+
+@Composable
+fun PlannedRow(expense: PlannedExpense, today: LocalDate, onClick: () -> Unit, onPay: (() -> Unit)?) {
+    val colors = LocalOnIkkiColors.current
+    val days = ChronoUnit.DAYS.between(today, expense.dueDate)
+    val overdue = expense.paidDate == null && days < 0
+    val whenText = when {
+        expense.paidDate != null -> "To'langan · ${formatRelativeDateUz(expense.paidDate)}"
+        days < 0 -> "${-days} kun kechikdi"
+        days == 0L -> "Bugun"
+        days == 1L -> "Ertaga"
+        days < 7 -> "$days kundan keyin"
+        else -> formatRelativeDateUz(expense.dueDate)
+    }
+    val repeat = if (expense.repeat == RepeatKind.NONE) "" else " · ${expense.repeat.label.lowercase()}"
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = expense.title, color = colors.text, fontSize = 13.sp, fontFamily = OnIkkiFontFamily, maxLines = 1)
+            Text(
+                text = whenText + repeat,
+                // Warm accent is reserved for warnings — an overdue payment is one.
+                color = if (overdue || days == 0L) colors.warmAccent else colors.text.muted(0.5f),
+                fontSize = 11.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+        }
+        Text(text = formatSom(expense.amount), color = colors.text, fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+        if (onPay != null && expense.paidDate == null) {
+            Text(
+                text = "To'lash",
+                color = colors.accent,
+                fontSize = 12.sp,
+                fontFamily = OnIkkiFontFamily,
+                modifier = Modifier
+                    .border(BorderStroke(1.dp, colors.accent700), OnIkkiShapes.small)
+                    .clickable(onClick = onPay)
+                    .padding(horizontal = 9.dp, vertical = 5.dp)
+            )
+        }
     }
 }
