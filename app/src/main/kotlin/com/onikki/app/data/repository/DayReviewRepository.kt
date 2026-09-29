@@ -5,10 +5,17 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.onikki.app.data.db.dao.DailyReviewDao
 import com.onikki.app.data.db.dao.TaskDao
+import com.onikki.app.data.db.dao.TransactionDao
 import com.onikki.app.data.db.entity.DailyReview
+import com.onikki.app.data.db.entity.Task
+import com.onikki.app.data.db.entity.TaskCategory
+import com.onikki.app.data.db.entity.TransactionType
 import com.onikki.app.data.local.ApiKeyStore
 import com.onikki.app.domain.ai.ClaudeApiClient
 import com.onikki.app.domain.ai.ClaudeResult
+import com.onikki.app.domain.habits.HabitStats
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 import kotlin.math.roundToInt
@@ -22,7 +29,21 @@ data class DayStats(
     /** Highest usage % among configured category budgets this month; null if none configured. */
     val worstBudgetPercent: Int?,
     /** Simple composite 0..100 — a provisional formula, not specified by the TZ. */
-    val score: Int
+    val score: Int,
+    val spentToday: Long = 0,
+    val earnedToday: Long = 0
+)
+
+/** Everything the Kun yakuni screen shows about one day, live. */
+data class DayData(
+    val stats: DayStats,
+    val tasks: List<Task>,
+    /** Habits scheduled today that aren't done yet. */
+    val pendingHabits: List<HabitStats>,
+    /** Null until the user presses "Kunni yakunlash". */
+    val review: DailyReview?,
+    /** The last 7 days' saved reviews (today included once finished), oldest first. */
+    val week: List<DailyReview>
 )
 
 data class Recommendation(val kicker: String, val text: String)
@@ -40,16 +61,19 @@ sealed class AiAnswerStatus {
     data class Success(val text: String) : AiAnswerStatus()
 }
 
+val MOOD_EMOJI = listOf("😞", "😕", "😐", "🙂", "😄")
+fun moodLabel(mood: Int?): String? = mood?.let { listOf("Yomon", "Unchalik", "O'rtacha", "Yaxshi", "Zo'r").getOrNull(it - 1) }
+
 private const val PROGRESS_WEIGHT_TASKS = 0.4f
 private const val PROGRESS_WEIGHT_HABITS = 0.3f
 private const val PROGRESS_WEIGHT_BUDGET = 0.3f
 
 private const val SYSTEM_PROMPT = """Sen "On ikki" shaxsiy hayot boshqaruv ilovasidagi kun yakuni tahlilchisisan.
-Foydalanuvchi bugungi statistikasini yuboradi. Shu asosida quyidagi ANIQ formatda javob ber, boshqa hech narsa yozma:
+Foydalanuvchi bugungi statistikasini, kayfiyatini va o'z xulosasini yuboradi. Shu asosida quyidagi ANIQ formatda javob ber, boshqa hech narsa yozma:
 
 BAHO: <kunni 2-3 so'z bilan baholash, masalan "Yaxshi kun">
-TAHLIL: <statistikaga asoslangan 1-2 jumlali qisqa sharh>
-TAVSIYA1: [Kategoriya] <bitta aniq, amaliy tavsiya>
+TAHLIL: <statistika va foydalanuvchi xulosasiga asoslangan 1-2 jumlali qisqa sharh>
+TAVSIYA1: [Kategoriya] <ertaga uchun bitta aniq, amaliy tavsiya>
 TAVSIYA2: [Kategoriya] <yana bitta aniq, amaliy tavsiya>
 
 Kategoriya — "Vaqt", "Moliya", "Odat" yoki shunga o'xshash bitta so'z. O'zbek tilida, lotin alifbosida, do'stona va qisqa yoz."""
@@ -61,25 +85,44 @@ O'zbek tilida, lotin alifbosida yoz."""
 class DayReviewRepository(
     private val context: Context,
     private val taskDao: TaskDao,
+    private val transactionDao: TransactionDao,
     private val habitRepository: HabitRepository,
     private val financeRepository: FinanceRepository,
     private val dailyReviewDao: DailyReviewDao,
     private val apiKeyStore: ApiKeyStore
 ) {
-    suspend fun computeStats(today: LocalDate): DayStats {
-        val totalTasks = taskDao.observeTotalCount(today).first()
-        val completedTasks = taskDao.observeCompletedCount(today).first()
+    fun observeDay(today: LocalDate): Flow<DayData> {
+        val money = combine(
+            financeRepository.observeBudgetProgress(today.withDayOfMonth(1), today),
+            transactionDao.observeTotalByTypeBetween(TransactionType.CHIQIM, today, today),
+            transactionDao.observeTotalByTypeBetween(TransactionType.KIRIM, today, today)
+        ) { budgets, spent, earned ->
+            val worst = budgets.filter { it.budget.monthlyLimit > 0 }.maxOfOrNull { (it.spent * 100 / it.budget.monthlyLimit).toInt() }
+            Triple(worst, spent, earned)
+        }
+        return combine(
+            taskDao.observeByDate(today),
+            habitRepository.observeStats(today),
+            money,
+            dailyReviewDao.observeByDate(today),
+            dailyReviewDao.observeBetween(today.minusDays(6), today)
+        ) { tasks, habits, (worstBudget, spent, earned), review, week ->
+            DayData(
+                stats = computeStats(tasks, habits, worstBudget, spent, earned),
+                tasks = tasks,
+                pendingHabits = habits.filter { it.isActiveToday && !it.isDoneToday },
+                review = review,
+                week = week
+            )
+        }
+    }
 
+    private fun computeStats(tasks: List<Task>, habits: List<HabitStats>, worstBudgetPercent: Int?, spent: Long, earned: Long): DayStats {
+        val totalTasks = tasks.size
+        val completedTasks = tasks.count { it.isCompleted }
         // Only habits scheduled today count toward the day; one done on an off-day is a bonus.
-        val habits = habitRepository.observeStats(today).first()
         val totalHabits = habits.count { it.isActiveToday }
         val completedHabits = habits.count { it.isActiveToday && it.isDoneToday }
-
-        val monthStart = today.withDayOfMonth(1)
-        val budgets = financeRepository.observeBudgetProgress(monthStart, today).first()
-        val worstBudgetPercent = budgets
-            .filter { it.budget.monthlyLimit > 0 }
-            .maxOfOrNull { (it.spent * 100 / it.budget.monthlyLimit).toInt() }
 
         val taskRate = if (totalTasks == 0) 1f else completedTasks.toFloat() / totalTasks
         val habitRate = if (totalHabits == 0) 1f else completedHabits.toFloat() / totalHabits
@@ -92,8 +135,11 @@ class DayReviewRepository(
             (taskRate * PROGRESS_WEIGHT_TASKS + habitRate * PROGRESS_WEIGHT_HABITS + budgetHealth * PROGRESS_WEIGHT_BUDGET) * 100
         ).roundToInt().coerceIn(0, 100)
 
-        return DayStats(completedTasks, totalTasks, completedHabits, totalHabits, worstBudgetPercent, score)
+        return DayStats(completedTasks, totalTasks, completedHabits, totalHabits, worstBudgetPercent, score, spent, earned)
     }
+
+    /** One-shot stats for callers outside the screen. */
+    suspend fun computeStats(today: LocalDate): DayStats = observeDay(today).first().stats
 
     fun localDayLabel(score: Int): String = when {
         score >= 80 -> "Yaxshi kun"
@@ -110,12 +156,21 @@ class DayReviewRepository(
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
+    suspend fun setTaskDone(task: Task, done: Boolean) = taskDao.setCompleted(task.id, done)
+
+    suspend fun tapHabit(stats: HabitStats, today: LocalDate) = habitRepository.tapToday(stats, today)
+
+    /** "Ertaga o'tkazish": today's unfinished tasks move to tomorrow, keeping their time. */
+    suspend fun moveUnfinishedToTomorrow(tasks: List<Task>, today: LocalDate) {
+        tasks.filter { !it.isCompleted }.forEach { taskDao.update(it.copy(date = today.plusDays(1))) }
+    }
+
     /**
-     * Saves today's stats immediately (works offline) — this alone counts as "kun yakunlandi"
-     * for TZ 3.7's unblock rule, without waiting on the AI part. Preserves any AI summary
-     * already fetched earlier today instead of clobbering it back to null.
+     * The explicit end of the day: saves the snapshot (this row is what counts as "kun yakunlandi"
+     * everywhere) and turns the "tomorrow's priorities" lines into real tasks for tomorrow. Re-finishing
+     * the same day updates it but keeps an AI summary already fetched.
      */
-    suspend fun ensureDaySaved(today: LocalDate, stats: DayStats): AiInsight? {
+    suspend fun finishDay(today: LocalDate, stats: DayStats, mood: Int?, reflection: String, tomorrow: List<String>) {
         val existing = dailyReviewDao.findByDate(today)
         dailyReviewDao.upsert(
             DailyReview(
@@ -123,37 +178,39 @@ class DayReviewRepository(
                 completedCount = stats.completedTasks,
                 totalCount = stats.totalTasks,
                 aiSummary = existing?.aiSummary,
-                synced = existing?.synced ?: false
+                synced = existing?.synced ?: false,
+                score = stats.score,
+                mood = mood,
+                reflection = reflection.trim().ifBlank { null },
+                habitsCompleted = stats.completedHabits,
+                habitsTotal = stats.totalHabits,
+                spent = stats.spentToday,
+                finishedAt = System.currentTimeMillis()
             )
         )
-        return existing?.aiSummary?.let(::parseInsight)
+        tomorrow.map { it.trim() }.filter { it.isNotEmpty() }.forEach { title ->
+            taskDao.insert(Task(title = title, date = today.plusDays(1), time = null, category = TaskCategory.SHAXSIY))
+        }
     }
 
-    suspend fun saveAiSummary(today: LocalDate, stats: DayStats, rawText: String) {
-        dailyReviewDao.upsert(
-            DailyReview(
-                date = today,
-                completedCount = stats.completedTasks,
-                totalCount = stats.totalTasks,
-                aiSummary = rawText,
-                synced = true
-            )
-        )
+    suspend fun saveAiSummary(today: LocalDate, rawText: String) {
+        val existing = dailyReviewDao.findByDate(today) ?: return
+        dailyReviewDao.upsert(existing.copy(aiSummary = rawText, synced = true))
     }
 
-    suspend fun fetchAiInsight(stats: DayStats): AiInsightStatus {
+    suspend fun fetchAiInsight(stats: DayStats, review: DailyReview?, unfinished: List<String>): AiInsightStatus {
         val apiKey = apiKeyStore.apiKey.first()
         if (apiKey.isNullOrBlank() || !hasInternet()) return AiInsightStatus.NotAttempted
-        return when (val result = ClaudeApiClient(apiKey).sendMessage(SYSTEM_PROMPT, buildStatsMessage(stats))) {
+        return when (val result = ClaudeApiClient(apiKey).sendMessage(SYSTEM_PROMPT, buildStatsMessage(stats, review, unfinished))) {
             is ClaudeResult.Success -> AiInsightStatus.Success(parseInsight(result.text), result.text)
             is ClaudeResult.Error -> AiInsightStatus.Failed(result.message)
         }
     }
 
-    suspend fun askFollowUp(stats: DayStats, question: String): AiAnswerStatus {
+    suspend fun askFollowUp(stats: DayStats, review: DailyReview?, question: String): AiAnswerStatus {
         val apiKey = apiKeyStore.apiKey.first()
         if (apiKey.isNullOrBlank() || !hasInternet()) return AiAnswerStatus.NotAttempted
-        val message = "${buildStatsMessage(stats)}\n\nSavol: $question"
+        val message = "${buildStatsMessage(stats, review, emptyList())}\n\nSavol: $question"
         return when (val result = ClaudeApiClient(apiKey).sendMessage(FOLLOWUP_SYSTEM_PROMPT, message)) {
             is ClaudeResult.Success -> AiAnswerStatus.Success(result.text.trim())
             is ClaudeResult.Error -> AiAnswerStatus.Failed(result.message)
@@ -185,13 +242,17 @@ class DayReviewRepository(
         return AiInsight(dayLabel, summary, recommendations)
     }
 
-    private fun buildStatsMessage(stats: DayStats): String = buildString {
+    private fun buildStatsMessage(stats: DayStats, review: DailyReview?, unfinished: List<String>): String = buildString {
         appendLine("Bugungi statistika:")
         appendLine("- Vazifalar: ${stats.completedTasks}/${stats.totalTasks} bajarildi")
+        if (unfinished.isNotEmpty()) appendLine("- Bajarilmay qolganlar: ${unfinished.joinToString(", ")}")
         appendLine("- Odatlar: ${stats.completedHabits}/${stats.totalHabits} bajarildi")
         if (stats.worstBudgetPercent != null) {
             appendLine("- Budjet: eng yuqori kategoriya limitning ${stats.worstBudgetPercent}% ishlatilgan")
         }
+        if (stats.spentToday > 0) appendLine("- Bugun sarflandi: ${stats.spentToday} so'm")
         appendLine("- Umumiy ball: ${stats.score}/100")
+        moodLabel(review?.mood)?.let { appendLine("- Kayfiyat: $it") }
+        review?.reflection?.let { appendLine("- Foydalanuvchi xulosasi: $it") }
     }
 }

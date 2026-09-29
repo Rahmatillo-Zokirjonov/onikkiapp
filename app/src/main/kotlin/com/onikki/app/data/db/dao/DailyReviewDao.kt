@@ -16,6 +16,9 @@ interface DailyReviewDao {
     @Query("SELECT * FROM daily_reviews WHERE date = :date LIMIT 1")
     suspend fun findByDate(date: LocalDate): DailyReview?
 
+    @Query("SELECT * FROM daily_reviews WHERE date BETWEEN :from AND :to ORDER BY date")
+    fun observeBetween(from: LocalDate, to: LocalDate): Flow<List<DailyReview>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(review: DailyReview)
 }

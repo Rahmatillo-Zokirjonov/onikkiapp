@@ -45,7 +45,7 @@ import com.onikki.app.data.db.entity.Transaction
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
         BlockZone::class, VocabWord::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -72,7 +72,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -166,5 +166,15 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
                 "`english` TEXT NOT NULL, `uzbek` TEXT NOT NULL, `correctCount` INTEGER NOT NULL, " +
                 "`wrongCount` INTEGER NOT NULL, `lastAskedAt` INTEGER NOT NULL)"
         )
+    }
+}
+
+/** v6 (Kun yakuni): the finished day keeps its score, mood, reflection, habit totals and spending. */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        listOf(
+            "score INTEGER", "mood INTEGER", "reflection TEXT", "habitsCompleted INTEGER",
+            "habitsTotal INTEGER", "spent INTEGER", "finishedAt INTEGER"
+        ).forEach { column -> db.execSQL("ALTER TABLE daily_reviews ADD COLUMN $column") }
     }
 }

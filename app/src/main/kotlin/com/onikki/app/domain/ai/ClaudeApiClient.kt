@@ -83,7 +83,7 @@ class ClaudeApiClient(private val apiKey: String) {
     companion object {
         private const val ENDPOINT = "https://api.anthropic.com/v1/messages"
         private const val API_VERSION = "2023-06-01"
-        private const val MODEL = "claude-opus-5"
+        private const val MODEL = "claude-opus-5-5"
         private const val MAX_TOKENS = 1024
     }
 }
