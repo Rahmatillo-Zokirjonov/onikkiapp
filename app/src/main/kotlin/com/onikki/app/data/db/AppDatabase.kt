@@ -50,7 +50,7 @@ import com.onikki.app.data.db.entity.Transaction
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
         BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -79,7 +79,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -211,5 +211,18 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
                 "`area` TEXT, `orderIndex` INTEGER NOT NULL DEFAULT 0, `linkedSavingsId` INTEGER)"
         )
         db.execSQL("ALTER TABLE tasks ADD COLUMN goalId INTEGER")
+    }
+}
+
+/** Qaydlar: pin, colour, archive, trash (soft delete), checklists, and a last-edited time for sorting. */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE notes ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE notes SET updatedAt = createdAt")
+        db.execSQL("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE notes ADD COLUMN color TEXT")
+        db.execSQL("ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE notes ADD COLUMN deletedAt INTEGER")
+        db.execSQL("ALTER TABLE notes ADD COLUMN isChecklist INTEGER NOT NULL DEFAULT 0")
     }
 }

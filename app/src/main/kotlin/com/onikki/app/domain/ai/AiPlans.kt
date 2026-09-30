@@ -20,6 +20,9 @@ data class ProposedStage(
 
 data class GoalPlan(val stages: List<ProposedStage>, val advice: String?)
 
+/** A task Claude found in a note; [date] null = no specific day (the user picks). */
+data class ExtractedTask(val title: String, val date: LocalDate?, val time: java.time.LocalTime?)
+
 /** A suggested category + note for one bank-SMS transaction. */
 data class CategorySuggestion(val transactionId: Long, val category: String, val note: String)
 
@@ -59,6 +62,31 @@ object AiPlans {
             ),
             "advice" to type("string")
         )
+
+    val noteTasksSchema: JSONObject
+        get() = obj(
+            "tasks" to arrayOf(
+                obj(
+                    "title" to type("string"),
+                    "date" to type("string"),
+                    "time" to type("string")
+                )
+            )
+        )
+
+    /** Tasks from a note; past dates are dropped to "no date", bad times ignored, at most 15. */
+    fun parseNoteTasks(json: String, today: LocalDate): List<ExtractedTask> = try {
+        val tasks = JSONObject(extractJson(json)).optJSONArray("tasks") ?: JSONArray()
+        (0 until tasks.length()).mapNotNull { i ->
+            val t = tasks.optJSONObject(i) ?: return@mapNotNull null
+            val title = t.optString("title").trim()
+            if (title.isEmpty()) return@mapNotNull null
+            val time = runCatching { java.time.LocalTime.parse(t.optString("time").trim().take(5)) }.getOrNull()
+            ExtractedTask(title.take(120), parseDate(t.optString("date"))?.takeUnless { it.isBefore(today) }, time)
+        }.distinctBy { it.title.lowercase() }.take(15)
+    } catch (e: JSONException) {
+        emptyList()
+    }
 
     fun categorySchema(categories: List<String>): JSONObject = obj(
         "items" to arrayOf(

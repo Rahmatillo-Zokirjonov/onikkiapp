@@ -51,4 +51,20 @@ class AiPlansTest {
         val result = AiPlans.parseCategories(json, askedIds = setOf(5L, 6L), categories = listOf("Oziq-ovqat", "Transport"))
         assertEquals(listOf(CategorySuggestion(5, "Oziq-ovqat", "Korzinka")), result)
     }
+
+    @Test
+    fun noteTasksKeepFutureDatesAndValidTimes() {
+        val json = """{"tasks":[
+            {"title":"Bankka borish","date":"2026-10-02","time":"10:30"},
+            {"title":"Eski ish","date":"2026-09-01","time":"25:99"},
+            {"title":"bankka borish","date":"","time":""},
+            {"title":" ","date":"","time":""}
+        ]}"""
+        val tasks = AiPlans.parseNoteTasks(json, today)
+        assertEquals(2, tasks.size)
+        assertEquals(LocalDate.of(2026, 10, 2), tasks[0].date)
+        assertEquals(java.time.LocalTime.of(10, 30), tasks[0].time)
+        assertNull(tasks[1].date)
+        assertNull(tasks[1].time)
+    }
 }

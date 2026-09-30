@@ -66,6 +66,16 @@ Foydalanuvchi katta maqsadini beradi. Uni ketma-ket bajariladigan 3–6 ta bosqi
 Foydalanuvchining moliyasi va boshqa maqsadlari ham beriladi — pul bosqichlarini real daromadga moslab qo'y.
 Barcha matnlar o'zbek tilida, lotin alifbosida."""
 
+private const val NOTE_SUMMARY_SYSTEM = """Sen "On ikki" ilovasidagi qaydlarni qisqartiruvchisan. Foydalanuvchining qaydini o'qib,
+eng muhim fikrlarni 2–5 ta qisqa band qilib yoz (har biri "• " bilan). Qaydda bo'lmagan narsani qo'shma. Qayd tilida (odatda o'zbekcha, lotin) yoz.
+Markdown ishlatma."""
+
+private const val NOTE_TASKS_SYSTEM = """Sen qaydlardan bajariladigan ishlarni ajratib oluvchisan. Qayddagi har bir aniq harakatni alohida vazifa qil:
+- title: qisqa, fe'l bilan ("Bankka borish", "Onamga qo'ng'iroq qilish"), qayd tilida;
+- date: qaydda kun aytilgan bo'lsa YYYY-MM-DD ("ertaga", "juma" kabi so'zlarni bugungi sanadan hisobla), aks holda "";
+- time: vaqt aytilgan bo'lsa HH:MM, aks holda "".
+Faqat haqiqiy ishlarni ol; fikr, eslatma yoki ma'lumotni vazifa qilma. Hech narsa bo'lmasa, bo'sh ro'yxat qaytar."""
+
 private const val CATEGORY_SYSTEM = """Sen bank SMS'laridan kelgan to'lovlarni toifalaysan. Har bir tranzaksiya uchun berilgan ro'yxatdan eng mos toifani tanla
 va 1–3 so'zli qisqa izoh yoz (o'zbekcha, masalan "Supermarket", "Taksi", "Telefon to'lovi", "Do'stga o'tkazma").
 Do'kon nomini bilsang, izohda uning turini yoz. Bilmasang, summaga va nomga qarab eng ehtimolli toifani tanla."""
@@ -147,6 +157,19 @@ class AiRepository(private val context: Context, private val db: AppDatabase) {
         when (val r = client.send(CATEGORY_SYSTEM, listOf(ChatTurn(true, message)), maxTokens = 6000, jsonSchema = AiPlans.categorySchema(categories))) {
             is ClaudeResult.Error -> AiOutcome.Failed(r.message)
             is ClaudeResult.Success -> AiOutcome.Ok(AiPlans.parseCategories(r.text, batch.map { it.id }.toSet(), categories))
+        }
+    }
+
+    suspend fun summarizeNote(title: String, content: String): AiOutcome<String> = call { client ->
+        client.sendMessage(NOTE_SUMMARY_SYSTEM, "Sarlavha: ${title.ifBlank { "-" }}\n\n$content", maxTokens = 4000).toOutcome { it.trim() }
+    }
+
+    suspend fun extractTasks(title: String, content: String): AiOutcome<List<com.onikki.app.domain.ai.ExtractedTask>> = call { client ->
+        val today = LocalDate.now()
+        val message = "Bugun: $today (${WEEKDAYS_UZ[today.dayOfWeek.value - 1]})\nSarlavha: ${title.ifBlank { "-" }}\n\n$content"
+        when (val r = client.send(NOTE_TASKS_SYSTEM, listOf(ChatTurn(true, message)), maxTokens = 5000, jsonSchema = AiPlans.noteTasksSchema)) {
+            is ClaudeResult.Error -> AiOutcome.Failed(r.message)
+            is ClaudeResult.Success -> AiOutcome.Ok(AiPlans.parseNoteTasks(r.text, today))
         }
     }
 
