@@ -109,6 +109,7 @@ fun FinanceScreen(
                 onPay = { onOpenSheet(FinanceSheet.PlannedPay(it)) }
             )
             ExpenseBreakdownCard(total = state.expenseTotal, slices = state.expenseSlices)
+            AiFinanceCard()
             BudgetLimitsCard(
                 budgets = state.budgets,
                 onAdd = { onOpenSheet(FinanceSheet.BudgetEdit(null)) },

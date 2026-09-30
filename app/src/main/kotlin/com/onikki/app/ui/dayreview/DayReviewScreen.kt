@@ -68,6 +68,7 @@ import com.onikki.app.ui.theme.OnIkkiType
 import com.onikki.app.ui.theme.muted
 import com.onikki.app.ui.util.formatFullDateUz
 import java.time.LocalDate
+import com.onikki.app.data.repository.AiRepository
 
 @Composable
 fun DayReviewRoute(onBack: () -> Unit = {}) {
@@ -84,7 +85,8 @@ fun DayReviewRoute(onBack: () -> Unit = {}) {
                 db.accountDao(), db.plannedExpenseDao()
             ),
             dailyReviewDao = db.dailyReviewDao(),
-            apiKeyStore = ApiKeyStore(app)
+            apiKeyStore = ApiKeyStore(app),
+            aiRepository = AiRepository(app, db)
         )
     }
     val apiKeyStore = remember { ApiKeyStore(app) }

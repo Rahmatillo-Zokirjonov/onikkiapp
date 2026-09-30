@@ -1,5 +1,6 @@
 package com.onikki.app.ui.goals
 
+import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -10,6 +11,10 @@ import com.onikki.app.data.db.entity.LifeArea
 import com.onikki.app.data.db.entity.SavingsGoal
 import com.onikki.app.data.db.entity.Task
 import com.onikki.app.data.db.entity.TaskCategory
+import com.onikki.app.data.db.entity.GoalKind
+import com.onikki.app.data.repository.AiOutcome
+import com.onikki.app.data.repository.AiRepository
+import com.onikki.app.domain.ai.GoalPlan
 import com.onikki.app.domain.goals.AreaSummary
 import com.onikki.app.domain.goals.BigGoal
 import com.onikki.app.domain.goals.GoalTree
@@ -17,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -31,6 +37,14 @@ sealed interface GoalSheetTarget {
     data class NewTask(val goal: Goal) : GoalSheetTarget
 }
 
+/** The "✨ AI bilan bosqichlarga bo'lish" sheet. */
+sealed interface AiPlanState {
+    val goal: Goal
+    data class Loading(override val goal: Goal) : AiPlanState
+    data class Ready(override val goal: Goal, val plan: GoalPlan) : AiPlanState
+    data class Error(override val goal: Goal, val message: String) : AiPlanState
+}
+
 data class GoalsUiState(
     val active: List<BigGoal> = emptyList(),
     val finished: List<BigGoal> = emptyList(),
@@ -38,16 +52,20 @@ data class GoalsUiState(
     val areaFilter: LifeArea? = null,
     val savings: List<SavingsGoal> = emptyList(),
     val sheet: GoalSheetTarget? = null,
+    val aiPlan: AiPlanState? = null,
+    val needsApiKey: Boolean = false,
     val isLoaded: Boolean = false
 ) {
     val visibleActive: List<BigGoal> get() = active.filter { areaFilter == null || it.goal.area == areaFilter }
     fun find(id: Long) = (active + finished).firstOrNull { it.goal.id == id }
 }
 
-class GoalsViewModel(private val db: AppDatabase) : ViewModel() {
+class GoalsViewModel(private val db: AppDatabase, private val ai: AiRepository) : ViewModel() {
     private val today = LocalDate.now()
     private val sheet = MutableStateFlow<GoalSheetTarget?>(null)
     private val areaFilter = MutableStateFlow<LifeArea?>(null)
+    private val aiPlan = MutableStateFlow<AiPlanState?>(null)
+    private val needsApiKey = MutableStateFlow(false)
 
     private val treeFlow = combine(
         db.goalDao().observeAll(),
@@ -65,7 +83,7 @@ class GoalsViewModel(private val db: AppDatabase) : ViewModel() {
         tree to savings
     }
 
-    val uiState: StateFlow<GoalsUiState> = combine(treeFlow, sheet, areaFilter) { (tree, savings), openSheet, filter ->
+    val uiState: StateFlow<GoalsUiState> = combine(treeFlow, sheet, areaFilter, aiPlan, needsApiKey) { (tree, savings), openSheet, filter, plan, needsKey ->
         GoalsUiState(
             active = tree.filter { !it.isDone }.sortedWith(compareBy({ it.goal.deadline == null }, { it.goal.deadline })),
             finished = tree.filter { it.isDone },
@@ -73,6 +91,8 @@ class GoalsViewModel(private val db: AppDatabase) : ViewModel() {
             areaFilter = filter,
             savings = savings,
             sheet = openSheet,
+            aiPlan = plan,
+            needsApiKey = needsKey,
             isLoaded = true
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GoalsUiState())
@@ -142,7 +162,69 @@ class GoalsViewModel(private val db: AppDatabase) : ViewModel() {
         }
     }
 
+    // ------------------------------------------------------------ AI plan
+
+    fun planWithAi(goal: Goal) {
+        aiPlan.value = AiPlanState.Loading(goal)
+        viewModelScope.launch {
+            aiPlan.value = when (val r = ai.planGoal(goal)) {
+                is AiOutcome.Ok -> AiPlanState.Ready(goal, r.value)
+                is AiOutcome.Failed -> AiPlanState.Error(goal, r.message)
+                AiOutcome.Offline -> AiPlanState.Error(goal, "Internet yo'q")
+                AiOutcome.NoKey -> { needsApiKey.value = true; null }
+            }
+        }
+    }
+
+    fun dismissAiPlan() { aiPlan.value = null }
+
+    fun dismissApiKey() { needsApiKey.value = false }
+
+    fun saveApiKeyAndPlan(key: String, goal: Goal?) {
+        viewModelScope.launch {
+            ai.saveKey(key)
+            needsApiKey.value = false
+            goal?.let(::planWithAi)
+        }
+    }
+
+    /**
+     * Saves the chosen stages after any existing ones. The first new stage's steps become tasks,
+     * one a day from tomorrow, so the plan shows up in Kunlik reja right away.
+     */
+    fun applyAiPlan(goal: Goal, plan: GoalPlan, chosen: Set<Int>) {
+        val stages = plan.stages.filterIndexed { i, _ -> i in chosen }
+        if (stages.isEmpty()) return
+        viewModelScope.launch {
+            var order = db.goalDao().maxStageOrder(goal.id)
+            var firstStageId: Long? = null
+            stages.forEach { s ->
+                order += 1
+                val id = db.goalDao().insert(
+                    Goal(
+                        title = s.title,
+                        parentId = goal.id,
+                        orderIndex = order,
+                        deadline = s.deadline,
+                        kind = if (s.isNumber) GoalKind.NUMBER else GoalKind.TASKS,
+                        target = s.target,
+                        unit = s.unit
+                    )
+                )
+                if (firstStageId == null) firstStageId = id
+            }
+            // Tasks for the stage that becomes active: the first new one, unless older stages are still open.
+            val hasOpenStage = db.goalDao().observeAll().first().any { it.parentId == goal.id && it.doneAt == null && it.orderIndex < order - stages.size + 1 }
+            if (!hasOpenStage) {
+                stages.first().tasks.forEachIndexed { i, title ->
+                    db.taskDao().insert(Task(title = title, date = today.plusDays(i + 1L), time = null, category = TaskCategory.SHAXSIY, goalId = firstStageId))
+                }
+            }
+            aiPlan.value = null
+        }
+    }
+
     companion object {
-        fun factory(db: AppDatabase) = viewModelFactory { initializer { GoalsViewModel(db) } }
+        fun factory(app: Application, db: AppDatabase) = viewModelFactory { initializer { GoalsViewModel(db, AiRepository(app, db)) } }
     }
 }

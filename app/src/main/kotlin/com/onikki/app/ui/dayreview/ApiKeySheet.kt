@@ -33,7 +33,7 @@ fun ApiKeySheet(onDismiss: () -> Unit, onSave: (String) -> Unit) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
             Text(text = "Claude API kaliti", color = colors.text, fontFamily = OnIkkiFontFamily, fontSize = 18.sp)
             Text(
-                text = "Kun yakunidagi AI tahlil shu kalit orqali to'g'ridan-to'g'ri Anthropic serveriga (internet talab qiladi) yuboriladi — boshqa hech qanday server ishtirok etmaydi.",
+                text = "AI funksiyalar (yordamchi, kun yakuni, moliya tahlili, maqsad rejasi, SMS toifalash) shu kalit orqali to'g'ridan-to'g'ri Anthropic serveriga (internet talab qiladi) murojaat qiladi — boshqa hech qanday server ishtirok etmaydi. Kalitni console.anthropic.com saytidan olasiz.",
                 color = colors.text.muted(0.6f),
                 fontSize = 12.sp,
                 fontFamily = OnIkkiFontFamily,

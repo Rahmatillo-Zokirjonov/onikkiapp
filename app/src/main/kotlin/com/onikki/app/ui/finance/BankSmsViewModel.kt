@@ -10,6 +10,9 @@ import com.onikki.app.data.db.entity.SmsImportStatus
 import com.onikki.app.data.db.entity.Transaction
 import com.onikki.app.data.local.BankSmsSettings
 import com.onikki.app.data.local.BankSmsSettingsStore
+import com.onikki.app.data.repository.AiOutcome
+import com.onikki.app.data.repository.AiRepository
+import com.onikki.app.domain.ai.CategorySuggestion
 import com.onikki.app.domain.sms.BankSmsImporter
 import com.onikki.app.domain.sms.BankSmsParser
 import com.onikki.app.domain.sms.ParsedBankSms
@@ -29,7 +32,11 @@ data class BankSmsUiState(
     val frequentNotes: List<String> = emptyList(),
     /** Result line of the last manual action ("12 ta tranzaksiya qo'shildi"). */
     val message: String? = null,
-    val isImporting: Boolean = false
+    val isImporting: Boolean = false,
+    /** AI suggestions by transaction id; they only prefill the cards until the user saves. */
+    val suggestions: Map<Long, CategorySuggestion> = emptyMap(),
+    val isSuggesting: Boolean = false,
+    val needsApiKey: Boolean = false
 )
 
 /** Default one-tap notes until the user has their own history. */
@@ -41,6 +48,7 @@ class BankSmsViewModel(application: Application) : AndroidViewModel(application)
     private val store = BankSmsSettingsStore(application)
     private val importer = BankSmsImporter(application)
     private val transient = MutableStateFlow(BankSmsUiState())
+    private val ai = AiRepository(application, db)
 
     val uiState: StateFlow<BankSmsUiState> = combine(
         store.settings,
@@ -123,4 +131,43 @@ class BankSmsViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun clearMessage() = transient.update { it.copy(message = null) }
+
+    fun suggestWithAi(expense: List<String>, income: List<String>) {
+        if (transient.value.isSuggesting) return
+        val pending = uiState.value.unnoted.filter { it.id !in transient.value.suggestions }
+        if (pending.isEmpty()) return
+        transient.update { it.copy(isSuggesting = true, message = null) }
+        viewModelScope.launch {
+            when (val r = ai.suggestCategories(pending, expense, income)) {
+                is AiOutcome.Ok -> transient.update { s ->
+                    s.copy(
+                        isSuggesting = false,
+                        suggestions = s.suggestions + r.value.associateBy { it.transactionId },
+                        message = if (r.value.isEmpty()) "AI taklif bera olmadi" else "${r.value.size} ta taklif — tekshirib saqlang"
+                    )
+                }
+                is AiOutcome.Failed -> transient.update { it.copy(isSuggesting = false, message = r.message) }
+                AiOutcome.Offline -> transient.update { it.copy(isSuggesting = false, message = "Internet yo'q") }
+                AiOutcome.NoKey -> transient.update { it.copy(isSuggesting = false, needsApiKey = true) }
+            }
+        }
+    }
+
+    /** Saves every AI suggestion as is (each card can still be saved one by one instead). */
+    fun acceptAllSuggestions() {
+        val byId = uiState.value.unnoted.associateBy { it.id }
+        val accepted = transient.value.suggestions.values.mapNotNull { s -> byId[s.transactionId]?.let { it to s } }
+        accepted.forEach { (tx, s) -> saveReview(tx, s.note.ifBlank { s.category }, s.category) }
+        transient.update { it.copy(suggestions = emptyMap(), message = "${accepted.size} ta saqlandi") }
+    }
+
+    fun saveApiKey(key: String, expense: List<String>, income: List<String>) {
+        viewModelScope.launch {
+            ai.saveKey(key)
+            transient.update { it.copy(needsApiKey = false) }
+            suggestWithAi(expense, income)
+        }
+    }
+
+    fun dismissApiKey() = transient.update { it.copy(needsApiKey = false) }
 }

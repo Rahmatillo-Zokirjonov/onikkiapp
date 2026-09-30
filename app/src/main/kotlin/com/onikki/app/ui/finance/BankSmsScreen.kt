@@ -41,6 +41,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.onikki.app.data.db.entity.SmsImport
+import com.onikki.app.domain.ai.CategorySuggestion
+import com.onikki.app.ui.dayreview.ApiKeySheet
+import androidx.compose.runtime.LaunchedEffect
 import com.onikki.app.data.db.entity.Transaction
 import com.onikki.app.data.db.entity.TransactionType
 import com.onikki.app.ui.components.OnIkkiButton
@@ -140,9 +143,23 @@ fun BankSmsScreen(expenseCategories: List<String>, incomeCategories: List<String
                     fontFamily = OnIkkiFontFamily
                 )
             }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OnIkkiButton(
+                        text = if (state.isSuggesting) "AI o'ylayapti…" else "✨ AI toifalasin",
+                        onClick = { viewModel.suggestWithAi(expenseCategories, incomeCategories) },
+                        variant = OnIkkiButtonVariant.SECONDARY,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (state.suggestions.isNotEmpty()) {
+                        OnIkkiButton(text = "Hammasini saqlash (${state.suggestions.size})", onClick = viewModel::acceptAllSuggestions, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
             items(state.unnoted, key = { it.id }) { tx ->
                 UnnotedCard(
                     tx = tx,
+                    suggestion = state.suggestions[tx.id],
                     notes = state.frequentNotes,
                     categories = if (tx.type == TransactionType.KIRIM) incomeCategories else expenseCategories,
                     onSave = { note, category -> viewModel.saveReview(tx, note, category) }
@@ -158,6 +175,10 @@ fun BankSmsScreen(expenseCategories: List<String>, incomeCategories: List<String
         }
 
         item { PasteTester(viewModel) }
+    }
+
+    if (state.needsApiKey) {
+        ApiKeySheet(onDismiss = viewModel::dismissApiKey, onSave = { viewModel.saveApiKey(it, expenseCategories, incomeCategories) })
     }
 }
 
@@ -200,16 +221,27 @@ private fun RatesCard(usd: Long, eur: Long, onSave: (Long, Long) -> Unit) {
 
 /** One SMS transaction waiting for a note: tap a frequent note or type one, optionally fix the category. */
 @Composable
-private fun UnnotedCard(tx: Transaction, notes: List<String>, categories: List<String>, onSave: (String, String) -> Unit) {
+private fun UnnotedCard(tx: Transaction, suggestion: CategorySuggestion?, notes: List<String>, categories: List<String>, onSave: (String, String) -> Unit) {
     val colors = LocalOnIkkiColors.current
     var note by rememberSaveable(tx.id) { mutableStateOf("") }
     var category by rememberSaveable(tx.id) { mutableStateOf(tx.category) }
+    LaunchedEffect(suggestion) {
+        if (suggestion != null) {
+            note = suggestion.note
+            category = suggestion.category
+        }
+    }
     val income = tx.type == TransactionType.KIRIM
     OnIkkiCard(modifier = Modifier.fillMaxWidth(), gap = 8.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = tx.merchant ?: if (income) "Tushum" else "To'lov", color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
-                Text(text = formatRelativeDateUz(tx.date), color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+                Text(
+                    text = formatRelativeDateUz(tx.date) + if (suggestion != null) " · ✨ AI taklifi" else "",
+                    color = if (suggestion != null) colors.accent else colors.text.muted(0.5f),
+                    fontSize = 11.sp,
+                    fontFamily = OnIkkiFontFamily
+                )
             }
             Text(
                 text = (if (income) "+ " else "− ") + formatSom(tx.amount),

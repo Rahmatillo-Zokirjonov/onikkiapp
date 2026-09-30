@@ -78,6 +78,8 @@ ksp {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM unit tests (Android's copy is a stub there) — the AI reply parsers use it.
+    testImplementation("org.json:json:20240303")
     implementation(libs.core.ktx)
     implementation(libs.lifecycle.runtime.ktx)
     implementation(libs.lifecycle.viewmodel.compose)

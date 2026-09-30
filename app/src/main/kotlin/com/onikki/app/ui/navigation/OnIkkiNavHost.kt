@@ -18,6 +18,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.onikki.app.ui.components.OnIkkiBottomNavBar
 import com.onikki.app.ui.components.OnIkkiTab
+import com.onikki.app.ui.assistant.AssistantRoute
 import com.onikki.app.ui.dayreview.DayReviewRoute
 import com.onikki.app.ui.finance.FinanceSectionRoute
 import com.onikki.app.ui.home.HomeRoute
@@ -27,6 +28,7 @@ import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
 
 private const val ROUTE_DAY_REVIEW = "day_review"
+private const val ROUTE_ASSISTANT = "assistant"
 
 private fun OnIkkiTab.route(): String = name.lowercase()
 
@@ -70,6 +72,7 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
                 composable(OnIkkiTab.HOME.route()) {
                     HomeRoute(
                         onNavigateToDayReview = { navController.navigate(ROUTE_DAY_REVIEW) },
+                        onNavigateToAssistant = { navController.navigate(ROUTE_ASSISTANT) },
                         onNavigateToTab = navigateToTab
                     )
                 }
@@ -78,6 +81,7 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
                 composable(OnIkkiTab.NOTES.route()) { NotesRoute() }
                 composable(OnIkkiTab.PROFILE.route()) { ProfileSectionRoute() }
                 composable(ROUTE_DAY_REVIEW) { DayReviewRoute(onBack = { navController.popBackStack() }) }
+                composable(ROUTE_ASSISTANT) { AssistantRoute(onBack = { navController.popBackStack() }) }
             }
         }
         if (isTabRoute) {

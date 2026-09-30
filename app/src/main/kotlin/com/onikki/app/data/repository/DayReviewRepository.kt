@@ -89,7 +89,9 @@ class DayReviewRepository(
     private val habitRepository: HabitRepository,
     private val financeRepository: FinanceRepository,
     private val dailyReviewDao: DailyReviewDao,
-    private val apiKeyStore: ApiKeyStore
+    private val apiKeyStore: ApiKeyStore,
+    /** Adds goals (and, for questions, the rest of the user's state) to the AI context. */
+    private val aiRepository: AiRepository? = null
 ) {
     fun observeDay(today: LocalDate): Flow<DayData> {
         val money = combine(
@@ -201,7 +203,8 @@ class DayReviewRepository(
     suspend fun fetchAiInsight(stats: DayStats, review: DailyReview?, unfinished: List<String>): AiInsightStatus {
         val apiKey = apiKeyStore.apiKey.first()
         if (apiKey.isNullOrBlank() || !hasInternet()) return AiInsightStatus.NotAttempted
-        return when (val result = ClaudeApiClient(apiKey).sendMessage(SYSTEM_PROMPT, buildStatsMessage(stats, review, unfinished))) {
+        val goals = aiRepository?.snapshot(setOf(AiRepository.Section.GOALS))?.let { "\n\nMaqsadlar holati (tavsiyalardan biri faol bosqichga oid bo'lsin, agar bo'lsa):\n$it" }.orEmpty()
+        return when (val result = ClaudeApiClient(apiKey).sendMessage(SYSTEM_PROMPT, buildStatsMessage(stats, review, unfinished) + goals)) {
             is ClaudeResult.Success -> AiInsightStatus.Success(parseInsight(result.text), result.text)
             is ClaudeResult.Error -> AiInsightStatus.Failed(result.message)
         }
@@ -210,7 +213,8 @@ class DayReviewRepository(
     suspend fun askFollowUp(stats: DayStats, review: DailyReview?, question: String): AiAnswerStatus {
         val apiKey = apiKeyStore.apiKey.first()
         if (apiKey.isNullOrBlank() || !hasInternet()) return AiAnswerStatus.NotAttempted
-        val message = "${buildStatsMessage(stats, review, emptyList())}\n\nSavol: $question"
+        val context = aiRepository?.snapshot(AiRepository.Section.entries.toSet())?.let { "\n\nUmumiy holat:\n$it" }.orEmpty()
+        val message = "${buildStatsMessage(stats, review, emptyList())}$context\n\nSavol: $question"
         return when (val result = ClaudeApiClient(apiKey).sendMessage(FOLLOWUP_SYSTEM_PROMPT, message)) {
             is ClaudeResult.Success -> AiAnswerStatus.Success(result.text.trim())
             is ClaudeResult.Error -> AiAnswerStatus.Failed(result.message)

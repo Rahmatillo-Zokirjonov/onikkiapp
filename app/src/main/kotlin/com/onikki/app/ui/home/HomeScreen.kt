@@ -77,7 +77,7 @@ import java.time.LocalTime
 private const val HOME_TASK_LIMIT = 5
 
 @Composable
-fun HomeRoute(onNavigateToDayReview: () -> Unit = {}, onNavigateToTab: (OnIkkiTab) -> Unit = {}) {
+fun HomeRoute(onNavigateToDayReview: () -> Unit = {}, onNavigateToAssistant: () -> Unit = {}, onNavigateToTab: (OnIkkiTab) -> Unit = {}) {
     val app = LocalContext.current.applicationContext as OnIkkiApplication
     val db = app.database
     val habitRepository = remember { HabitRepository(db.habitDao(), db.habitLogDao()) }
@@ -94,6 +94,7 @@ fun HomeRoute(onNavigateToDayReview: () -> Unit = {}, onNavigateToTab: (OnIkkiTa
         onTapHabit = viewModel::tapHabit,
         onCompleteMoney = viewModel::completeMoney,
         onOpenDayReview = onNavigateToDayReview,
+        onOpenAssistant = onNavigateToAssistant,
         onOpenTab = onNavigateToTab,
         onEditName = { editingName = true }
     )
@@ -116,6 +117,7 @@ fun HomeScreen(
     onTapHabit: (HabitStats) -> Unit,
     onCompleteMoney: (PlannedExpense) -> Unit,
     onOpenDayReview: () -> Unit,
+    onOpenAssistant: () -> Unit,
     onOpenTab: (OnIkkiTab) -> Unit,
     onEditName: () -> Unit
 ) {
@@ -141,6 +143,7 @@ fun HomeScreen(
         )
         TodayPlanSection(state, onToggleTask = onToggleTask, onOpenPlan = { onOpenTab(OnIkkiTab.PLAN) })
         HabitsSection(habits = state.habits, onTapHabit = onTapHabit, onOpenAll = { onOpenTab(OnIkkiTab.PLAN) })
+        AssistantEntryRow(onClick = onOpenAssistant)
         DayReviewEntryRow(review = state.review, now = state.now, onClick = onOpenDayReview)
     }
 }
@@ -495,6 +498,21 @@ private fun HabitTodayCard(stats: HabitStats, onClick: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center
         )
+    }
+}
+
+// ---------------------------------------------------------------- AI yordamchi
+
+@Composable
+private fun AssistantEntryRow(onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    OnIkkiRowCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Text(text = "✨", fontSize = 18.sp)
+        Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+            Text(text = "AI yordamchi", color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+            Text(text = "Reja, maqsad, pul — istalgan savol", color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+        }
+        Text(text = "→", color = colors.text.muted(0.5f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
     }
 }
 

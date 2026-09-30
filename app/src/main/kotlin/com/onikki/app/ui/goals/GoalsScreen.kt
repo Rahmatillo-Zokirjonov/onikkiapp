@@ -69,6 +69,8 @@ import com.onikki.app.ui.components.SubScreenHeader
 import com.onikki.app.ui.components.SuggestionChips
 import com.onikki.app.ui.components.TaskRowCard
 import com.onikki.app.ui.dailyplan.TaskSheet
+import com.onikki.app.ui.dayreview.ApiKeySheet
+import com.onikki.app.domain.ai.ProposedStage
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
 import com.onikki.app.ui.theme.OnIkkiType
@@ -80,7 +82,7 @@ import java.time.LocalDate
 @Composable
 fun GoalsRoute() {
     val app = LocalContext.current.applicationContext as OnIkkiApplication
-    val viewModel: GoalsViewModel = viewModel(factory = GoalsViewModel.factory(app.database))
+    val viewModel: GoalsViewModel = viewModel(factory = GoalsViewModel.factory(app, app.database))
     val state by viewModel.uiState.collectAsState()
     var bigId by rememberSaveable { mutableStateOf<Long?>(null) }
     var stageId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -119,6 +121,16 @@ fun GoalsRoute() {
             onDelete = {}
         )
     }
+
+    state.aiPlan?.let { plan ->
+        AiPlanSheet(
+            state = plan,
+            onDismiss = viewModel::dismissAiPlan,
+            onRetry = { viewModel.planWithAi(plan.goal) },
+            onApply = { chosen -> (plan as? AiPlanState.Ready)?.let { viewModel.applyAiPlan(it.goal, it.plan, chosen) } }
+        )
+    }
+    if (state.needsApiKey) ApiKeySheet(onDismiss = viewModel::dismissApiKey, onSave = { viewModel.saveApiKeyAndPlan(it, big?.goal) })
 }
 
 // ---------------------------------------------------------------- helpers
@@ -337,7 +349,13 @@ private fun BigGoalDetail(g: BigGoal, viewModel: GoalsViewModel, onBack: () -> U
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(text = "Bosqichlar", color = colors.text, style = OnIkkiType.sectionHeader, modifier = Modifier.weight(1f))
+                if (!g.isDone && g.stages.isNotEmpty()) Text(text = "✨ AI", color = colors.accent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.clickable { viewModel.planWithAi(g.goal) }.padding(4.dp))
                 if (!g.isDone) Text(text = "+ Bosqich", color = colors.accent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.clickable { viewModel.openNewStage(g.goal) }.padding(4.dp))
+            }
+        }
+        if (g.stages.isEmpty() && !g.isDone) {
+            item {
+                OnIkkiButton(text = "✨ AI bilan bosqichlarga bo'lish", onClick = { viewModel.planWithAi(g.goal) }, modifier = Modifier.fillMaxWidth())
             }
         }
         if (g.stages.isEmpty()) {
@@ -691,5 +709,88 @@ private fun GoalForm(
             },
             onDelete = if (goal != null) onDelete else null
         )
+    }
+}
+
+// ---------------------------------------------------------------- AI plan
+
+@Composable
+private fun AiPlanSheet(state: AiPlanState, onDismiss: () -> Unit, onRetry: () -> Unit, onApply: (Set<Int>) -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    OnIkkiSheet(title = "✨ AI rejasi", onDismiss = onDismiss) {
+        Text(text = "${state.goal.icon} ${state.goal.title}", color = colors.accent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+        when (state) {
+            is AiPlanState.Loading -> Text(
+                text = "Reja tuzilmoqda… Maqsadingiz, muddat va moliyangizga qarab bosqichlar o'ylanmoqda (10–40 soniya).",
+                color = colors.text.muted(0.7f),
+                fontSize = 13.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+            is AiPlanState.Error -> {
+                Text(text = state.message, color = colors.warmAccent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+                OnIkkiButton(text = "Qayta urinish", onClick = onRetry, modifier = Modifier.fillMaxWidth())
+            }
+            is AiPlanState.Ready -> {
+                var chosen by remember(state.plan) { mutableStateOf(state.plan.stages.indices.toSet()) }
+                state.plan.advice?.let { Text(text = "💡 $it", color = colors.text.muted(0.8f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily) }
+                state.plan.stages.forEachIndexed { i, stage ->
+                    ProposedStageRow(
+                        number = i + 1,
+                        stage = stage,
+                        selected = i in chosen,
+                        showTasks = i == chosen.minOrNull(),
+                        onToggle = { chosen = if (i in chosen) chosen - i else chosen + i }
+                    )
+                }
+                Text(
+                    text = "Tanlangan bosqichlar qo'shiladi; birinchisining qadamlari ertadan boshlab kuniga bittadan Kunlik rejaga tushadi. Keyin hammasini tahrirlashingiz mumkin.",
+                    color = colors.text.muted(0.5f),
+                    fontSize = 11.sp,
+                    fontFamily = OnIkkiFontFamily
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OnIkkiButton(text = "Qayta so'rash", onClick = onRetry, variant = OnIkkiButtonVariant.SECONDARY, modifier = Modifier.weight(1f))
+                    OnIkkiButton(text = "Qo'shish (${chosen.size})", onClick = { onApply(chosen) }, modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProposedStageRow(number: Int, stage: ProposedStage, selected: Boolean, showTasks: Boolean, onToggle: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (selected) 1f else 0.45f)
+            .background(colors.background, RoundedCornerShape(12.dp))
+            .border(BorderStroke(1.dp, if (selected) colors.accent700 else colors.cardBorder), RoundedCornerShape(12.dp))
+            .clickable(onClick = onToggle)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "${if (selected) "☑" else "☐"}  $number. ${stage.title}",
+                color = colors.text,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                fontFamily = OnIkkiFontFamily,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Text(
+            text = listOfNotNull(
+                if (stage.isNumber) "O'lchov: ${amount(stage.target, stage.unit)}" else "Vazifalar orqali",
+                stage.deadline?.let { "muddat: ${formatRelativeDateUz(it)}" }
+            ).joinToString(" · "),
+            color = colors.text.muted(0.55f),
+            fontSize = 12.sp,
+            fontFamily = OnIkkiFontFamily
+        )
+        if (showTasks && selected) {
+            stage.tasks.forEach { Text(text = "• $it", color = colors.text.muted(0.75f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily) }
+        }
     }
 }
