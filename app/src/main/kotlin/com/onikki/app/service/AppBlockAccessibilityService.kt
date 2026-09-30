@@ -11,7 +11,6 @@ import com.onikki.app.ui.blocked.BlockedScreenActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
@@ -36,10 +35,10 @@ class AppBlockAccessibilityService : AccessibilityService() {
 
     private var lastLaunchedPackage: String? = null
     private var lastLaunchedAtMillis: Long = 0L
-    private var pendingLaunch: Job? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        isConnected = true
         val app = application as OnIkkiApplication
         repository = ScreenTimeRepository(
             context = applicationContext,
@@ -62,11 +61,10 @@ class AppBlockAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return
 
-        // Coalesce bursts: an app often opens a second window right after the first (splash → main,
-        // Chrome's first-run screen), which would land on top of the block screen. Every event from
-        // the blocked app re-shows it; a burst is collapsed into one launch after it settles.
-        pendingLaunch?.cancel()
-        pendingLaunch = serviceScope.launch {
+        // Every event is evaluated to the end — cancelling an earlier evaluation when an app opens a second
+        // window (Chrome does, ~20 ms apart) killed an in-flight location fetch and let the app through.
+        // Launches for the same app within SETTLE_MS are delayed so the last one lands on top.
+        serviceScope.launch {
             val gate = repository.resolveGate(packageName, LocalDateTime.now())
             if (gate == AppGate.Allowed) return@launch
             val sinceLast = System.currentTimeMillis() - lastLaunchedAtMillis
@@ -77,12 +75,27 @@ class AppBlockAccessibilityService : AccessibilityService() {
         }
     }
 
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        isConnected = false
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
+        isConnected = false
         ZoneLocationTracker.stop(applicationContext)
         super.onDestroy()
     }
 
     override fun onInterrupt() {
         // Required override; nothing to clean up.
+    }
+
+    companion object {
+        /**
+         * True while Android has this service bound. "Enabled in settings" is not enough: some phones
+         * kill it (e.g. after clearing recents) and leave it enabled-but-dead until toggled off and on.
+         */
+        @Volatile var isConnected: Boolean = false
+            private set
     }
 }

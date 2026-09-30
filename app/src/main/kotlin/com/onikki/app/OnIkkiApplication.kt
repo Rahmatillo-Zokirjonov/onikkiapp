@@ -4,6 +4,7 @@ import android.app.Application
 import com.onikki.app.data.db.AppDatabase
 import com.onikki.app.data.local.LocationStore
 import com.onikki.app.data.local.NotificationSettingsStore
+import com.onikki.app.data.repository.BlockOverrides
 import com.onikki.app.domain.notifications.ReminderNotifier
 import com.onikki.app.domain.notifications.ReminderScheduler
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +23,8 @@ class OnIkkiApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Before anything (the accessibility service runs in this process) can ask "is this app unlocked?".
+        BlockOverrides.init(this)
         ReminderNotifier.createChannels(this)
         keepRemindersInSync()
     }

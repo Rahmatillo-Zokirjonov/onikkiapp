@@ -44,6 +44,7 @@ import com.onikki.app.data.repository.BlockReason
 import com.onikki.app.data.repository.ScreenTimeRepository
 import com.onikki.app.data.repository.parseBlockRules
 import com.onikki.app.domain.permissions.PermissionChecker
+import com.onikki.app.service.AppBlockAccessibilityService
 import com.onikki.app.ui.components.OnIkkiButton
 import com.onikki.app.ui.components.OnIkkiCard
 import com.onikki.app.ui.components.OnIkkiRowCard
@@ -131,8 +132,12 @@ fun ScreenTimeScreen(
     val colors = LocalOnIkkiColors.current
     val context = LocalContext.current
     var serviceOn by remember { mutableStateOf(PermissionChecker.isAccessibilityServiceEnabled(context)) }
+    var serviceAlive by remember { mutableStateOf(AppBlockAccessibilityService.isConnected) }
+    var batteryFree by remember { mutableStateOf(PermissionChecker.isIgnoringBatteryOptimizations(context)) }
     LifecycleResumeEffect(Unit) {
         serviceOn = PermissionChecker.isAccessibilityServiceEnabled(context)
+        serviceAlive = AppBlockAccessibilityService.isConnected
+        batteryFree = PermissionChecker.isIgnoringBatteryOptimizations(context)
         onResume()
         onPauseOrDispose { }
     }
@@ -171,6 +176,31 @@ fun ScreenTimeScreen(
                     "Busiz qoidalar saqlanadi, lekin ishlamaydi.",
                 button = "Yoqish",
                 onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            )
+        }
+        if (serviceOn && !serviceAlive) {
+            PermissionPromptCard(
+                title = "Bloklash xizmati to'xtab qolgan",
+                body = "Telefon \"On ikki\" xizmatini o'chirib qo'ygan (ko'pincha ekrandan tozalagandan keyin). " +
+                    "Maxsus imkoniyatlar'da \"On ikki\"ni o'chirib, qayta yoqing — va pastdagi batareya sozlamasini ham bering.",
+                button = "Maxsus imkoniyatlarni ochish",
+                onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            )
+        }
+        if (serviceOn && !batteryFree) {
+            PermissionPromptCard(
+                title = "Blok ishonchli ishlashi uchun",
+                body = "Telefon batareyani tejash uchun \"On ikki\"ni to'xtatib qo'ymasligi kerak. " +
+                    "Aks holda ochilgan ilova qayta bloklanishi yoki blok umuman ishlamay qolishi mumkin. " +
+                    "Xiaomi/Redmi'da qo'shimcha: Sozlamalar > Ilovalar > On ikki > Avtoishga tushirish'ni yoqing.",
+                button = "Batareya tejashdan chiqarish",
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:${context.packageName}"))
+                        )
+                    }
+                }
             )
         }
         if (!state.hasUsageAccess) {

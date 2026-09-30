@@ -180,7 +180,7 @@ class ScreenTimeRepository(
 
         val zoneIds = rule.zoneIdList
         if (zoneIds.isNotEmpty()) {
-            val location = ZoneLocationTracker.currentLocation(context)
+            val location = ZoneLocationTracker.locationForZones(context)
             if (location != null) {
                 val zones = blockZoneDao.getAll().filter { it.id in zoneIds }
                 ZoneLocationTracker.zoneContaining(location, zones)?.let { return BlockReason.Zone(it.name) }

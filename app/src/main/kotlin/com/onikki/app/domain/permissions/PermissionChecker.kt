@@ -37,4 +37,8 @@ object PermissionChecker {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true
         return context.getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent()
     }
+
+    /** Off the battery-optimisation list: aggressive OEM task killers leave the app (and its services) alone. */
+    fun isIgnoringBatteryOptimizations(context: Context): Boolean =
+        context.getSystemService(android.os.PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
 }
