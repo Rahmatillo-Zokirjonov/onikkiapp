@@ -5,6 +5,7 @@ import com.onikki.app.data.db.AppDatabase
 import com.onikki.app.data.local.LocationStore
 import com.onikki.app.data.local.NotificationSettingsStore
 import com.onikki.app.data.repository.BlockOverrides
+import com.onikki.app.data.repository.ScreenTimeRepository
 import com.onikki.app.domain.notifications.ReminderNotifier
 import com.onikki.app.domain.notifications.ReminderScheduler
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +28,17 @@ class OnIkkiApplication : Application() {
         BlockOverrides.init(this)
         ReminderNotifier.createChannels(this)
         keepRemindersInSync()
+        appScope.launch(Dispatchers.IO) {
+            runCatching {
+                ScreenTimeRepository(
+                    this@OnIkkiApplication, database.appUsageDao(), database.appLimitDao(), database.dailyReviewDao(),
+                    database.blockZoneDao(), appUsageHoursDao = database.usageHoursDao()
+                ).run {
+                    syncToday()
+                    backfillHistory()
+                }
+            }
+        }
     }
 
     /**

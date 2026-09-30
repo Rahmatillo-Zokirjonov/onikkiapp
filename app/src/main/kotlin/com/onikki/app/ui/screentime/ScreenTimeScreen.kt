@@ -70,10 +70,11 @@ fun ScreenTimeRoute(onBack: () -> Unit, onOpenVocabulary: () -> Unit) {
     val app = LocalContext.current.applicationContext as OnIkkiApplication
     val repository = remember {
         val db = app.database
-        ScreenTimeRepository(app, db.appUsageDao(), db.appLimitDao(), db.dailyReviewDao(), db.blockZoneDao())
+        ScreenTimeRepository(app, db.appUsageDao(), db.appLimitDao(), db.dailyReviewDao(), db.blockZoneDao(), appUsageHoursDao = db.usageHoursDao())
     }
     val viewModel: ScreenTimeViewModel = viewModel(factory = ScreenTimeViewModel.factory(repository))
     val state by viewModel.uiState.collectAsState()
+    val history by viewModel.history.collectAsState()
     // Saved as a string so it survives rotation ("rule:<pkg>").
     var destinationKey by rememberSaveable { mutableStateOf("overview") }
     val destination: ControlDestination = when {
@@ -89,6 +90,10 @@ fun ScreenTimeRoute(onBack: () -> Unit, onOpenVocabulary: () -> Unit) {
     when (destination) {
         ControlDestination.Overview -> ScreenTimeScreen(
             state = state,
+            history = history,
+            onPeriod = viewModel::setPeriod,
+            onShift = viewModel::shiftPeriod,
+            onOpenDay = viewModel::openDay,
             onBack = onBack,
             onAddApp = { destinationKey = "picker" },
             onOpenApp = { destinationKey = "rule:$it" },
@@ -122,6 +127,10 @@ fun ScreenTimeRoute(onBack: () -> Unit, onOpenVocabulary: () -> Unit) {
 @Composable
 fun ScreenTimeScreen(
     state: ScreenTimeUiState,
+    history: UsageHistoryState,
+    onPeriod: (com.onikki.app.domain.screentime.UsagePeriod) -> Unit,
+    onShift: (Int) -> Unit,
+    onOpenDay: (java.time.LocalDate) -> Unit,
     onBack: () -> Unit,
     onAddApp: () -> Unit,
     onOpenApp: (String) -> Unit,
@@ -152,22 +161,6 @@ fun ScreenTimeScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         SubScreenHeader(title = "Ilovalar nazorati", onBack = onBack)
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text = formatMinutesAsDuration(state.totalMinutesToday.toLong()),
-                color = colors.text,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Medium,
-                fontFamily = OnIkkiFontFamily
-            )
-            Text(
-                text = "  ${comparisonCaption(state.totalMinutesToday, state.averageMinutesLast7Days)}",
-                color = colors.text.muted(0.5f),
-                fontSize = 12.sp,
-                fontFamily = OnIkkiFontFamily,
-                modifier = Modifier.padding(bottom = 3.dp)
-            )
-        }
 
         if (!serviceOn) {
             PermissionPromptCard(
@@ -210,9 +203,6 @@ fun ScreenTimeScreen(
                 button = "Sozlamalarga o'tish",
                 onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
             )
-        } else {
-            HourlyCard(state.hourlyMinutes)
-            WeeklyHistogramCard(state.dailyTotalsLast7Days)
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -237,10 +227,16 @@ fun ScreenTimeScreen(
             state.controlled.forEach { item -> ControlledAppCard(item, onClick = { onOpenApp(item.rule.packageName) }) }
         }
 
-        val uncontrolled = state.apps.filter { usage -> state.controlled.none { it.rule.packageName == usage.packageName } }
-        if (uncontrolled.isNotEmpty()) {
-            SectionHeader(title = "Bugun eng ko'p ishlatilgan", action = null, onAction = {})
-            uncontrolled.take(8).forEach { row -> UsageRow(row, state.totalMinutesToday, onClick = { onOpenApp(row.packageName) }) }
+        if (state.hasUsageAccess) {
+            SectionHeader(title = "Statistika", action = null, onAction = {})
+            UsageHistorySection(
+                history = history,
+                controlled = state.controlled.map { it.rule.packageName }.toSet(),
+                onPeriod = onPeriod,
+                onShift = onShift,
+                onOpenDay = onOpenDay,
+                onOpenApp = onOpenApp
+            )
         }
     }
 }
@@ -357,100 +353,11 @@ fun AppBadge(label: String) {
 }
 
 @Composable
-private fun UsageRow(row: AppUsageRow, totalMinutesToday: Int, onClick: () -> Unit) {
-    val colors = LocalOnIkkiColors.current
-    val percent = if (totalMinutesToday <= 0) 0 else row.minutesUsed * 100 / totalMinutesToday
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(11.dp)
-    ) {
-        AppIcon(row.packageName, row.appName)
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = row.appName, color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily, maxLines = 1)
-            Text(
-                text = "${formatMinutesAsDuration(row.minutesUsed.toLong())} · $percent%",
-                color = colors.text.muted(0.5f),
-                fontSize = 11.sp,
-                fontFamily = OnIkkiFontFamily
-            )
-        }
-        Text(text = "Cheklash", color = colors.accent, fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
-    }
-}
-
-private fun comparisonCaption(totalToday: Int, average: Int): String {
-    if (average <= 0) return "bugun"
-    val diff = totalToday - average
-    return when {
-        diff > 0 -> "bugun · o'rtachadan ${formatMinutesAsDuration(diff.toLong())} ko'p"
-        diff < 0 -> "bugun · o'rtachadan ${formatMinutesAsDuration(-diff.toLong())} kam"
-        else -> "bugun · o'rtacha darajada"
-    }
-}
-
-@Composable
 private fun PermissionPromptCard(title: String, body: String, button: String, onClick: () -> Unit) {
     val colors = LocalOnIkkiColors.current
     OnIkkiCard(modifier = Modifier.fillMaxWidth(), borderColor = colors.warmBorder, gap = 10.dp) {
         Text(text = title, color = colors.warmAccent, style = OnIkkiType.kicker)
         Text(text = body, color = colors.text.muted(0.7f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
         OnIkkiButton(text = button, onClick = onClick, modifier = Modifier.fillMaxWidth())
-    }
-}
-
-@Composable
-private fun WeeklyHistogramCard(dailyTotals: List<Int>) {
-    val colors = LocalOnIkkiColors.current
-    val maxValue = (dailyTotals.maxOrNull() ?: 0).coerceAtLeast(1)
-    OnIkkiRowCard(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-        Row(
-            modifier = Modifier.weight(1f).height(34.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            dailyTotals.forEachIndexed { index, minutes ->
-                val ratio = (minutes / maxValue.toFloat()).coerceAtLeast(0.05f)
-                val isLast = index == dailyTotals.lastIndex
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(ratio)
-                        .background(if (isLast) colors.accent else colors.accent700, RoundedCornerShape(3.dp))
-                )
-            }
-        }
-        Text(
-            text = "7 kun",
-            color = colors.text.muted(0.45f),
-            fontSize = 10.sp,
-            fontFamily = OnIkkiFontFamily,
-            modifier = Modifier.padding(start = 4.dp)
-        )
-    }
-}
-
-/** Today hour by hour, as bars or a line (the viewer's choice is remembered). */
-@Composable
-private fun HourlyCard(minutes: List<Int>) {
-    val colors = LocalOnIkkiColors.current
-    val context = LocalContext.current
-    var mode by remember { mutableStateOf(ChartModePref.get(context)) }
-    val nowHour = java.time.LocalTime.now().hour
-    val peak = minutes.withIndex().maxByOrNull { it.value }?.takeIf { it.value > 0 }
-    OnIkkiCard(modifier = Modifier.fillMaxWidth(), gap = 10.dp) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = "Bugun soatma-soat", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
-                Text(
-                    text = peak?.let { "Eng faol: %02d:00 · %d daq".format(it.index, it.value) } ?: "Hali ma'lumot yo'q",
-                    color = colors.text.muted(0.5f),
-                    fontSize = 11.sp,
-                    fontFamily = OnIkkiFontFamily
-                )
-            }
-            ChartModeToggle(mode) { mode = it; ChartModePref.set(context, it) }
-        }
-        HourlyUsageChart(minutes = minutes, mode = mode, color = colors.accent, currentHour = nowHour)
     }
 }

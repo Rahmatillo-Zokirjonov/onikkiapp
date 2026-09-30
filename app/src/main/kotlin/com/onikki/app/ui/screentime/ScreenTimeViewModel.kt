@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package com.onikki.app.ui.screentime
 
 import androidx.lifecycle.ViewModel
@@ -16,6 +18,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import com.onikki.app.domain.screentime.PeriodSummary
+import com.onikki.app.domain.screentime.UsagePeriod
+import com.onikki.app.domain.screentime.UsagePeriods
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -36,6 +46,18 @@ data class ScreenTimeUiState(
     /** Minutes of screen time in each hour today (24 values). */
     val hourlyMinutes: List<Int> = List(24) { 0 },
     val hourlyByApp: Map<String, List<Int>> = emptyMap()
+)
+
+/** Kun / Hafta / Oy history: the chosen period, its numbers, and the one before for comparison. */
+data class UsageHistoryState(
+    val period: UsagePeriod = UsagePeriod.DAY,
+    val anchor: LocalDate = LocalDate.now(),
+    val summary: PeriodSummary? = null,
+    /** DAY only: minutes per hour, or null when that day has no hourly record. */
+    val hours: List<Int>? = null,
+    /** Average per tracked day in the previous period (null = nothing recorded then). */
+    val previousAverage: Int? = null,
+    val isCurrent: Boolean = true
 )
 
 class ScreenTimeViewModel(private val repository: ScreenTimeRepository) : ViewModel() {
@@ -88,9 +110,50 @@ class ScreenTimeViewModel(private val repository: ScreenTimeRepository) : ViewMo
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ScreenTimeUiState())
 
+    private val selection = MutableStateFlow(UsagePeriod.DAY to today)
+
+    val history: StateFlow<UsageHistoryState> = selection.flatMapLatest { (period, anchor) ->
+        val (from, to) = UsagePeriods.range(period, anchor)
+        val (prevFrom, prevTo) = UsagePeriods.range(period, UsagePeriods.shift(period, anchor, -1, today))
+        val hoursFlow: Flow<List<Int>?> = when {
+            period != UsagePeriod.DAY -> flowOf(null)
+            anchor == today -> hourly.map { it.first }
+            else -> repository.observeStoredHours(anchor)
+        }
+        combine(
+            repository.observeUsageRange(from, to),
+            repository.observeUsageRange(prevFrom, prevTo),
+            hoursFlow
+        ) { rows, prevRows, hours ->
+            val previous = UsagePeriods.summarize(prevRows, prevFrom, prevTo)
+            UsageHistoryState(
+                period = period,
+                anchor = anchor,
+                summary = UsagePeriods.summarize(rows, from, to),
+                hours = hours,
+                previousAverage = previous.averagePerDay.takeIf { previous.trackedDays > 0 },
+                isCurrent = UsagePeriods.isCurrent(period, anchor, today)
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UsageHistoryState())
+
+    fun setPeriod(period: UsagePeriod) {
+        // Switching keeps the day you were looking at inside the new period.
+        selection.update { (_, anchor) -> period to anchor }
+    }
+
+    fun shiftPeriod(delta: Int) {
+        selection.update { (period, anchor) -> period to UsagePeriods.shift(period, anchor, delta, today) }
+    }
+
+    fun openDay(date: LocalDate) {
+        if (!date.isAfter(today)) selection.value = UsagePeriod.DAY to date
+    }
+
     fun refreshUsage() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.syncToday()
+            repository.backfillHistory()
             val t = repository.timeline(today)
             fun toMinutes(ms: LongArray) = ms.map { (it / 60_000L).toInt() }
             hourly.value = toMinutes(t.hourlyMs) to t.hourlyMsByApp.mapValues { toMinutes(it.value) }

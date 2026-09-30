@@ -9,6 +9,9 @@ import com.onikki.app.data.db.dao.BlockZoneDao
 import com.onikki.app.data.db.dao.DailyReviewDao
 import com.onikki.app.data.db.entity.AppLimit
 import com.onikki.app.data.db.entity.AppUsage
+import com.onikki.app.data.db.entity.UsageHours
+import com.onikki.app.data.db.dao.UsageHoursDao
+import com.onikki.app.domain.screentime.UsagePeriods
 import com.onikki.app.data.db.entity.BlockZone
 import com.onikki.app.data.local.ChallengeSettingsStore
 import com.onikki.app.data.local.LocationStore
@@ -16,6 +19,7 @@ import com.onikki.app.domain.prayer.PrayerTimeCalculator
 import com.onikki.app.domain.screentime.UsageStatsProvider
 import com.onikki.app.domain.screentime.ZoneLocationTracker
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -54,6 +58,7 @@ data class ScreenTimeOverview(
 )
 
 private const val PRAYER_BUFFER_MINUTES = 20L
+private const val HISTORY_DAYS = 9
 
 /** A launchable app on the phone, for the "add any app" picker. */
 data class InstalledApp(val packageName: String, val label: String)
@@ -65,7 +70,8 @@ class ScreenTimeRepository(
     private val dailyReviewDao: DailyReviewDao,
     private val blockZoneDao: BlockZoneDao,
     private val locationStore: LocationStore = LocationStore(context),
-    private val challengeStore: ChallengeSettingsStore = ChallengeSettingsStore(context)
+    private val challengeStore: ChallengeSettingsStore = ChallengeSettingsStore(context),
+    private val appUsageHoursDao: UsageHoursDao? = null
 ) {
     private val usageStatsProvider = UsageStatsProvider(context)
 
@@ -77,15 +83,39 @@ class ScreenTimeRepository(
     /** Pulls today's usage from UsageStatsManager into Room, resolving display names. No-op without permission. */
     suspend fun syncToday() {
         if (!hasUsageAccess()) return
+        storeDay(LocalDate.now())
+    }
+
+    /**
+     * Rewrites the last [HISTORY_DAYS] finished days from raw events (accurate, while Android still has them —
+     * about 10 days), so the Hafta/Oy history is right even for days the app wasn't opened.
+     * Each finished day is recomputed once, then remembered.
+     */
+    suspend fun backfillHistory() {
+        if (!hasUsageAccess() || appUsageHoursDao == null) return
+        val prefs = context.getSharedPreferences("usage_history", Context.MODE_PRIVATE)
+        val done = prefs.getStringSet("finalized", emptySet()).orEmpty().toMutableSet()
         val today = LocalDate.now()
-        usageStatsProvider.queryUsageForDate(today).forEach { snapshot ->
+        (1..HISTORY_DAYS).map { today.minusDays(it.toLong()) }.filter { it.toString() !in done }.forEach { day ->
+            storeDay(day)
+            done += day.toString()
+        }
+        // Keep the set small: only dates still inside the window matter.
+        prefs.edit().putStringSet("finalized", done.filter { !LocalDate.parse(it).isBefore(today.minusDays(HISTORY_DAYS.toLong())) }.toSet()).apply()
+    }
+
+    private suspend fun storeDay(day: LocalDate) {
+        val timeline = usageStatsProvider.timeline(day)
+        if (timeline.totalMs == 0L) return
+        appUsageHoursDao?.upsert(UsageHours(day, UsagePeriods.encodeHours(timeline.hourlyMs.map { (it / 60_000L).toInt() })))
+        usageStatsProvider.queryUsageForDate(day).forEach { snapshot ->
             if (snapshot.packageName == context.packageName) return@forEach
             val label = resolveAppName(snapshot.packageName) ?: return@forEach
             appUsageDao.upsert(
                 AppUsage(
                     packageName = snapshot.packageName,
                     appName = label,
-                    date = today,
+                    date = day,
                     minutesUsed = snapshot.minutesUsed
                 )
             )
@@ -126,6 +156,12 @@ class ScreenTimeRepository(
             )
         }
     }
+
+    fun observeUsageRange(from: LocalDate, to: LocalDate): Flow<List<AppUsage>> = appUsageDao.observeRange(from, to)
+
+    /** Stored hourly minutes for a past day; null when that day was never recorded. */
+    fun observeStoredHours(date: LocalDate): Flow<List<Int>?> =
+        appUsageHoursDao?.observe(date)?.map { UsagePeriods.decodeHours(it?.minutes) } ?: flowOf(null)
 
     fun observeRules(): Flow<List<AppLimit>> = appLimitDao.observeAll()
 

@@ -12,6 +12,7 @@ import com.onikki.app.data.db.dao.AppLimitDao
 import com.onikki.app.data.db.dao.AppUsageDao
 import com.onikki.app.data.db.dao.BlockZoneDao
 import com.onikki.app.data.db.dao.GoalDao
+import com.onikki.app.data.db.dao.UsageHoursDao
 import com.onikki.app.data.db.dao.SmsImportDao
 import com.onikki.app.data.db.dao.VocabWordDao
 import com.onikki.app.data.db.dao.CategoryBudgetDao
@@ -29,6 +30,7 @@ import com.onikki.app.data.db.entity.AppLimit
 import com.onikki.app.data.db.entity.AppUsage
 import com.onikki.app.data.db.entity.BlockZone
 import com.onikki.app.data.db.entity.Goal
+import com.onikki.app.data.db.entity.UsageHours
 import com.onikki.app.data.db.entity.MerchantCategory
 import com.onikki.app.data.db.entity.SmsImport
 import com.onikki.app.data.db.entity.VocabWord
@@ -48,7 +50,7 @@ import com.onikki.app.data.db.entity.Transaction
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
-        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class
+        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class
     ],
     version = 9,
     exportSchema = true
@@ -72,6 +74,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun vocabWordDao(): VocabWordDao
     abstract fun smsImportDao(): SmsImportDao
     abstract fun goalDao(): GoalDao
+    abstract fun usageHoursDao(): UsageHoursDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -214,7 +217,7 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
-/** Qaydlar: pin, colour, archive, trash (soft delete), checklists, and a last-edited time for sorting. */
+/** Qaydlar: pin, colour, archive, trash (soft delete), checklists, a last-edited time; plus usage_hours. */
 val MIGRATION_8_9 = object : Migration(8, 9) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE notes ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
@@ -224,5 +227,7 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
         db.execSQL("ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE notes ADD COLUMN deletedAt INTEGER")
         db.execSQL("ALTER TABLE notes ADD COLUMN isChecklist INTEGER NOT NULL DEFAULT 0")
+        // Screen-time history: hourly minutes per day.
+        db.execSQL("CREATE TABLE IF NOT EXISTS `usage_hours` (`date` TEXT NOT NULL, `minutes` TEXT NOT NULL, PRIMARY KEY(`date`))")
     }
 }
