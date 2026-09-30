@@ -42,10 +42,28 @@ data class DailyPlanUiState(
     val overdue: List<Task> = emptyList(),
     /** Planned payments/incomes due on the selected day (today also shows overdue ones). */
     val money: List<PlannedExpense> = emptyList(),
-    /** Active goals (for the task sheet's picker and task labels). */
+    /** Where today's work goes: each active big goal's current stage (or the goal itself), titled for display. */
     val goals: List<Goal> = emptyList(),
+    /** Label for any goal/stage id, so tasks keep showing what they serve. */
+    val goalLabels: Map<Long, String> = emptyMap(),
     val sheet: TaskSheetTarget? = null
 )
+
+/** Active work targets (display copies) plus a label for every goal and stage. */
+private fun workTargets(goals: List<Goal>): Pair<List<Goal>, Map<Long, String>> {
+    val byId = goals.associateBy { it.id }
+    val labels = goals.associate { g ->
+        val parent = g.parentId?.let(byId::get)
+        g.id to if (parent != null) "${parent.icon} ${parent.title} → ${g.orderIndex}. ${g.title}" else "${g.icon} ${g.title}"
+    }
+    val stagesByParent = goals.filter { it.parentId != null }.groupBy { it.parentId!! }
+    val targets = goals.filter { it.parentId == null && it.doneAt == null }.mapNotNull { big ->
+        val stages = stagesByParent[big.id].orEmpty().sortedWith(compareBy({ it.orderIndex }, { it.id }))
+        val target = if (stages.isEmpty()) big else stages.firstOrNull { it.doneAt == null } ?: return@mapNotNull null
+        if (target === big) big else target.copy(icon = big.icon, title = "${big.title} → ${target.orderIndex}. ${target.title}")
+    }
+    return targets to labels
+}
 
 private fun mondayOf(date: LocalDate): LocalDate = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
@@ -67,7 +85,7 @@ class DailyPlanViewModel(
         selectedDate.flatMapLatest { taskDao.observeByDate(it) },
         db.plannedExpenseDao().observeAll(),
         db.goalDao().observeAll()
-    ) { tasks, planned, goals -> Triple(tasks, planned, goals.filter { it.doneAt == null }) }
+    ) { tasks, planned, goals -> Triple(tasks, planned, workTargets(goals)) }
 
     val uiState: StateFlow<DailyPlanUiState> = combine(
         selectedDate,
@@ -75,7 +93,7 @@ class DailyPlanViewModel(
         weekLoadFlow,
         taskDao.observeOverdue(today),
         sheet
-    ) { date, (tasks, planned, goals), weekTasks, overdue, openSheet ->
+    ) { date, (tasks, planned, targets), weekTasks, overdue, openSheet ->
         val money = planned.filter { it.paidDate == null }.filter {
             it.dueDate == date || (date == today && it.dueDate.isBefore(today))
         }.sortedBy { it.dueDate }
@@ -90,7 +108,8 @@ class DailyPlanViewModel(
             },
             overdue = overdue,
             money = money,
-            goals = goals,
+            goals = targets.first,
+            goalLabels = targets.second,
             sheet = openSheet
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DailyPlanUiState())

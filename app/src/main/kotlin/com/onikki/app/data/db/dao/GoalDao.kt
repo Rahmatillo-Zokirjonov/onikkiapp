@@ -14,8 +14,18 @@ data class GoalTaskCount(val goalId: Long, val total: Int, val done: Int)
 
 @Dao
 interface GoalDao {
-    @Query("SELECT * FROM goals ORDER BY doneAt IS NOT NULL, deadline IS NULL, deadline, id")
+    @Query("SELECT * FROM goals ORDER BY doneAt IS NOT NULL, orderIndex, deadline IS NULL, deadline, id")
     fun observeAll(): Flow<List<Goal>>
+
+    @Query("SELECT COALESCE(MAX(orderIndex), 0) FROM goals WHERE parentId = :parentId")
+    suspend fun maxStageOrder(parentId: Long): Int
+
+    /** A big goal's stages go with it; their tasks are kept, unlinked. */
+    @Query("UPDATE tasks SET goalId = NULL WHERE goalId IN (SELECT id FROM goals WHERE parentId = :parentId)")
+    suspend fun unlinkStageTasks(parentId: Long)
+
+    @Query("DELETE FROM goals WHERE parentId = :parentId")
+    suspend fun deleteStages(parentId: Long)
 
     @Query("SELECT * FROM goals WHERE id = :id")
     suspend fun findById(id: Long): Goal?

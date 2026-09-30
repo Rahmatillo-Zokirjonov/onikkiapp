@@ -6,9 +6,13 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.onikki.app.data.db.AppDatabase
 import com.onikki.app.data.db.entity.Goal
-import com.onikki.app.data.db.entity.GoalKind
+import com.onikki.app.data.db.entity.LifeArea
+import com.onikki.app.data.db.entity.SavingsGoal
 import com.onikki.app.data.db.entity.Task
 import com.onikki.app.data.db.entity.TaskCategory
+import com.onikki.app.domain.goals.AreaSummary
+import com.onikki.app.domain.goals.BigGoal
+import com.onikki.app.domain.goals.GoalTree
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -17,83 +21,57 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.temporal.ChronoUnit
-import kotlin.math.ceil
-
-/** A goal with everything its card shows. */
-data class GoalProgress(
-    val goal: Goal,
-    /** 0..1 */
-    val fraction: Float,
-    val doneTasks: Int,
-    val totalTasks: Int,
-    val todayTasks: Int,
-    val daysLeft: Long?
-) {
-    val isDone: Boolean get() = goal.doneAt != null
-    val percent: Int get() = (fraction * 100).toInt()
-
-    /** "Kuniga ~3 bet kerak" for number goals with a deadline; null otherwise. */
-    val perDayHint: String?
-        get() {
-            if (goal.kind != GoalKind.NUMBER || daysLeft == null || daysLeft <= 0) return null
-            val remaining = goal.target - goal.current
-            if (remaining <= 0) return null
-            val perDay = ceil(remaining / daysLeft.toDouble()).toLong()
-            return "Kuniga ~$perDay ${goal.unit.orEmpty()} kerak".trim()
-        }
-}
-
-fun computeProgress(goal: Goal, total: Int, done: Int, today: Int, date: LocalDate): GoalProgress {
-    val fraction = when {
-        goal.doneAt != null -> 1f
-        goal.kind == GoalKind.NUMBER -> if (goal.target <= 0) 0f else (goal.current.toFloat() / goal.target).coerceIn(0f, 1f)
-        else -> if (total == 0) 0f else done.toFloat() / total
-    }
-    return GoalProgress(
-        goal = goal,
-        fraction = fraction,
-        doneTasks = done,
-        totalTasks = total,
-        todayTasks = today,
-        daysLeft = goal.deadline?.let { ChronoUnit.DAYS.between(date, it) }
-    )
-}
 
 sealed interface GoalSheetTarget {
-    data class Edit(val goal: Goal?) : GoalSheetTarget
-    /** New task for this goal (from the goal card or its detail). */
+    /** Big goal: new ([goal] null) or edit. */
+    data class EditBig(val goal: Goal?) : GoalSheetTarget
+    /** Stage of [parent]: new ([stage] null) or edit. */
+    data class EditStage(val parent: Goal, val stage: Goal?) : GoalSheetTarget
+    /** New daily task linked to [goal] (a stage, or a big goal without stages). */
     data class NewTask(val goal: Goal) : GoalSheetTarget
 }
 
 data class GoalsUiState(
-    val active: List<GoalProgress> = emptyList(),
-    val finished: List<GoalProgress> = emptyList(),
+    val active: List<BigGoal> = emptyList(),
+    val finished: List<BigGoal> = emptyList(),
+    val areas: List<AreaSummary> = emptyList(),
+    val areaFilter: LifeArea? = null,
+    val savings: List<SavingsGoal> = emptyList(),
     val sheet: GoalSheetTarget? = null,
     val isLoaded: Boolean = false
 ) {
+    val visibleActive: List<BigGoal> get() = active.filter { areaFilter == null || it.goal.area == areaFilter }
     fun find(id: Long) = (active + finished).firstOrNull { it.goal.id == id }
 }
 
 class GoalsViewModel(private val db: AppDatabase) : ViewModel() {
     private val today = LocalDate.now()
     private val sheet = MutableStateFlow<GoalSheetTarget?>(null)
+    private val areaFilter = MutableStateFlow<LifeArea?>(null)
 
-    val uiState: StateFlow<GoalsUiState> = combine(
+    private val treeFlow = combine(
         db.goalDao().observeAll(),
         db.goalDao().observeTaskCounts(),
         db.taskDao().observeByDate(today),
-        sheet
-    ) { goals, counts, todayTasks, openSheet ->
-        val byGoal = counts.associateBy { it.goalId }
-        val todayByGoal = todayTasks.filter { !it.isCompleted }.groupingBy { it.goalId }.eachCount()
-        val all = goals.map { g ->
-            val c = byGoal[g.id]
-            computeProgress(g, c?.total ?: 0, c?.done ?: 0, todayByGoal[g.id] ?: 0, today)
-        }
+        db.savingsGoalDao().observeAll()
+    ) { goals, counts, todayTasks, savings ->
+        val tree = GoalTree.build(
+            goals = goals,
+            taskCounts = counts.associate { it.goalId to (it.done to it.total) },
+            openTodayByGoal = todayTasks.filter { !it.isCompleted && it.goalId != null }.groupingBy { it.goalId!! }.eachCount(),
+            savingsById = savings.associate { it.id to it.currentAmount },
+            today = today
+        )
+        tree to savings
+    }
+
+    val uiState: StateFlow<GoalsUiState> = combine(treeFlow, sheet, areaFilter) { (tree, savings), openSheet, filter ->
         GoalsUiState(
-            active = all.filter { !it.isDone },
-            finished = all.filter { it.isDone },
+            active = tree.filter { !it.isDone }.sortedWith(compareBy({ it.goal.deadline == null }, { it.goal.deadline })),
+            finished = tree.filter { it.isDone },
+            areas = GoalTree.areas(tree),
+            areaFilter = filter,
+            savings = savings,
             sheet = openSheet,
             isLoaded = true
         )
@@ -101,21 +79,43 @@ class GoalsViewModel(private val db: AppDatabase) : ViewModel() {
 
     fun tasksOf(goalId: Long) = db.goalDao().observeTasks(goalId)
 
-    fun openNew() { sheet.value = GoalSheetTarget.Edit(null) }
-    fun openEdit(goal: Goal) { sheet.value = GoalSheetTarget.Edit(goal) }
+    fun setAreaFilter(area: LifeArea?) { areaFilter.value = if (areaFilter.value == area) null else area }
+
+    fun openNewBig() { sheet.value = GoalSheetTarget.EditBig(null) }
+    fun openEditBig(goal: Goal) { sheet.value = GoalSheetTarget.EditBig(goal) }
+    fun openNewStage(parent: Goal) { sheet.value = GoalSheetTarget.EditStage(parent, null) }
+    fun openEditStage(parent: Goal, stage: Goal) { sheet.value = GoalSheetTarget.EditStage(parent, stage) }
     fun openNewTask(goal: Goal) { sheet.value = GoalSheetTarget.NewTask(goal) }
     fun dismissSheet() { sheet.value = null }
 
-    fun saveGoal(existing: Goal?, draft: Goal) {
+    fun saveBig(existing: Goal?, draft: Goal) {
         if (draft.title.isBlank()) return
         viewModelScope.launch {
-            if (existing == null) db.goalDao().insert(draft.copy(id = 0)) else db.goalDao().update(draft.copy(id = existing.id))
+            if (existing == null) db.goalDao().insert(draft.copy(id = 0, parentId = null))
+            else db.goalDao().update(draft.copy(id = existing.id, parentId = null))
             sheet.value = null
         }
     }
 
-    fun deleteGoal(goal: Goal) {
+    fun saveStage(parent: Goal, existing: Goal?, draft: Goal) {
+        if (draft.title.isBlank()) return
         viewModelScope.launch {
+            if (existing == null) {
+                val order = db.goalDao().maxStageOrder(parent.id) + 1
+                db.goalDao().insert(draft.copy(id = 0, parentId = parent.id, orderIndex = order, area = null))
+            } else {
+                db.goalDao().update(draft.copy(id = existing.id, parentId = parent.id, orderIndex = existing.orderIndex, area = null))
+            }
+            sheet.value = null
+        }
+    }
+
+    fun delete(goal: Goal) {
+        viewModelScope.launch {
+            if (!goal.isStage) {
+                db.goalDao().unlinkStageTasks(goal.id)
+                db.goalDao().deleteStages(goal.id)
+            }
             db.goalDao().unlinkTasks(goal.id)
             db.goalDao().delete(goal)
             sheet.value = null
@@ -123,10 +123,7 @@ class GoalsViewModel(private val db: AppDatabase) : ViewModel() {
     }
 
     fun adjustNumber(goal: Goal, delta: Long) {
-        viewModelScope.launch {
-            val next = (goal.current + delta).coerceAtLeast(0)
-            db.goalDao().update(goal.copy(current = next))
-        }
+        viewModelScope.launch { db.goalDao().update(goal.copy(current = (goal.current + delta).coerceAtLeast(0))) }
     }
 
     fun setDone(goal: Goal, done: Boolean) {

@@ -242,7 +242,7 @@ fun DailyPlanScreen(
                                         onClick = { onOpenTask(item.task) },
                                         showTime = false,
                                         modifier = Modifier.weight(1f),
-                                        goalLabel = item.task.goalId?.let { id -> state.goals.firstOrNull { it.id == id } }?.let { "${it.icon} ${it.title}" }
+                                        goalLabel = item.task.goalId?.let(state.goalLabels::get)
                                     )
                                 }
                             }

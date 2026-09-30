@@ -201,13 +201,14 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
-/** v8 (Maqsadlar): goals, and tasks can point at the goal they work toward. */
+/** v8 (Maqsadlar): big goals with life areas and ordered stages; tasks point at the goal/stage they serve. */
 val MIGRATION_7_8 = object : Migration(7, 8) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS `goals` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, " +
                 "`why` TEXT, `icon` TEXT NOT NULL, `deadline` TEXT, `kind` TEXT NOT NULL, `target` INTEGER NOT NULL, " +
-                "`current` INTEGER NOT NULL, `unit` TEXT, `createdAt` TEXT NOT NULL, `doneAt` TEXT)"
+                "`current` INTEGER NOT NULL, `unit` TEXT, `createdAt` TEXT NOT NULL, `doneAt` TEXT, `parentId` INTEGER, " +
+                "`area` TEXT, `orderIndex` INTEGER NOT NULL DEFAULT 0, `linkedSavingsId` INTEGER)"
         )
         db.execSQL("ALTER TABLE tasks ADD COLUMN goalId INTEGER")
     }
