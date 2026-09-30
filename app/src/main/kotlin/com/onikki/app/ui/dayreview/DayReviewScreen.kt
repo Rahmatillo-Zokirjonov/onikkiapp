@@ -353,7 +353,7 @@ private fun WeekStrip(today: LocalDate, week: List<DailyReview>, onOpen: (DailyR
                     )
                     Text(
                         text = review?.score?.toString() ?: "",
-                        color = colors.warmAccent,
+                        color = colors.accent,
                         fontSize = 11.sp,
                         fontFamily = OnIkkiFontFamily
                     )
@@ -401,7 +401,7 @@ private fun ScoreCard(stats: DayStats, aiStatus: AiInsightStatus, review: DailyR
             CircularProgressRing(
                 progress = stats.score / 100f,
                 trackColor = colors.neutral800,
-                progressColor = colors.warmAccent,
+                progressColor = colors.accent,
                 size = 86.dp,
                 strokeWidth = 7.dp
             ) {

@@ -189,7 +189,7 @@ private fun StatTile(label: String, value: String, unit: String, warm: Boolean, 
         Text(text = label, color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
         Text(
             text = value,
-            color = if (warm && value != "0") colors.warmAccent else colors.text,
+            color = if (warm && value != "0") colors.accent else colors.text,
             fontSize = 24.sp,
             fontWeight = FontWeight.Medium,
             fontFamily = OnIkkiFontFamily

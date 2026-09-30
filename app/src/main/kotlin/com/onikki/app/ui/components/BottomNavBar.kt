@@ -47,7 +47,7 @@ fun OnIkkiBottomNavBar(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.surface)
+            .background(colors.navBackground)
     ) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
         Row(

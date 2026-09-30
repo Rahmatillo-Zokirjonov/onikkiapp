@@ -1,5 +1,7 @@
 package com.onikki.app.ui.habits
 
+import com.onikki.app.ui.components.ModuleCard
+import com.onikki.app.ui.components.AppModule
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -178,12 +180,12 @@ private fun TopStreakCard(top: HabitStats) {
         val done = week.count { it.state == HabitDayState.DONE }
         if (due == 0) null else done.toFloat() / due
     }
-    OnIkkiCard(modifier = Modifier.fillMaxWidth()) {
-        Text(text = "Eng uzun joriy streak", color = colors.accent, style = OnIkkiType.kicker)
+    ModuleCard(module = AppModule.HABITS) {
+        Text(text = "Eng uzun joriy streak", color = colors.habitAccent, style = OnIkkiType.kicker)
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = top.currentStreak.toString(),
-                color = colors.warmAccent,
+                color = colors.habitAccent,
                 fontSize = 34.sp,
                 fontWeight = FontWeight.Medium,
                 letterSpacing = (-0.03).em,
@@ -262,7 +264,7 @@ private fun HabitRow(stats: HabitStats, onTapToday: () -> Unit, onOpen: () -> Un
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = stats.currentStreak.toString(),
-                    color = if (stats.currentStreak > 0) colors.warmAccent else colors.text.muted(0.4f),
+                    color = if (stats.currentStreak > 0) colors.accent else colors.text.muted(0.4f),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
                     fontFamily = OnIkkiFontFamily

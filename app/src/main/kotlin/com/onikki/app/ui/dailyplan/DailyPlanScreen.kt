@@ -1,5 +1,8 @@
 package com.onikki.app.ui.dailyplan
 
+import com.onikki.app.ui.components.HeroCard
+import com.onikki.app.ui.components.ModuleCard
+import com.onikki.app.ui.components.AppModule
 import com.onikki.app.data.db.entity.PlannedExpense
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -172,7 +175,7 @@ fun DailyPlanScreen(
             MoneyPlanCard(items = state.money, today = state.today, onComplete = onCompleteMoney)
         }
 
-        if (state.totalCount > 0) OnIkkiCard(modifier = Modifier.fillMaxWidth()) {
+        if (state.totalCount > 0) ModuleCard(module = AppModule.PLAN, padding = PaddingValues(14.dp), gap = 8.dp) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
                     text = if (isToday) "Bugun bajarildi" else "Bajarildi",
@@ -182,7 +185,7 @@ fun DailyPlanScreen(
                 )
                 Text(
                     text = "${state.completedCount}/${state.totalCount}",
-                    color = colors.accent,
+                    color = colors.planAccent,
                     fontSize = 12.sp,
                     fontFamily = OnIkkiFontFamily
                 )
@@ -190,7 +193,7 @@ fun DailyPlanScreen(
             LinearProgressTrack(
                 progress = if (state.totalCount == 0) 0f else state.completedCount / state.totalCount.toFloat(),
                 trackColor = colors.neutral800,
-                progressColor = colors.accent
+                progressColor = colors.planAccent
             )
         }
 
@@ -359,7 +362,7 @@ private fun LiveNextPrayerCard(prayerTimes: PrayerTimeCalculator.PrayerTimes) {
     val target = java.time.LocalDateTime.of(now.toLocalDate(), upcoming.second)
     val secondsUntil = java.time.Duration.between(now, target).seconds.coerceAtLeast(0)
     val colors = LocalOnIkkiColors.current
-    OnIkkiCard(modifier = Modifier.fillMaxWidth()) {
+    HeroCard {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text(text = "Keyingi namoz", color = colors.accent, style = OnIkkiType.kicker)

@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Base launch theme; Compose owns all in-app theming (see ui/theme). -->
-    <style name="Theme.OnIkki" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Base window theme; Compose owns all in-app theming (see ui/theme). Dark to match the "Tun" look:
+         no white flash on launch, light status/navigation bar icons on the ink ground. -->
+    <style name="Theme.OnIkki" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/onikki_ground</item>
+        <item name="android:statusBarColor">@color/onikki_ground</item>
+        <item name="android:navigationBarColor">@color/onikki_nav</item>
+    </style>
 </resources>

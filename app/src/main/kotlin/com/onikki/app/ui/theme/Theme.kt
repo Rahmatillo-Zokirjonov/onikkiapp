@@ -1,6 +1,5 @@
 package com.onikki.app.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -12,7 +11,8 @@ val LocalOnIkkiColors = staticCompositionLocalOf<OnIkkiColorTokens> { DarkOnIkki
 
 @Composable
 fun OnIkkiTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    // The chosen "Tun" look is dark by design, independent of the phone's light/dark setting.
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val tokens: OnIkkiColorTokens = if (darkTheme) DarkOnIkkiColors else LightOnIkkiColors
@@ -40,6 +40,6 @@ fun OnIkkiTheme(
     }
 
     CompositionLocalProvider(LocalOnIkkiColors provides tokens) {
-        MaterialTheme(colorScheme = materialColors, content = content)
+        MaterialTheme(colorScheme = materialColors, typography = OnIkkiMaterialTypography, content = content)
     }
 }

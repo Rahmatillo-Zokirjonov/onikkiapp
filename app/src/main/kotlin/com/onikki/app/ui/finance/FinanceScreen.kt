@@ -1,5 +1,7 @@
 package com.onikki.app.ui.finance
 
+import com.onikki.app.ui.components.ModuleCard
+import com.onikki.app.ui.components.AppModule
 import com.onikki.app.ui.components.OnIkkiRowCard
 import java.time.temporal.ChronoUnit
 import java.time.LocalDate
@@ -169,7 +171,7 @@ private fun BalanceCard(
     onAddAccount: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
-    OnIkkiCard(modifier = Modifier.fillMaxWidth()) {
+    ModuleCard(module = AppModule.MONEY) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -183,7 +185,7 @@ private fun BalanceCard(
                     fontFamily = OnIkkiFontFamily
                 )
                 Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 2.dp)) {
-                    Text(text = formatSom(balance), color = colors.text, style = OnIkkiType.amountLarge)
+                    Text(text = formatSom(balance), color = colors.moneyAccent, style = OnIkkiType.amountLarge)
                     Text(
                         text = " so'm",
                         color = colors.text.muted(0.55f),
@@ -194,7 +196,7 @@ private fun BalanceCard(
             }
             // Only drawn once there's real movement to show — a flat or empty line says nothing.
             if (trend.distinct().size > 1) {
-                FilledSparkline(points = trend, strokeColor = colors.accent, fillColor = colors.accent900)
+                FilledSparkline(points = trend, strokeColor = colors.moneyAccent, fillColor = colors.moneyAccent.copy(alpha = 0.12f))
             }
         }
         // Every wallet (cash + each card); tap one to edit it, "+ Hamyon" to add a card.

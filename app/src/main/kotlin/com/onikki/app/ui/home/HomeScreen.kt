@@ -1,5 +1,11 @@
 package com.onikki.app.ui.home
 
+import androidx.compose.ui.unit.em
+import com.onikki.app.ui.components.ModuleTile
+import com.onikki.app.ui.components.ModuleIcon
+import com.onikki.app.ui.components.ModuleCard
+import com.onikki.app.ui.components.HeroCard
+import com.onikki.app.ui.components.AppModule
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -125,6 +131,7 @@ fun HomeScreen(
     ) {
         GreetingHeader(name = state.name, now = state.now, onEditName = onEditName)
         NextPrayerCard(state)
+        ModuleTiles(state, onOpenTab = onOpenTab)
         AttentionCard(
             overdueCount = state.overdueCount,
             moneyDue = state.moneyDue,
@@ -134,7 +141,6 @@ fun HomeScreen(
         )
         TodayPlanSection(state, onToggleTask = onToggleTask, onOpenPlan = { onOpenTab(OnIkkiTab.PLAN) })
         HabitsSection(habits = state.habits, onTapHabit = onTapHabit, onOpenAll = { onOpenTab(OnIkkiTab.PLAN) })
-        BalanceCard(state, onClick = { onOpenTab(OnIkkiTab.MONEY) })
         DayReviewEntryRow(review = state.review, now = state.now, onClick = onOpenDayReview)
     }
 }
@@ -154,12 +160,10 @@ private fun GreetingHeader(name: String, now: LocalDateTime, onEditName: () -> U
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = if (name.isBlank()) greetingFor(now.toLocalTime()) else "${greetingFor(now.toLocalTime())}, $name",
+                text = if (name.isBlank()) greetingFor(now.toLocalTime()) else "${greetingFor(now.toLocalTime())},\n$name",
                 color = colors.text,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                fontFamily = OnIkkiFontFamily,
-                maxLines = 1,
+                style = OnIkkiType.greetingName,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
@@ -172,15 +176,17 @@ private fun GreetingHeader(name: String, now: LocalDateTime, onEditName: () -> U
         }
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(42.dp)
                 .background(colors.accent800, CircleShape)
+                .border(BorderStroke(1.dp, colors.accent700), CircleShape)
                 .clickable(onClick = onEditName),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = name.firstOrNull()?.uppercase() ?: "+",
-                color = colors.accent100,
-                fontSize = 15.sp,
+                color = colors.accent,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
                 fontFamily = OnIkkiFontFamily
             )
         }
@@ -204,40 +210,32 @@ fun NameSheet(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) 
 
 // ---------------------------------------------------------------- Namoz
 
-/** Next prayer with a live countdown; tap to see all five of today's times. */
+/** The "Tun" hero: next prayer with a live countdown and all five of today's times. */
 @Composable
 private fun NextPrayerCard(state: HomeUiState) {
     val colors = LocalOnIkkiColors.current
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    OnIkkiCard(
-        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
-        padding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-        gap = 10.dp
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = "Keyingi namoz", color = colors.accent, style = OnIkkiType.kicker)
-                Text(
-                    text = "${state.nextPrayerName} · %02d:%02d".format(state.nextPrayerTime.hour, state.nextPrayerTime.minute),
-                    color = colors.text,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = OnIkkiFontFamily,
-                    modifier = Modifier.padding(top = 3.dp)
-                )
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = formatHmsCountdown(state.secondsUntilNextPrayer.coerceAtLeast(0)),
-                    color = colors.text,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = OnIkkiFontFamily
-                )
-                Text(text = "qoldi", color = colors.text.muted(0.45f), fontSize = 10.sp, fontFamily = OnIkkiFontFamily)
-            }
+    HeroCard(gap = 12.dp) {
+        Text(text = "Keyingi namoz · ${state.nextPrayerName}", color = colors.accent, style = OnIkkiType.kicker)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = formatHmsCountdown(state.secondsUntilNextPrayer.coerceAtLeast(0)),
+                color = colors.text,
+                fontSize = 36.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = (-0.02).em,
+                fontFamily = OnIkkiFontFamily,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = "%02d:%02d".format(state.nextPrayerTime.hour, state.nextPrayerTime.minute),
+                color = colors.accent,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                fontFamily = OnIkkiFontFamily,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
         }
-        if (expanded && state.prayers.isNotEmpty()) {
+        if (state.prayers.isNotEmpty()) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 state.prayers.forEach { (name, time) ->
                     val isNext = name == state.nextPrayerName && time == state.nextPrayerTime
@@ -245,7 +243,7 @@ private fun NextPrayerCard(state: HomeUiState) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.alpha(if (passed) 0.45f else 1f)) {
                         Text(
                             text = name,
-                            color = if (isNext) colors.accent else colors.text.muted(0.6f),
+                            color = if (isNext) colors.accent else colors.text.muted(0.55f),
                             fontSize = 11.sp,
                             fontFamily = OnIkkiFontFamily
                         )
@@ -253,11 +251,68 @@ private fun NextPrayerCard(state: HomeUiState) {
                             text = "%02d:%02d".format(time.hour, time.minute),
                             color = if (isNext) colors.accent else colors.text,
                             fontSize = 14.sp,
-                            fontWeight = if (isNext) FontWeight.Medium else FontWeight.Normal,
+                            fontWeight = if (isNext) FontWeight.SemiBold else FontWeight.Normal,
                             fontFamily = OnIkkiFontFamily
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Bo'lim plitkalari
+
+/** The "Rangli" tiles: plan (blue) and habits (green) side by side, money (gold) full width. */
+@Composable
+private fun ModuleTiles(state: HomeUiState, onOpenTab: (OnIkkiTab) -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val dueHabits = state.habits.count { it.isActiveToday }
+    val doneHabits = state.habits.count { it.isActiveToday && it.isDoneToday }
+    val bestStreak = state.habits.maxOfOrNull { it.currentStreak } ?: 0
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ModuleTile(
+                module = AppModule.PLAN,
+                icon = "☑",
+                value = if (state.totalCount == 0) "—" else "${state.completedCount}/${state.totalCount}",
+                caption = if (state.totalCount == 0) "bugun vazifa yo'q" else "vazifa bajarildi",
+                modifier = Modifier.weight(1f),
+                onClick = { onOpenTab(OnIkkiTab.PLAN) }
+            )
+            ModuleTile(
+                module = AppModule.HABITS,
+                icon = "🔥",
+                value = if (bestStreak > 0) "$bestStreak kun" else "$doneHabits/$dueHabits",
+                caption = if (bestStreak > 0) "eng uzun streak" else "odat bajarildi",
+                modifier = Modifier.weight(1f),
+                onClick = { onOpenTab(OnIkkiTab.PLAN) }
+            )
+        }
+        ModuleCard(module = AppModule.MONEY, modifier = Modifier.clickable { onOpenTab(OnIkkiTab.MONEY) }, gap = 6.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ModuleIcon(AppModule.MONEY, "💰")
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = formatSom(state.balance) + " so'm",
+                        color = colors.moneyAccent,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = OnIkkiFontFamily,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "Balans · shu oy +${formatSom(state.monthIncome)} / −${formatSom(state.monthExpense)}",
+                        color = colors.text.muted(0.6f),
+                        fontSize = 12.sp,
+                        fontFamily = OnIkkiFontFamily,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            if (state.balanceTrend.distinct().size > 1) {
+                FilledSparkline(points = state.balanceTrend, strokeColor = colors.moneyAccent, fillColor = colors.moneyAccent.copy(alpha = 0.12f))
             }
         }
     }
@@ -434,48 +489,12 @@ private fun HabitTodayCard(stats: HabitStats, onClick: () -> Unit) {
         )
         Text(
             text = if (!stats.isActiveToday && !stats.isDoneToday) "bugun dam" else "${stats.currentStreak} kun",
-            color = if (stats.currentStreak > 0 && stats.isActiveToday) colors.warmAccent else colors.text.muted(0.45f),
+            color = if (stats.currentStreak > 0 && stats.isActiveToday) colors.accent else colors.text.muted(0.45f),
             fontSize = 10.sp,
             fontFamily = OnIkkiFontFamily,
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center
         )
-    }
-}
-
-// ---------------------------------------------------------------- Balans
-
-@Composable
-private fun BalanceCard(state: HomeUiState, onClick: () -> Unit) {
-    val colors = LocalOnIkkiColors.current
-    OnIkkiCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = "Balans", color = colors.text.muted(0.55f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
-                Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 2.dp)) {
-                    Text(text = formatSom(state.balance), color = colors.text, style = OnIkkiType.amountLarge)
-                    Text(text = " so'm", color = colors.text.muted(0.55f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
-                }
-            }
-            // The real last-30-days line; hidden while there's no movement to show.
-            if (state.balanceTrend.distinct().size > 1) {
-                FilledSparkline(points = state.balanceTrend, strokeColor = colors.accent, fillColor = colors.accent900)
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            Text(
-                text = "Shu oy: + ${formatSom(state.monthIncome)}",
-                color = colors.text.muted(0.6f),
-                fontSize = 11.sp,
-                fontFamily = OnIkkiFontFamily
-            )
-            Text(
-                text = "− ${formatSom(state.monthExpense)}",
-                color = colors.text.muted(0.6f),
-                fontSize = 11.sp,
-                fontFamily = OnIkkiFontFamily
-            )
-        }
     }
 }
 

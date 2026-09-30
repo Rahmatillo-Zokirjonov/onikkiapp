@@ -31,8 +31,8 @@ fun OnIkkiCard(
     val colors = LocalOnIkkiColors.current
     Column(
         modifier = modifier
-            .background(colors.surface, OnIkkiShapes.medium)
-            .border(BorderStroke(1.dp, borderColor), OnIkkiShapes.medium)
+            .background(colors.surface, OnIkkiShapes.large)
+            .border(BorderStroke(1.dp, borderColor), OnIkkiShapes.large)
             .padding(padding),
         verticalArrangement = Arrangement.spacedBy(gap),
         content = content
@@ -52,8 +52,8 @@ fun OnIkkiRowCard(
     val colors = LocalOnIkkiColors.current
     Row(
         modifier = modifier
-            .background(colors.surface, OnIkkiShapes.medium)
-            .border(BorderStroke(1.dp, borderColor), OnIkkiShapes.medium)
+            .background(colors.surface, OnIkkiShapes.large)
+            .border(BorderStroke(1.dp, borderColor), OnIkkiShapes.large)
             .padding(padding),
         horizontalArrangement = Arrangement.spacedBy(gap),
         verticalAlignment = verticalAlignment,
