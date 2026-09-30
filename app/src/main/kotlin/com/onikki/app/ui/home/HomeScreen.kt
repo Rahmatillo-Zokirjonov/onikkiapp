@@ -54,6 +54,8 @@ import com.onikki.app.data.local.ProfileStore
 import com.onikki.app.data.repository.HabitRepository
 import com.onikki.app.domain.habits.HabitStats
 import com.onikki.app.ui.components.CircularProgressRing
+import com.onikki.app.ui.components.LinearProgressTrack
+import com.onikki.app.ui.goals.GoalDeepLink
 import com.onikki.app.ui.components.OnIkkiButton
 import com.onikki.app.ui.components.OnIkkiButtonVariant
 import com.onikki.app.ui.components.OnIkkiCard
@@ -95,6 +97,10 @@ fun HomeRoute(onNavigateToDayReview: () -> Unit = {}, onNavigateToAssistant: () 
         onCompleteMoney = viewModel::completeMoney,
         onOpenDayReview = onNavigateToDayReview,
         onOpenAssistant = onNavigateToAssistant,
+        onOpenGoal = { id ->
+            GoalDeepLink.request(id)
+            onNavigateToTab(OnIkkiTab.PLAN)
+        },
         onOpenTab = onNavigateToTab,
         onEditName = { editingName = true }
     )
@@ -118,6 +124,7 @@ fun HomeScreen(
     onCompleteMoney: (PlannedExpense) -> Unit,
     onOpenDayReview: () -> Unit,
     onOpenAssistant: () -> Unit,
+    onOpenGoal: (Long) -> Unit,
     onOpenTab: (OnIkkiTab) -> Unit,
     onEditName: () -> Unit
 ) {
@@ -141,6 +148,7 @@ fun HomeScreen(
             onOpenPlan = { onOpenTab(OnIkkiTab.PLAN) },
             onCompleteMoney = onCompleteMoney
         )
+        MainGoalCard(state, onOpen = onOpenGoal)
         TodayPlanSection(state, onToggleTask = onToggleTask, onOpenPlan = { onOpenTab(OnIkkiTab.PLAN) })
         HabitsSection(habits = state.habits, onTapHabit = onTapHabit, onOpenAll = { onOpenTab(OnIkkiTab.PLAN) })
         AssistantEntryRow(onClick = onOpenAssistant)
@@ -498,6 +506,99 @@ private fun HabitTodayCard(stats: HabitStats, onClick: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center
         )
+    }
+}
+
+// ---------------------------------------------------------------- Asosiy maqsad
+
+@Composable
+private fun MainGoalCard(state: HomeUiState, onOpen: (Long) -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val g = state.mainGoal
+    if (g == null) {
+        // Nothing active: a quiet invitation (or a nudge for a new one once everything is achieved).
+        OnIkkiRowCard(modifier = Modifier.fillMaxWidth().clickable { onOpen(GoalDeepLink.ALL) }) {
+            Text(text = "🎯", fontSize = 18.sp)
+            Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+                Text(text = if (state.hasAnyGoal) "Yangi katta maqsad qo'ying" else "Katta maqsad qo'ying", color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+                Text(text = "Bosqichlarga bo'lib, har kuni bir qadam", color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+            }
+            Text(text = "→", color = colors.text.muted(0.5f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+        }
+        return
+    }
+    val stage = g.activeStage
+    val (doneToday, totalToday) = state.mainGoalToday
+    HeroCard(modifier = Modifier.clickable { onOpen(g.goal.id) }, gap = 10.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            CircularProgressRing(progress = g.fraction, trackColor = colors.neutral800, progressColor = colors.accent, size = 56.dp, strokeWidth = 5.dp) {
+                Text(text = g.goal.icon, fontSize = 20.sp)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "ASOSIY MAQSAD · ${g.percent}%", color = colors.accent, style = OnIkkiType.kicker)
+                Text(
+                    text = g.goal.title,
+                    color = colors.text,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = OnIkkiFontFamily,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                val days = g.daysLeft
+                Text(
+                    text = listOfNotNull(
+                        g.goal.area?.let { "${it.icon} ${it.label}" },
+                        when {
+                            days == null -> null
+                            days < 0 -> "muddat ${-days} kun o'tdi"
+                            days == 0L -> "muddat bugun"
+                            days > 60 -> "${days / 30} oy qoldi"
+                            else -> "$days kun qoldi"
+                        }
+                    ).joinToString(" · "),
+                    color = if ((days ?: 1) < 0) colors.warmAccent else colors.text.muted(0.55f),
+                    fontSize = 12.sp,
+                    fontFamily = OnIkkiFontFamily
+                )
+            }
+        }
+        if (stage != null) {
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(
+                    text = "Bosqich ${g.stages.indexOf(stage) + 1}/${g.stages.size}: ${stage.goal.title}",
+                    color = colors.text.muted(0.85f),
+                    fontSize = 13.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                LinearProgressTrack(progress = stage.fraction, trackColor = colors.neutral800, progressColor = colors.accent, height = 4.dp)
+                stage.perDayHint?.let { Text(text = it, color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily) }
+            }
+        } else if (g.stages.isEmpty()) {
+            Text(text = "Bosqichlarga bo'lish uchun bosing (✨ AI yordam beradi)", color = colors.text.muted(0.55f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = when {
+                    totalToday == 0 -> "Bugun bu maqsad uchun qadam yo'q"
+                    doneToday == totalToday -> "✓ Bugungi qadamlar bajarildi ($doneToday/$totalToday)"
+                    else -> "Bugun: $doneToday/$totalToday qadam"
+                },
+                color = when {
+                    totalToday == 0 -> colors.warmAccent
+                    doneToday == totalToday -> colors.habitAccent
+                    else -> colors.text.muted(0.7f)
+                },
+                fontSize = 12.sp,
+                fontFamily = OnIkkiFontFamily,
+                modifier = Modifier.weight(1f)
+            )
+            if (state.otherGoalCount > 0) {
+                Text(text = "+${state.otherGoalCount} maqsad →", color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+            }
+        }
     }
 }
 

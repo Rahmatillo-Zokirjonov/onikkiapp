@@ -60,4 +60,16 @@ class GoalTreeTest {
         assertEquals(1, areas[LifeArea.MOLIYA]!!.goals)
         assertEquals(0, areas[LifeArea.DIN]!!.goals)
     }
+
+    @Test
+    fun mainGoalIsThePinnedOneWhileActive_elseNearestDeadline() {
+        val ielts = Goal(id = 30, title = "IELTS", area = LifeArea.TALIM, deadline = LocalDate.of(2027, 3, 1))
+        val undated = Goal(id = 31, title = "Kitob", area = LifeArea.SHAXSIY)
+        val tree = GoalTree.build(listOf(house, ielts, undated), emptyMap(), emptyMap(), emptyMap(), today)
+        assertEquals(30L, GoalTree.main(tree, pinnedId = null)!!.goal.id)
+        assertEquals(31L, GoalTree.main(tree, pinnedId = 31)!!.goal.id)
+        val pinnedDone = GoalTree.build(listOf(house, ielts.copy(doneAt = today)), emptyMap(), emptyMap(), emptyMap(), today)
+        assertEquals(1L, GoalTree.main(pinnedDone, pinnedId = 30)!!.goal.id)
+        assertNull(GoalTree.main(emptyList(), pinnedId = 1))
+    }
 }

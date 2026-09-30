@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import com.onikki.app.domain.goals.BigGoal
+import com.onikki.app.domain.goals.GoalTree
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -52,8 +54,16 @@ data class HomeUiState(
     val prayers: List<Pair<String, LocalTime>> = emptyList(),
     val nextPrayerName: String = "",
     val nextPrayerTime: LocalTime = LocalTime.MIDNIGHT,
-    val secondsUntilNextPrayer: Long = 0
+    val secondsUntilNextPrayer: Long = 0,
+    /** The goal card: pinned or most urgent active big goal; null when there are no active goals. */
+    val mainGoal: BigGoal? = null,
+    /** Today's tasks linked to [mainGoal]'s current stage: (done, total). */
+    val mainGoalToday: Pair<Int, Int> = 0 to 0,
+    val otherGoalCount: Int = 0,
+    val hasAnyGoal: Boolean = false
 )
+
+private data class GoalPart(val main: BigGoal?, val today: Pair<Int, Int>, val others: Int, val hasAny: Boolean)
 
 private data class PlanPart(val tasks: List<Task>, val overdue: Int, val money: List<PlannedExpense>, val habits: List<HabitStats>)
 private data class MoneyPart(val balance: Long, val income: Long, val expense: Long, val trend: List<Long>)
@@ -97,7 +107,27 @@ class HomeViewModel(
         locationStore.city
     ) { name, review, city -> ProfilePart(name, review, city) }
 
-    val uiState: StateFlow<HomeUiState> = combine(planFlow, moneyFlow, profileFlow, secondTicker()) { plan, money, profile, _ ->
+    private val goalFlow: Flow<GoalPart> = combine(
+        db.goalDao().observeAll(),
+        db.goalDao().observeTaskCounts(),
+        db.taskDao().observeByDate(today),
+        db.savingsGoalDao().observeAll(),
+        profileStore.mainGoalId
+    ) { goals, counts, todayTasks, savings, pinned ->
+        val tree = GoalTree.build(
+            goals = goals,
+            taskCounts = counts.associate { it.goalId to (it.done to it.total) },
+            openTodayByGoal = emptyMap(),
+            savingsById = savings.associate { it.id to it.currentAmount },
+            today = today
+        )
+        val main = GoalTree.main(tree, pinned)
+        val targetId = main?.workTarget?.goal?.id
+        val linked = todayTasks.filter { targetId != null && it.goalId == targetId }
+        GoalPart(main, linked.count { it.isCompleted } to linked.size, tree.count { !it.isDone } - (if (main != null) 1 else 0), goals.isNotEmpty())
+    }
+
+    val uiState: StateFlow<HomeUiState> = combine(planFlow, moneyFlow, profileFlow, goalFlow, secondTicker()) { plan, money, profile, goal, _ ->
         val now = LocalDateTime.now()
         val prayers = PrayerTimeCalculator
             .calculate(now.toLocalDate(), profile.city.latitude, profile.city.longitude, profile.city.utcOffsetHours)
@@ -120,7 +150,11 @@ class HomeViewModel(
             prayers = prayers,
             nextPrayerName = prayerName,
             nextPrayerTime = prayerTime,
-            secondsUntilNextPrayer = secondsUntil
+            secondsUntilNextPrayer = secondsUntil,
+            mainGoal = goal.main,
+            mainGoalToday = goal.today,
+            otherGoalCount = goal.others,
+            hasAnyGoal = goal.hasAny
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 

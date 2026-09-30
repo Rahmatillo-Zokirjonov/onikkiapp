@@ -87,6 +87,16 @@ object GoalTree {
         }
     }
 
+    /**
+     * The goal Bosh sahifa shows: the one the user pinned while it's still active, otherwise the
+     * active goal with the nearest deadline (undated ones last, then the one furthest along).
+     */
+    fun main(bigGoals: List<BigGoal>, pinnedId: Long?): BigGoal? {
+        val active = bigGoals.filter { !it.isDone }
+        return active.firstOrNull { it.goal.id == pinnedId }
+            ?: active.minWithOrNull(compareBy<BigGoal>({ it.goal.deadline == null }, { it.goal.deadline }, { -it.fraction }))
+    }
+
     /** Every life area with how many active big goals it has and their average progress. */
     fun areas(bigGoals: List<BigGoal>): List<AreaSummary> {
         val active = bigGoals.filter { !it.isDone }

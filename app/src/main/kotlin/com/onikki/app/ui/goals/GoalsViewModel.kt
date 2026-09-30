@@ -12,6 +12,7 @@ import com.onikki.app.data.db.entity.SavingsGoal
 import com.onikki.app.data.db.entity.Task
 import com.onikki.app.data.db.entity.TaskCategory
 import com.onikki.app.data.db.entity.GoalKind
+import com.onikki.app.data.local.ProfileStore
 import com.onikki.app.data.repository.AiOutcome
 import com.onikki.app.data.repository.AiRepository
 import com.onikki.app.domain.ai.GoalPlan
@@ -54,13 +55,15 @@ data class GoalsUiState(
     val sheet: GoalSheetTarget? = null,
     val aiPlan: AiPlanState? = null,
     val needsApiKey: Boolean = false,
+    /** Goal pinned to Bosh sahifa (null = automatic). */
+    val mainGoalId: Long? = null,
     val isLoaded: Boolean = false
 ) {
     val visibleActive: List<BigGoal> get() = active.filter { areaFilter == null || it.goal.area == areaFilter }
     fun find(id: Long) = (active + finished).firstOrNull { it.goal.id == id }
 }
 
-class GoalsViewModel(private val db: AppDatabase, private val ai: AiRepository) : ViewModel() {
+class GoalsViewModel(private val db: AppDatabase, private val ai: AiRepository, private val profile: ProfileStore) : ViewModel() {
     private val today = LocalDate.now()
     private val sheet = MutableStateFlow<GoalSheetTarget?>(null)
     private val areaFilter = MutableStateFlow<LifeArea?>(null)
@@ -83,7 +86,9 @@ class GoalsViewModel(private val db: AppDatabase, private val ai: AiRepository) 
         tree to savings
     }
 
-    val uiState: StateFlow<GoalsUiState> = combine(treeFlow, sheet, areaFilter, aiPlan, needsApiKey) { (tree, savings), openSheet, filter, plan, needsKey ->
+    private val aiFlow = combine(aiPlan, needsApiKey, profile.mainGoalId) { plan, needsKey, main -> Triple(plan, needsKey, main) }
+
+    val uiState: StateFlow<GoalsUiState> = combine(treeFlow, sheet, areaFilter, aiFlow) { (tree, savings), openSheet, filter, (plan, needsKey, main) ->
         GoalsUiState(
             active = tree.filter { !it.isDone }.sortedWith(compareBy({ it.goal.deadline == null }, { it.goal.deadline })),
             finished = tree.filter { it.isDone },
@@ -93,6 +98,7 @@ class GoalsViewModel(private val db: AppDatabase, private val ai: AiRepository) 
             sheet = openSheet,
             aiPlan = plan,
             needsApiKey = needsKey,
+            mainGoalId = main,
             isLoaded = true
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GoalsUiState())
@@ -178,6 +184,10 @@ class GoalsViewModel(private val db: AppDatabase, private val ai: AiRepository) 
 
     fun dismissAiPlan() { aiPlan.value = null }
 
+    fun setMainGoal(id: Long?) {
+        viewModelScope.launch { profile.setMainGoal(id) }
+    }
+
     fun dismissApiKey() { needsApiKey.value = false }
 
     fun saveApiKeyAndPlan(key: String, goal: Goal?) {
@@ -225,6 +235,6 @@ class GoalsViewModel(private val db: AppDatabase, private val ai: AiRepository) 
     }
 
     companion object {
-        fun factory(app: Application, db: AppDatabase) = viewModelFactory { initializer { GoalsViewModel(db, AiRepository(app, db)) } }
+        fun factory(app: Application, db: AppDatabase) = viewModelFactory { initializer { GoalsViewModel(db, AiRepository(app, db), ProfileStore(app)) } }
     }
 }

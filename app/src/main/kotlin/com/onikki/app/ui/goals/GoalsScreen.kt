@@ -92,6 +92,14 @@ fun GoalsRoute() {
     LaunchedEffect(bigId, big, state.isLoaded) { if (bigId != null && big == null && state.isLoaded) { bigId = null; stageId = null } }
     LaunchedEffect(stageId, stage) { if (stageId != null && stage == null && big != null) stageId = null }
     BackHandler(enabled = bigId != null) { if (stageId != null) stageId = null else bigId = null }
+    val requested by GoalDeepLink.requested.collectAsState()
+    LaunchedEffect(requested) {
+        requested?.let { id ->
+            stageId = null
+            bigId = id.takeIf { it != GoalDeepLink.ALL }
+            GoalDeepLink.consume()
+        }
+    }
 
     when {
         big != null && stage != null -> StageDetail(big, stage, viewModel, onBack = { stageId = null })
@@ -337,6 +345,16 @@ private fun BigGoalDetail(g: BigGoal, viewModel: GoalsViewModel, onBack: () -> U
                     }
                 }
                 g.goal.why?.let { Text(text = "Nima uchun: $it", color = colors.text.muted(0.75f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily) }
+                if (!g.isDone) {
+                    val pinned = viewModel.uiState.collectAsState().value.mainGoalId == g.goal.id
+                    Text(
+                        text = if (pinned) "⭐ Bosh sahifada asosiy maqsad" else "☆ Bosh sahifada asosiy qilish",
+                        color = if (pinned) colors.accent else colors.text.muted(0.6f),
+                        fontSize = 13.sp,
+                        fontFamily = OnIkkiFontFamily,
+                        modifier = Modifier.clickable { viewModel.setMainGoal(if (pinned) null else g.goal.id) }.padding(vertical = 2.dp)
+                    )
+                }
                 if (g.stages.isEmpty() && g.goal.kind == GoalKind.NUMBER && !g.isDone) NumberStepper(g.goal, onAdjust = { viewModel.adjustNumber(g.goal, it) })
                 OnIkkiButton(
                     text = if (g.isDone) "Qayta faollashtirish" else "✓ Maqsadga erishdim",

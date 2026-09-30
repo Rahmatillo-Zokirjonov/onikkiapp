@@ -21,7 +21,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.onikki.app.ui.dailyplan.DailyPlanRoute
+import com.onikki.app.ui.goals.GoalDeepLink
 import com.onikki.app.ui.goals.GoalsRoute
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import com.onikki.app.ui.habits.HabitsRoute
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
@@ -40,6 +43,8 @@ private enum class PlanSubTab(val label: String) {
 @Composable
 fun PlanSectionRoute() {
     var subTab by rememberSaveable { mutableStateOf(PlanSubTab.DAILY_PLAN) }
+    val requestedGoal by GoalDeepLink.requested.collectAsState()
+    LaunchedEffect(requestedGoal) { if (requestedGoal != null) subTab = PlanSubTab.GOALS }
     val colors = LocalOnIkkiColors.current
 
     Column(modifier = Modifier.fillMaxSize().background(colors.background)) {
