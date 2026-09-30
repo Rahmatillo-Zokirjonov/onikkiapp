@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.onikki.app.ui.dailyplan.DailyPlanRoute
+import com.onikki.app.ui.goals.GoalsRoute
 import com.onikki.app.ui.habits.HabitsRoute
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
@@ -32,6 +33,7 @@ import com.onikki.app.ui.theme.OnIkkiShapes
 // not something pulled directly from the mockup.
 private enum class PlanSubTab(val label: String) {
     DAILY_PLAN("Kunlik reja"),
+    GOALS("Maqsadlar"),
     HABITS("Odatlar")
 }
 
@@ -45,6 +47,7 @@ fun PlanSectionRoute() {
         Box(modifier = Modifier.weight(1f)) {
             when (subTab) {
                 PlanSubTab.DAILY_PLAN -> DailyPlanRoute()
+                PlanSubTab.GOALS -> GoalsRoute()
                 PlanSubTab.HABITS -> HabitsRoute()
             }
         }

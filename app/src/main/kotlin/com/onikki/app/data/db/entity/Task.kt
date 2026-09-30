@@ -15,5 +15,7 @@ data class Task(
     val time: LocalTime?,
     val category: TaskCategory,
     val isCompleted: Boolean = false,
-    val habitId: Long? = null
+    val habitId: Long? = null,
+    /** The [Goal] this task works toward, if any. */
+    val goalId: Long? = null
 )

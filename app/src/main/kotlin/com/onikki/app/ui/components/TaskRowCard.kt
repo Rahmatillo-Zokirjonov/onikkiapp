@@ -23,20 +23,25 @@ fun TaskRowCard(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
-    showTime: Boolean = true
+    showTime: Boolean = true,
+    goalLabel: String? = null
 ) {
     val colors = LocalOnIkkiColors.current
     val rowModifier = if (onClick != null) modifier.fillMaxWidth().clickable(onClick = onClick) else modifier.fillMaxWidth()
     OnIkkiRowCard(modifier = rowModifier) {
         TaskCheckbox(checked = task.isCompleted, onToggle = onToggle)
-        Text(
-            text = task.title,
-            color = if (task.isCompleted) colors.text.muted(0.45f) else colors.text,
-            fontSize = 14.sp,
-            fontFamily = OnIkkiFontFamily,
-            textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
-            modifier = Modifier.weight(1f)
-        )
+        androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = task.title,
+                color = if (task.isCompleted) colors.text.muted(0.45f) else colors.text,
+                fontSize = 14.sp,
+                fontFamily = OnIkkiFontFamily,
+                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null
+            )
+            goalLabel?.let {
+                Text(text = it, color = colors.accent.copy(alpha = 0.85f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily, maxLines = 1)
+            }
+        }
         if (task.category == TaskCategory.ISH) {
             TagChip(text = "Ish", variant = TagVariant.ACCENT)
         }

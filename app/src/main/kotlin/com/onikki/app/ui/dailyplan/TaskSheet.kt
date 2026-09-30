@@ -1,5 +1,12 @@
 package com.onikki.app.ui.dailyplan
 
+import com.onikki.app.ui.components.SheetFieldLabel
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.FilterChip
+import com.onikki.app.data.db.entity.Goal
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,14 +44,17 @@ fun TaskSheet(
     task: Task?,
     defaultDate: LocalDate,
     onDismiss: () -> Unit,
-    onSave: (title: String, date: LocalDate, time: LocalTime?, category: TaskCategory) -> Unit,
-    onDelete: () -> Unit
+    onSave: (title: String, date: LocalDate, time: LocalTime?, category: TaskCategory, goalId: Long?) -> Unit,
+    onDelete: () -> Unit,
+    goals: List<Goal> = emptyList(),
+    presetGoalId: Long? = null
 ) {
     val colors = LocalOnIkkiColors.current
     val key = task?.id
     var title by rememberSaveable(key) { mutableStateOf(task?.title ?: "") }
     var category by rememberSaveable(key) { mutableStateOf(task?.category ?: TaskCategory.SHAXSIY) }
     var date by rememberSaveable(key) { mutableStateOf(task?.date ?: defaultDate) }
+    var goalId by rememberSaveable(key) { mutableStateOf(task?.goalId ?: presetGoalId) }
     // New tasks get a time by default (TZ 3.1 lists it as a field); an existing untimed task stays untimed.
     var hasTime by rememberSaveable(key) { mutableStateOf(task == null || task.time != null) }
     val initialTime = remember(key) { task?.time ?: defaultNewTaskTime() }
@@ -69,6 +79,22 @@ fun TaskSheet(
             onSelect = { category = it }
         )
         DatePickerField(label = "Sana", date = date, onDateChange = { it?.let { picked -> date = picked } })
+        if (goals.isNotEmpty()) {
+            SheetFieldLabel("Qaysi maqsad uchun")
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(selected = goalId == null, onClick = { goalId = null }, label = { Text("Maqsadsiz") })
+                goals.forEach { goal ->
+                    FilterChip(
+                        selected = goalId == goal.id,
+                        onClick = { goalId = goal.id },
+                        label = { Text("${goal.icon} ${goal.title}") }
+                    )
+                }
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth().clickable { hasTime = !hasTime },
             verticalAlignment = Alignment.CenterVertically
@@ -91,7 +117,7 @@ fun TaskSheet(
                 if (title.isBlank()) {
                     error = "Vazifa nomini yozing"
                 } else {
-                    onSave(title, date, if (hasTime) LocalTime.of(timeState.hour, timeState.minute) else null, category)
+                    onSave(title, date, if (hasTime) LocalTime.of(timeState.hour, timeState.minute) else null, category, goalId)
                 }
             },
             onDelete = if (task != null) onDelete else null

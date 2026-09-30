@@ -1,5 +1,6 @@
 package com.onikki.app.ui.dailyplan
 
+import com.onikki.app.data.db.entity.Goal
 import com.onikki.app.ui.components.HeroCard
 import com.onikki.app.ui.components.ModuleCard
 import com.onikki.app.ui.components.AppModule
@@ -91,7 +92,8 @@ fun DailyPlanRoute() {
         onNewTask = viewModel::openNewTask,
         onOpenTask = viewModel::openTask,
         onMoveOverdue = viewModel::moveOverdueToToday,
-        onCompleteMoney = viewModel::completeMoney
+        onCompleteMoney = viewModel::completeMoney,
+        onAddForGoal = viewModel::openNewTaskForGoal
     )
 
     state.sheet?.let { target ->
@@ -99,8 +101,10 @@ fun DailyPlanRoute() {
             task = target.task,
             defaultDate = state.selectedDate,
             onDismiss = viewModel::dismissSheet,
-            onSave = { title, date, time, category -> viewModel.saveTask(target.task, title, date, time, category) },
-            onDelete = { target.task?.let(viewModel::deleteTask) }
+            onSave = { title, date, time, category, goalId -> viewModel.saveTask(target.task, title, date, time, category, goalId) },
+            onDelete = { target.task?.let(viewModel::deleteTask) },
+            goals = state.goals,
+            presetGoalId = target.presetGoalId
         )
     }
 }
@@ -116,7 +120,8 @@ fun DailyPlanScreen(
     onNewTask: () -> Unit,
     onOpenTask: (Task) -> Unit,
     onMoveOverdue: () -> Unit,
-    onCompleteMoney: (PlannedExpense) -> Unit = {}
+    onCompleteMoney: (PlannedExpense) -> Unit = {},
+    onAddForGoal: (Long) -> Unit = {}
 ) {
     val isToday = state.selectedDate == state.today
     val colors = LocalOnIkkiColors.current
@@ -169,6 +174,13 @@ fun DailyPlanScreen(
 
         if (isToday && state.overdue.isNotEmpty()) {
             OverdueCard(overdue = state.overdue, onMoveToToday = onMoveOverdue, onOpenTask = onOpenTask)
+        }
+
+        if (isToday) {
+            // Goals with nothing scheduled today: the plan should move every active goal a little.
+            val covered = state.tasks.mapNotNull { it.goalId }.toSet()
+            val idle = state.goals.filter { it.id !in covered }
+            if (idle.isNotEmpty()) GoalsNudgeCard(idle, onAdd = onAddForGoal)
         }
 
         if (state.money.isNotEmpty()) {
@@ -229,7 +241,8 @@ fun DailyPlanScreen(
                                         onToggle = { onToggleTask(item.task) },
                                         onClick = { onOpenTask(item.task) },
                                         showTime = false,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f),
+                                        goalLabel = item.task.goalId?.let { id -> state.goals.firstOrNull { it.id == id } }?.let { "${it.icon} ${it.title}" }
                                     )
                                 }
                             }
@@ -497,6 +510,35 @@ private fun MoneyPlanCard(items: List<PlannedExpense>, today: LocalDate, onCompl
                     onClick = { onComplete(item) },
                     variant = OnIkkiButtonVariant.SECONDARY,
                     contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+/** "🎯 IELTS 7.0 — bugun vazifa yo'q · + Qo'shish" for each active goal without a task today. */
+@Composable
+private fun GoalsNudgeCard(goals: List<Goal>, onAdd: (Long) -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    OnIkkiCard(modifier = Modifier.fillMaxWidth(), gap = 8.dp) {
+        Text(text = "MAQSADLAR · BUGUN VAZIFA YO'Q", color = colors.accent, style = OnIkkiType.kicker)
+        goals.take(3).forEach { goal ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(text = goal.icon, fontSize = 18.sp)
+                Text(
+                    text = goal.title,
+                    color = colors.text,
+                    fontSize = 14.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "+ Qo'shish",
+                    color = colors.accent,
+                    fontSize = 13.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.clickable { onAdd(goal.id) }.padding(4.dp)
                 )
             }
         }

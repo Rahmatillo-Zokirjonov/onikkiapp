@@ -2,6 +2,7 @@
 
 package com.onikki.app.ui.dailyplan
 
+import com.onikki.app.data.db.entity.Goal
 import com.onikki.app.data.repository.payPlanned
 import com.onikki.app.data.db.entity.DEFAULT_CASH_ACCOUNT_ID
 import com.onikki.app.data.db.entity.PlannedExpense
@@ -26,7 +27,7 @@ import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
 
 /** Which task the add/edit sheet is showing; [task] null means "new task". */
-data class TaskSheetTarget(val task: Task?)
+data class TaskSheetTarget(val task: Task?, val presetGoalId: Long? = null)
 
 /** Per-day summary for the week strip's indicator dot. */
 data class DayLoad(val total: Int, val done: Int)
@@ -41,6 +42,8 @@ data class DailyPlanUiState(
     val overdue: List<Task> = emptyList(),
     /** Planned payments/incomes due on the selected day (today also shows overdue ones). */
     val money: List<PlannedExpense> = emptyList(),
+    /** Active goals (for the task sheet's picker and task labels). */
+    val goals: List<Goal> = emptyList(),
     val sheet: TaskSheetTarget? = null
 )
 
@@ -62,8 +65,9 @@ class DailyPlanViewModel(
 
     private val tasksAndMoney = combine(
         selectedDate.flatMapLatest { taskDao.observeByDate(it) },
-        db.plannedExpenseDao().observeAll()
-    ) { tasks, planned -> tasks to planned }
+        db.plannedExpenseDao().observeAll(),
+        db.goalDao().observeAll()
+    ) { tasks, planned, goals -> Triple(tasks, planned, goals.filter { it.doneAt == null }) }
 
     val uiState: StateFlow<DailyPlanUiState> = combine(
         selectedDate,
@@ -71,7 +75,7 @@ class DailyPlanViewModel(
         weekLoadFlow,
         taskDao.observeOverdue(today),
         sheet
-    ) { date, (tasks, planned), weekTasks, overdue, openSheet ->
+    ) { date, (tasks, planned, goals), weekTasks, overdue, openSheet ->
         val money = planned.filter { it.paidDate == null }.filter {
             it.dueDate == date || (date == today && it.dueDate.isBefore(today))
         }.sortedBy { it.dueDate }
@@ -86,6 +90,7 @@ class DailyPlanViewModel(
             },
             overdue = overdue,
             money = money,
+            goals = goals,
             sheet = openSheet
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DailyPlanUiState())
@@ -111,6 +116,12 @@ class DailyPlanViewModel(
         sheet.value = TaskSheetTarget(null)
     }
 
+    /** "+ Qo'shish" from the goals nudge: a new task for today, already linked to the goal. */
+    fun openNewTaskForGoal(goalId: Long) {
+        selectedDate.value = today
+        sheet.value = TaskSheetTarget(null, presetGoalId = goalId)
+    }
+
     fun openTask(task: Task) {
         sheet.value = TaskSheetTarget(task)
     }
@@ -119,13 +130,13 @@ class DailyPlanViewModel(
         sheet.value = null
     }
 
-    fun saveTask(existing: Task?, title: String, date: LocalDate, time: LocalTime?, category: TaskCategory) {
+    fun saveTask(existing: Task?, title: String, date: LocalDate, time: LocalTime?, category: TaskCategory, goalId: Long? = null) {
         if (title.isBlank()) return
         viewModelScope.launch {
             if (existing == null) {
-                taskDao.insert(Task(title = title.trim(), date = date, time = time, category = category))
+                taskDao.insert(Task(title = title.trim(), date = date, time = time, category = category, goalId = goalId))
             } else {
-                taskDao.update(existing.copy(title = title.trim(), date = date, time = time, category = category))
+                taskDao.update(existing.copy(title = title.trim(), date = date, time = time, category = category, goalId = goalId))
             }
             sheet.value = null
             // Follow the task if it was moved to (or created on) another day, so it doesn't seem to vanish.

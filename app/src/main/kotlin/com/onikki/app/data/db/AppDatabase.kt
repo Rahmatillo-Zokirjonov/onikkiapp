@@ -11,6 +11,7 @@ import com.onikki.app.data.db.dao.AccountDao
 import com.onikki.app.data.db.dao.AppLimitDao
 import com.onikki.app.data.db.dao.AppUsageDao
 import com.onikki.app.data.db.dao.BlockZoneDao
+import com.onikki.app.data.db.dao.GoalDao
 import com.onikki.app.data.db.dao.SmsImportDao
 import com.onikki.app.data.db.dao.VocabWordDao
 import com.onikki.app.data.db.dao.CategoryBudgetDao
@@ -27,6 +28,7 @@ import com.onikki.app.data.db.entity.Account
 import com.onikki.app.data.db.entity.AppLimit
 import com.onikki.app.data.db.entity.AppUsage
 import com.onikki.app.data.db.entity.BlockZone
+import com.onikki.app.data.db.entity.Goal
 import com.onikki.app.data.db.entity.MerchantCategory
 import com.onikki.app.data.db.entity.SmsImport
 import com.onikki.app.data.db.entity.VocabWord
@@ -46,9 +48,9 @@ import com.onikki.app.data.db.entity.Transaction
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
-        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class
+        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -69,6 +71,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun blockZoneDao(): BlockZoneDao
     abstract fun vocabWordDao(): VocabWordDao
     abstract fun smsImportDao(): SmsImportDao
+    abstract fun goalDao(): GoalDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -76,7 +79,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -195,5 +198,17 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS `merchant_categories` (`merchant` TEXT NOT NULL, `category` TEXT NOT NULL, PRIMARY KEY(`merchant`))"
         )
+    }
+}
+
+/** v8 (Maqsadlar): goals, and tasks can point at the goal they work toward. */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `goals` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, " +
+                "`why` TEXT, `icon` TEXT NOT NULL, `deadline` TEXT, `kind` TEXT NOT NULL, `target` INTEGER NOT NULL, " +
+                "`current` INTEGER NOT NULL, `unit` TEXT, `createdAt` TEXT NOT NULL, `doneAt` TEXT)"
+        )
+        db.execSQL("ALTER TABLE tasks ADD COLUMN goalId INTEGER")
     }
 }
