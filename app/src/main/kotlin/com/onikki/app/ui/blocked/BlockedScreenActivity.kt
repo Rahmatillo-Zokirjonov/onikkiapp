@@ -63,7 +63,8 @@ class BlockedScreenActivity : ComponentActivity() {
                             }
                         },
                         onPassed = {
-                            BlockOverrides.grant(packageName, spec.graceMinutes * 60_000L)
+                            if (spec.graceMinutes <= 0) BlockOverrides.grantSession(packageName)
+                            else BlockOverrides.grant(packageName, spec.graceMinutes * 60_000L)
                             returnToApp(packageName)
                         },
                         onGiveUp = { goHome() }

@@ -76,7 +76,8 @@ fun ChallengeScreen(
                 PhraseTask(spec.phrase.orEmpty(), onPassed)
             }
             Text(
-                text = "To'g'ri bajarsangiz ${spec.graceMinutes} daqiqa ochiq turadi.",
+                text = if (spec.graceMinutes <= 0) "To'g'ri bajarsangiz, ilovadan chiqquningizcha ochiq turadi."
+                else "To'g'ri bajarsangiz ${spec.graceMinutes} daqiqa ochiq turadi.",
                 color = colors.text.muted(0.45f),
                 fontSize = 11.sp,
                 fontFamily = OnIkkiFontFamily

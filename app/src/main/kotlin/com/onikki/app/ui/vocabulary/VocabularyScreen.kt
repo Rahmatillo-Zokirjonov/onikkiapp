@@ -196,8 +196,15 @@ private fun ChallengeSettingsCard(settings: ChallengeSettings, update: ((Challen
             }
         }
 
-        SheetFieldLabel("To'g'ri bajargach ilova necha daqiqa ochiq tursin")
-        ChipRow(ChallengeSettings.GRACE_OPTIONS.map { it to "$it daq" }, settings.graceMinutes) { g -> update { it.copy(graceMinutes = g) } }
+        SheetFieldLabel("To'g'ri bajargach ilova qancha ochiq tursin")
+        ChipRow(ChallengeSettings.GRACE_OPTIONS.map { it to if (it == 0) "Chiqquncha" else "$it daq" }, settings.graceMinutes) { g -> update { it.copy(graceMinutes = g) } }
+        Text(
+            text = if (settings.graceMinutes == 0) "Boshqa ilovaga yoki bosh ekranga o'tsangiz, qaytib kirganda yana so'raladi."
+            else "Shu vaqt ichida chiqib qayta kirsangiz, qayta so'ralmaydi.",
+            color = colors.text.muted(0.5f),
+            fontSize = 11.sp,
+            fontFamily = OnIkkiFontFamily
+        )
 
         Row(
             verticalAlignment = Alignment.CenterVertically,

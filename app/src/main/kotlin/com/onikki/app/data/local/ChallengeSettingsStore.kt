@@ -20,8 +20,8 @@ data class ChallengeSettings(
     val mode: ChallengeMode = ChallengeMode.WORDS,
     val wordCount: Int = 3,
     val direction: ChallengeDirection = ChallengeDirection.EN_UZ,
-    /** After passing, the app stays open this long before it asks again. */
-    val graceMinutes: Int = 15,
+    /** After passing, the app stays open this long before it asks again; 0 = until the user leaves the app. */
+    val graceMinutes: Int = 0,
     /** Lets a (non-strict) blocked app be opened by passing the challenge. */
     val unlockBlockedApps: Boolean = true,
     val phrase: String = DEFAULT_PHRASE
@@ -29,7 +29,7 @@ data class ChallengeSettings(
     companion object {
         const val DEFAULT_PHRASE = "Men vaqtimni foydali ishlarga sarflayman"
         val WORD_COUNT_OPTIONS = listOf(1, 3, 5, 10)
-        val GRACE_OPTIONS = listOf(5, 15, 30, 60)
+        val GRACE_OPTIONS = listOf(0, 5, 15, 30, 60)
     }
 }
 
