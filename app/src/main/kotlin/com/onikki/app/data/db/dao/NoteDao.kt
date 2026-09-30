@@ -8,11 +8,23 @@ import androidx.room.Update
 import com.onikki.app.data.db.entity.Note
 import kotlinx.coroutines.flow.Flow
 
+data class IdTitle(val id: Long, val title: String)
+
 @Dao
 interface NoteDao {
     /** Every note, archived and trashed included — the list screen splits them. */
     @Query("SELECT * FROM notes ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<Note>>
+
+    /** Titles of tasks some note links to (the note shows it as a chip). */
+    @Query("SELECT id, title FROM tasks WHERE id IN (SELECT taskId FROM notes WHERE taskId IS NOT NULL)")
+    fun observeLinkedTaskTitles(): Flow<List<IdTitle>>
+
+    @Query("SELECT * FROM notes WHERE journalDate = :date AND deletedAt IS NULL LIMIT 1")
+    suspend fun findJournal(date: java.time.LocalDate): Note?
+
+    @Query("SELECT * FROM notes WHERE goalId = :goalId AND deletedAt IS NULL ORDER BY updatedAt DESC")
+    fun observeForGoal(goalId: Long): Flow<List<Note>>
 
     @Query("UPDATE notes SET pinned = :pinned WHERE id = :id")
     suspend fun setPinned(id: Long, pinned: Boolean)

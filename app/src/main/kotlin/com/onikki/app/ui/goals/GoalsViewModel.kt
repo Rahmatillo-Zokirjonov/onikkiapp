@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -104,6 +105,11 @@ class GoalsViewModel(private val db: AppDatabase, private val ai: AiRepository, 
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GoalsUiState())
 
     fun tasksOf(goalId: Long) = db.goalDao().observeTasks(goalId)
+
+    /** Notes (Qaydlar) linked to any of [goalIds] — a big goal and its stages. */
+    fun notesOf(goalIds: Set<Long>) = db.noteDao().observeAll().map { notes ->
+        notes.filter { !it.isDeleted && it.goalId in goalIds }.sortedByDescending { it.updatedAt }
+    }
 
     fun setAreaFilter(area: LifeArea?) { areaFilter.value = if (areaFilter.value == area) null else area }
 

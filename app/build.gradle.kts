@@ -103,4 +103,6 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.datastore.preferences)
     implementation(libs.okhttp)
+    // Reads a camera photo's orientation so note images are stored upright.
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 }

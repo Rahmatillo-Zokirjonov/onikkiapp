@@ -40,7 +40,17 @@ data class Note(
     /** Set when moved to Savat; purged 30 days later unless restored. */
     val deletedAt: Long? = null,
     /** [content] holds checklist lines ("☐ …" / "☑ …", see Checklist) instead of free text. */
-    @ColumnInfo(defaultValue = "0") val isChecklist: Boolean = false
+    @ColumnInfo(defaultValue = "0") val isChecklist: Boolean = false,
+    /** [NoteFolder] it lives in; null = no folder. */
+    val folderId: Long? = null,
+    /** Content hidden in the list and opened only after the phone's fingerprint / PIN check. */
+    @ColumnInfo(defaultValue = "0") val locked: Boolean = false,
+    /** Set for a Kundalik (journal) entry: the day it belongs to. One entry per day. */
+    val journalDate: java.time.LocalDate? = null,
+    /** Optional link to a big goal or a stage (Maqsadlar). */
+    val goalId: Long? = null,
+    /** Optional link to a task (Kunlik reja). */
+    val taskId: Long? = null
 ) {
     val isDeleted: Boolean get() = deletedAt != null
 }

@@ -62,7 +62,15 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.onikki.app.data.db.entity.AttachmentKind
 import com.onikki.app.data.db.entity.Note
+import com.onikki.app.data.db.entity.NoteAttachment
+import com.onikki.app.data.local.NoteMedia
+import com.onikki.app.domain.notes.NoteFormat
+import com.onikki.app.domain.notes.NoteTemplates
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import com.onikki.app.data.db.entity.NoteColor
 import com.onikki.app.data.db.entity.NotePriority
 import com.onikki.app.domain.ai.ExtractedTask
@@ -100,13 +108,44 @@ fun NoteEditorScreen(target: NoteEditorTarget, state: NotesUiState, viewModel: N
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val key = note?.id
-    var title by rememberSaveable(key) { mutableStateOf(note?.title ?: "") }
-    var isChecklist by rememberSaveable(key) { mutableStateOf(note?.isChecklist ?: target.checklist) }
-    var content by rememberSaveable(key) { mutableStateOf(if (note?.isChecklist == true) "" else note?.content ?: "") }
-    var checkRaw by rememberSaveable(key) {
-        mutableStateOf(if (note?.isChecklist == true) note.content else if (target.checklist) OPEN else "")
+    val template = target.template
+    val journalDate = note?.journalDate ?: target.journalDate
+    var title by rememberSaveable(key) {
+        mutableStateOf(note?.title ?: template?.title ?: target.journalDate?.let(::journalTitle) ?: "")
     }
-    var tags by rememberSaveable(key) { mutableStateOf(note?.tags ?: emptyList()) }
+    var isChecklist by rememberSaveable(key) { mutableStateOf(note?.isChecklist ?: target.checklist) }
+    val initialText = when {
+        note != null -> if (note.isChecklist) "" else note.content
+        template != null && !template.checklist -> template.content
+        target.journalDate != null -> NoteTemplates.JOURNAL
+        else -> ""
+    }
+    var contentValue by rememberSaveable(key, stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(initialText)) }
+    val content = contentValue.text
+    fun setContent(text: String) { contentValue = TextFieldValue(text, TextRange(text.length)) }
+    var checkRaw by rememberSaveable(key) {
+        mutableStateOf(
+            when {
+                note?.isChecklist == true -> note.content
+                template?.checklist == true -> template.content
+                target.checklist -> OPEN
+                else -> ""
+            }
+        )
+    }
+    var tags by rememberSaveable(key) { mutableStateOf(note?.tags ?: template?.tags ?: emptyList()) }
+    var noteId by rememberSaveable(key) { mutableStateOf(note?.id) }
+    var folderId by rememberSaveable(key) { mutableStateOf(note?.folderId ?: target.folderId) }
+    var locked by rememberSaveable(key) { mutableStateOf(note?.locked ?: false) }
+    var goalId by rememberSaveable(key) { mutableStateOf(note?.goalId) }
+    var taskId by rememberSaveable(key) { mutableStateOf(note?.taskId) }
+    var cameraFile by rememberSaveable(key) { mutableStateOf<String?>(null) }
+    var recorderOpen by rememberSaveable(key) { mutableStateOf(false) }
+    var photoMenuOpen by remember { mutableStateOf(false) }
+    var folderPickerOpen by rememberSaveable(key) { mutableStateOf(false) }
+    var linkSheetOpen by rememberSaveable(key) { mutableStateOf(false) }
+    var viewing by remember { mutableStateOf<NoteAttachment?>(null) }
+    val attachments = noteId?.let { state.attachments[it] }.orEmpty()
     var tagInput by rememberSaveable(key) { mutableStateOf("") }
     var remindAt by rememberSaveable(key) { mutableStateOf(note?.remindAt) }
     var priority by rememberSaveable(key) { mutableStateOf(note?.priority ?: NotePriority.ODDIY) }
@@ -129,15 +168,32 @@ fun NoteEditorScreen(target: NoteEditorTarget, state: NotesUiState, viewModel: N
 
     var closed by remember { mutableStateOf(false) }
 
+    fun draft() = NoteDraft(
+        title, if (isChecklist) checkRaw else content, tags, remindAt, priority, color, pinned, isChecklist,
+        folderId = folderId, locked = locked, journalDate = journalDate, goalId = goalId, taskId = taskId
+    )
+
     fun close(action: CloseAction = CloseAction.SAVE) {
         if (closed) return
         closed = true
         commitTagInput()
-        viewModel.saveAndClose(
-            note,
-            NoteDraft(title, if (isChecklist) checkRaw else content, tags, remindAt, priority, color, pinned, isChecklist),
-            action
-        )
+        viewModel.saveAndClose(noteId, draft(), action)
+    }
+
+    /** Attachments need a saved note: a new one is saved first, then [then] gets its id. */
+    fun withNoteId(then: (Long) -> Unit) {
+        val id = noteId
+        if (id != null) then(id) else viewModel.saveDraftNow(draft()) { newId -> noteId = newId; then(newId) }
+    }
+
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) withNoteId { id -> viewModel.attachImage(id, uri) }
+    }
+    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val path = cameraFile
+        cameraFile = null
+        if (ok && path != null) withNoteId { id -> viewModel.attachCameraPhoto(id, java.io.File(path)) }
+        else path?.let { java.io.File(it).delete() }
     }
 
     BackHandler { close() }
@@ -160,7 +216,7 @@ fun NoteEditorScreen(target: NoteEditorTarget, state: NotesUiState, viewModel: N
                 val current = rows(checkRaw).filter { it.second.isNotBlank() }
                 checkRaw = join(current + (false to spoken))
             } else {
-                content = if (content.isBlank()) spoken else content.trimEnd() + (if (content.endsWith("\n")) "" else " ") + spoken
+                setContent(if (content.isBlank()) spoken else content.trimEnd() + (if (content.endsWith("\n")) "" else " ") + spoken)
             }
         }
     }
@@ -188,7 +244,12 @@ fun NoteEditorScreen(target: NoteEditorTarget, state: NotesUiState, viewModel: N
         ) {
             IconText("←") { close() }
             Text(
-                text = note?.let { "Tahrirlandi: ${formatRelativeDateUz(it.updatedAt)}" } ?: if (isChecklist) "Yangi ro'yxat" else "Yangi qayd",
+                text = (if (locked) "🔒 " else "") + when {
+                    journalDate != null -> "Kundalik"
+                    note != null -> "Tahrirlandi: ${formatRelativeDateUz(note.updatedAt)}"
+                    isChecklist -> "Yangi ro'yxat"
+                    else -> "Yangi qayd"
+                },
                 color = colors.text.muted(0.45f),
                 fontSize = 12.sp,
                 fontFamily = OnIkkiFontFamily,
@@ -211,6 +272,23 @@ fun NoteEditorScreen(target: NoteEditorTarget, state: NotesUiState, viewModel: N
                             Toast.makeText(context, "Nusxa olindi", Toast.LENGTH_SHORT).show()
                         })
                     }
+                    if (journalDate == null) {
+                        DropdownMenuItem(text = { Text("📁 Papka: ${state.folderName(folderId) ?: "yo'q"}") }, onClick = { menuOpen = false; folderPickerOpen = true })
+                    }
+                    DropdownMenuItem(text = { Text("🎯 Maqsad yoki vazifaga bog'lash") }, onClick = { menuOpen = false; linkSheetOpen = true })
+                    DropdownMenuItem(
+                        text = { Text(if (locked) "🔓 Qulfni olish" else "🔒 Qulflash (maxfiy)") },
+                        onClick = {
+                            menuOpen = false
+                            if (locked) locked = false
+                            else if (isDeviceSecure(context)) {
+                                locked = true
+                                Toast.makeText(context, "Endi bu qayd barmoq izi yoki PIN bilan ochiladi", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Avval telefon sozlamalarida ekran qulfi (PIN yoki barmoq izi) o'rnating", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    )
                     if (note != null || hasText) {
                         DropdownMenuItem(
                             text = { Text(if (note?.archived == true) "Arxivdan chiqarish" else "Arxivga olish") },
@@ -263,6 +341,25 @@ fun NoteEditorScreen(target: NoteEditorTarget, state: NotesUiState, viewModel: N
             )
 
             ReminderRow(remindAt = remindAt, priority = priority, onClick = { reminderSheetOpen = true })
+            val linkChips = listOfNotNull(
+                state.folderName(folderId)?.let { Triple(it, { folderPickerOpen = true }, { folderId = null }) },
+                state.goalLabel(goalId)?.let { Triple("🎯 $it", { linkSheetOpen = true }, { goalId = null }) },
+                taskId?.let { id -> (state.taskTitles[id] ?: state.tasks.firstOrNull { it.id == id }?.title)?.let { Triple("✅ $it", { linkSheetOpen = true }, { taskId = null }) } }
+            )
+            if (linkChips.isNotEmpty()) {
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    linkChips.forEach { (label, onOpen, onRemove) -> LinkChip(label, onOpen, onRemove) }
+                }
+            }
+            val images = attachments.filter { it.kind == AttachmentKind.IMAGE }
+            if (images.isNotEmpty()) {
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    ImageThumbRow(images, size = 96.dp, onOpen = { viewing = it })
+                }
+            }
+            attachments.filter { it.kind == AttachmentKind.AUDIO }.forEach { audio ->
+                AudioAttachmentRow(audio, onDelete = { viewModel.deleteAttachment(audio) })
+            }
 
             if (isChecklist) {
                 ChecklistEditor(
@@ -274,10 +371,11 @@ fun NoteEditorScreen(target: NoteEditorTarget, state: NotesUiState, viewModel: N
                 )
             } else {
                 BasicTextField(
-                    value = content,
-                    onValueChange = { content = it },
+                    value = contentValue,
+                    onValueChange = { contentValue = it },
                     textStyle = bodyStyle,
                     cursorBrush = SolidColor(colors.accent),
+                    visualTransformation = remember(colors) { MarkdownTransformation(colors) },
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp),
                     decorationBox = { inner ->
@@ -288,7 +386,7 @@ fun NoteEditorScreen(target: NoteEditorTarget, state: NotesUiState, viewModel: N
                     }
                 )
             }
-            val words = bodyText().split(Regex("""\s+""")).count { it.isNotBlank() }
+            val words = NoteFormat.plain(bodyText()).split(Regex("""\s+""")).count { it.isNotBlank() && it != "•" }
             Text(
                 text = listOfNotNull(
                     "$words so'z",
@@ -301,15 +399,52 @@ fun NoteEditorScreen(target: NoteEditorTarget, state: NotesUiState, viewModel: N
             )
         }
 
+        // ------------------------------------------------ formatting
+        if (!isChecklist) {
+            FormatBar(
+                onWrap = { marker ->
+                    val e = NoteFormat.toggleWrap(content, contentValue.selection.start, contentValue.selection.end, marker)
+                    contentValue = TextFieldValue(e.text, TextRange(e.selStart, e.selEnd))
+                },
+                onLine = { prefix ->
+                    val e = NoteFormat.toggleLinePrefix(content, contentValue.selection.start, contentValue.selection.end, prefix)
+                    contentValue = TextFieldValue(e.text, TextRange(e.selStart, e.selEnd))
+                }
+            )
+        }
+
         // ------------------------------------------------ bottom toolbar
         Row(
-            modifier = Modifier.fillMaxWidth().background(colors.surface.copy(alpha = 0.92f)).padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(colors.surface.copy(alpha = 0.92f))
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ToolButton("🎤", "Ovoz", onClick = ::startVoice)
+            ToolButton("🎤", "Gapirish", onClick = ::startVoice)
+            ToolButton("🎙", "Yozuv") { recorderOpen = true }
+            Box {
+                ToolButton("📷", "Rasm") { photoMenuOpen = true }
+                DropdownMenu(expanded = photoMenuOpen, onDismissRequest = { photoMenuOpen = false }) {
+                    DropdownMenuItem(text = { Text("Kamera") }, onClick = {
+                        photoMenuOpen = false
+                        val (file, uri) = NoteMedia.cameraTarget(context)
+                        cameraFile = file.path
+                        runCatching { takePhoto.launch(uri) }.onFailure {
+                            file.delete()
+                            Toast.makeText(context, "Kamera ochilmadi", Toast.LENGTH_SHORT).show()
+                        }
+                    })
+                    DropdownMenuItem(text = { Text("Galereya") }, onClick = {
+                        photoMenuOpen = false
+                        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    })
+                }
+            }
             ToolButton(if (isChecklist) "¶" else "☑", if (isChecklist) "Matn" else "Ro'yxat") {
                 if (isChecklist) {
-                    content = Checklist.toPlain(join(rows(checkRaw)))
+                    setContent(Checklist.toPlain(join(rows(checkRaw))))
                     isChecklist = false
                 } else {
                     checkRaw = Checklist.fromPlain(content).ifEmpty { OPEN }
@@ -359,7 +494,7 @@ fun NoteEditorScreen(target: NoteEditorTarget, state: NotesUiState, viewModel: N
             canInsert = !isChecklist,
             onDismiss = viewModel::dismissAi,
             onInsertSummary = { summary ->
-                content = summary.trim() + "\n\n" + content
+                setContent(summary.trim() + "\n\n" + content)
                 viewModel.dismissAi()
             },
             onCopy = { text ->
@@ -367,6 +502,37 @@ fun NoteEditorScreen(target: NoteEditorTarget, state: NotesUiState, viewModel: N
                 Toast.makeText(context, "Nusxa olindi", Toast.LENGTH_SHORT).show()
             },
             onAddTasks = { tasks, date -> viewModel.addExtracted(tasks, date) }
+        )
+    }
+    if (recorderOpen) {
+        AudioRecorderSheet(
+            onDone = { name, duration ->
+                recorderOpen = false
+                withNoteId { id -> viewModel.attachAudio(id, name, duration) }
+            },
+            onDismiss = { recorderOpen = false }
+        )
+    }
+    viewing?.let { image ->
+        ImageViewer(image.fileName, onDelete = { viewModel.deleteAttachment(image); viewing = null }, onDismiss = { viewing = null })
+    }
+    if (folderPickerOpen) {
+        FolderPickerSheet(
+            state = state,
+            selected = folderId,
+            onPick = { folderId = it; folderPickerOpen = false },
+            onCreate = { name, icon -> viewModel.addFolder(name, icon) { id -> folderId = id }; folderPickerOpen = false },
+            onDismiss = { folderPickerOpen = false }
+        )
+    }
+    if (linkSheetOpen) {
+        LinkSheet(
+            state = state,
+            goalId = goalId,
+            taskId = taskId,
+            onGoal = { goalId = it; linkSheetOpen = false },
+            onTask = { taskId = it; linkSheetOpen = false },
+            onDismiss = { linkSheetOpen = false }
         )
     }
     if (state.needsApiKey) ApiKeySheet(onDismiss = viewModel::dismissApiKey, onSave = viewModel::saveApiKey)
@@ -771,4 +937,110 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+// ---------------------------------------------------------------- formatting bar, links, folders
+
+@Composable
+private fun FormatBar(onWrap: (String) -> Unit, onLine: (String) -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    Row(
+        modifier = Modifier.fillMaxWidth().background(colors.surface.copy(alpha = 0.6f)).horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        FormatKey("B", FontWeight.Bold) { onWrap("**") }
+        FormatKey("I", fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) { onWrap("*") }
+        FormatKey("S", decoration = TextDecoration.LineThrough) { onWrap("~~") }
+        FormatKey("H1", FontWeight.SemiBold) { onLine("# ") }
+        FormatKey("H2") { onLine("## ") }
+        FormatKey("•") { onLine("- ") }
+        FormatKey("❝") { onLine("> ") }
+    }
+}
+
+@Composable
+private fun FormatKey(
+    label: String,
+    weight: FontWeight = FontWeight.Normal,
+    fontStyle: androidx.compose.ui.text.font.FontStyle? = null,
+    decoration: TextDecoration? = null,
+    onClick: () -> Unit
+) {
+    val colors = LocalOnIkkiColors.current
+    Text(
+        text = label,
+        color = colors.text.muted(0.85f),
+        fontSize = 15.sp,
+        fontWeight = weight,
+        fontStyle = fontStyle,
+        textDecoration = decoration,
+        fontFamily = OnIkkiFontFamily,
+        modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun LinkChip(label: String, onOpen: () -> Unit, onRemove: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.background(colors.surface, RoundedCornerShape(50)).clickable(onClick = onOpen).padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+    ) {
+        Text(text = label, color = colors.text.muted(0.8f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily, maxLines = 1)
+        Text(text = " ×", color = colors.text.muted(0.4f), fontSize = 13.sp, modifier = Modifier.clickable(onClick = onRemove).padding(horizontal = 4.dp))
+    }
+}
+
+@Composable
+private fun FolderPickerSheet(state: NotesUiState, selected: Long?, onPick: (Long?) -> Unit, onCreate: (String, String) -> Unit, onDismiss: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    var creating by remember { mutableStateOf(false) }
+    if (creating) {
+        FolderSheet(folder = null, onDismiss = { creating = false }, onSave = { name, icon -> onCreate(name, icon) }, onDelete = null)
+        return
+    }
+    OnIkkiSheet(title = "Papka", onDismiss = onDismiss) {
+        PickRow("Papkasiz", selected == null) { onPick(null) }
+        state.folders.forEach { (folder, count) -> PickRow("${folder.icon} ${folder.name}  ($count)", selected == folder.id) { onPick(folder.id) } }
+        Text(
+            text = "+ Yangi papka",
+            color = colors.accent,
+            fontSize = 14.sp,
+            fontFamily = OnIkkiFontFamily,
+            modifier = Modifier.clickable { creating = true }.padding(vertical = 8.dp)
+        )
+    }
+}
+
+@Composable
+private fun LinkSheet(state: NotesUiState, goalId: Long?, taskId: Long?, onGoal: (Long?) -> Unit, onTask: (Long?) -> Unit, onDismiss: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val openGoals = state.goals.filter { it.doneAt == null }
+    // Big goals first, each followed by its stages.
+    val ordered = openGoals.filter { it.parentId == null }.flatMap { big -> listOf(big) + openGoals.filter { it.parentId == big.id }.sortedBy { it.orderIndex } }
+    OnIkkiSheet(title = "Bog'lash", onDismiss = onDismiss) {
+        Text(text = "MAQSAD", color = colors.text.muted(0.45f), style = com.onikki.app.ui.theme.OnIkkiType.kicker)
+        if (ordered.isEmpty()) Text(text = "Faol maqsad yo'q", color = colors.text.muted(0.5f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+        if (goalId != null) PickRow("Bog'lamaslik", false) { onGoal(null) }
+        ordered.forEach { g ->
+            PickRow((if (g.parentId != null) "     ↳ " else "${g.icon} ") + g.title, goalId == g.id) { onGoal(g.id) }
+        }
+        Text(text = "VAZIFA", color = colors.text.muted(0.45f), style = com.onikki.app.ui.theme.OnIkkiType.kicker, modifier = Modifier.padding(top = 8.dp))
+        if (state.tasks.isEmpty()) Text(text = "Yaqin kunlarda ochiq vazifa yo'q", color = colors.text.muted(0.5f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+        if (taskId != null) PickRow("Bog'lamaslik", false) { onTask(null) }
+        state.tasks.take(25).forEach { t -> PickRow("${formatRelativeDateUz(t.date)} · ${t.title}", taskId == t.id) { onTask(t.id) } }
+    }
+}
+
+@Composable
+private fun PickRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    Text(
+        text = (if (selected) "✓ " else "") + label,
+        color = if (selected) colors.accent else colors.text,
+        fontSize = 14.sp,
+        fontFamily = OnIkkiFontFamily,
+        maxLines = 1,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp)
+    )
 }

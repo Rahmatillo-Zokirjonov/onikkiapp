@@ -13,6 +13,8 @@ import com.onikki.app.data.db.dao.AppUsageDao
 import com.onikki.app.data.db.dao.BlockZoneDao
 import com.onikki.app.data.db.dao.GoalDao
 import com.onikki.app.data.db.dao.UsageHoursDao
+import com.onikki.app.data.db.dao.NoteFolderDao
+import com.onikki.app.data.db.dao.NoteAttachmentDao
 import com.onikki.app.data.db.dao.SmsImportDao
 import com.onikki.app.data.db.dao.VocabWordDao
 import com.onikki.app.data.db.dao.CategoryBudgetDao
@@ -31,6 +33,8 @@ import com.onikki.app.data.db.entity.AppUsage
 import com.onikki.app.data.db.entity.BlockZone
 import com.onikki.app.data.db.entity.Goal
 import com.onikki.app.data.db.entity.UsageHours
+import com.onikki.app.data.db.entity.NoteFolder
+import com.onikki.app.data.db.entity.NoteAttachment
 import com.onikki.app.data.db.entity.MerchantCategory
 import com.onikki.app.data.db.entity.SmsImport
 import com.onikki.app.data.db.entity.VocabWord
@@ -50,9 +54,9 @@ import com.onikki.app.data.db.entity.Transaction
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
-        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class
+        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -75,6 +79,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun smsImportDao(): SmsImportDao
     abstract fun goalDao(): GoalDao
     abstract fun usageHoursDao(): UsageHoursDao
+    abstract fun noteFolderDao(): NoteFolderDao
+    abstract fun noteAttachmentDao(): NoteAttachmentDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -82,7 +88,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -229,5 +235,26 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
         db.execSQL("ALTER TABLE notes ADD COLUMN isChecklist INTEGER NOT NULL DEFAULT 0")
         // Screen-time history: hourly minutes per day.
         db.execSQL("CREATE TABLE IF NOT EXISTS `usage_hours` (`date` TEXT NOT NULL, `minutes` TEXT NOT NULL, PRIMARY KEY(`date`))")
+    }
+}
+
+/** Qaydlar 2: folders, locked notes, Kundalik (journal) days, goal/task links, photo and voice attachments. */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE notes ADD COLUMN folderId INTEGER")
+        db.execSQL("ALTER TABLE notes ADD COLUMN locked INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE notes ADD COLUMN journalDate TEXT")
+        db.execSQL("ALTER TABLE notes ADD COLUMN goalId INTEGER")
+        db.execSQL("ALTER TABLE notes ADD COLUMN taskId INTEGER")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `note_folders` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `icon` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL DEFAULT 0)"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `note_attachments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`noteId` INTEGER NOT NULL, `kind` TEXT NOT NULL, `fileName` TEXT NOT NULL, `durationMs` INTEGER, " +
+                "`createdAt` INTEGER NOT NULL)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_note_attachments_noteId` ON `note_attachments` (`noteId`)")
     }
 }

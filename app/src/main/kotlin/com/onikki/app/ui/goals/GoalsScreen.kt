@@ -69,6 +69,8 @@ import com.onikki.app.ui.components.SubScreenHeader
 import com.onikki.app.ui.components.SuggestionChips
 import com.onikki.app.ui.components.TaskRowCard
 import com.onikki.app.ui.dailyplan.TaskSheet
+import com.onikki.app.ui.notes.NoteDeepLink
+import com.onikki.app.ui.notes.displayTitle
 import com.onikki.app.ui.dayreview.ApiKeySheet
 import com.onikki.app.domain.ai.ProposedStage
 import com.onikki.app.ui.theme.LocalOnIkkiColors
@@ -318,6 +320,8 @@ private fun BigGoalCard(g: BigGoal, onClick: () -> Unit, onAddTask: (() -> Unit)
 private fun BigGoalDetail(g: BigGoal, viewModel: GoalsViewModel, onBack: () -> Unit, onOpenStage: (NodeProgress) -> Unit) {
     val colors = LocalOnIkkiColors.current
     val ownTasks by viewModel.tasksOf(g.goal.id).collectAsState(initial = emptyList())
+    val linkedIds = remember(g) { (listOf(g.goal.id) + g.stages.map { it.goal.id }).toSet() }
+    val linkedNotes by remember(linkedIds) { viewModel.notesOf(linkedIds) }.collectAsState(initial = emptyList())
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(colors.background),
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 32.dp),
@@ -395,6 +399,28 @@ private fun BigGoalDetail(g: BigGoal, viewModel: GoalsViewModel, onBack: () -> U
                 }
             }
             items(ownTasks, key = { "t-${it.id}" }) { task -> GoalTaskRow(task, onToggle = { viewModel.toggleTask(task) }) }
+        }
+        if (linkedNotes.isNotEmpty()) {
+            item { Text(text = "Qaydlar", color = colors.text, style = OnIkkiType.sectionHeader) }
+            items(linkedNotes, key = { "n-${it.id}" }) { note ->
+                OnIkkiCard(modifier = Modifier.fillMaxWidth().clickable { NoteDeepLink.request(note.id) }, gap = 3.dp) {
+                    Text(
+                        text = (if (note.locked) "🔒 " else "📝 ") + note.displayTitle(),
+                        color = colors.text,
+                        fontSize = 14.sp,
+                        fontFamily = OnIkkiFontFamily,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    val stage = g.stages.firstOrNull { it.goal.id == note.goalId }
+                    Text(
+                        text = listOfNotNull(stage?.let { "${it.goal.orderIndex}-bosqich" }, formatRelativeDateUz(note.updatedAt)).joinToString(" · "),
+                        color = colors.text.muted(0.5f),
+                        fontSize = 11.sp,
+                        fontFamily = OnIkkiFontFamily
+                    )
+                }
+            }
         }
     }
 }

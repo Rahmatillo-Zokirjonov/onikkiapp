@@ -41,10 +41,11 @@ object NoteReminderNotifier {
             NotePriority.MUHIM -> ReminderChannel.NOTES_IMPORTANT
             NotePriority.JUDA_MUHIM -> ReminderChannel.NOTES_URGENT
         }
-        val body = note.content.trim().ifBlank { "Qayd eslatmasi" }
+        // A locked note never shows its text outside the app (lock screen, notification shade).
+        val body = if (note.locked) "🔒 Maxfiy qayd — ochish uchun bosing" else com.onikki.app.domain.notes.NoteFormat.plain(note.content).trim().ifBlank { "Qayd eslatmasi" }
         val builder = NotificationCompat.Builder(context, channel.id)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(note.displayTitle())
+            .setContentTitle(if (note.locked) note.title.ifBlank { "Maxfiy qayd" } else note.displayTitle())
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body.take(600)))
             .setContentIntent(openNote(context, note.id))

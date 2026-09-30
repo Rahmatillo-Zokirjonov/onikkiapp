@@ -151,13 +151,18 @@ private fun NoteAlertScreen(note: Note, onDismiss: () -> Unit, onSnooze: () -> U
                 fontFamily = OnIkkiFontFamily
             )
             Text(
-                text = note.displayTitle(),
+                text = if (note.locked) note.title.ifBlank { "Maxfiy qayd" } else note.displayTitle(),
                 color = colors.text,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Medium,
                 fontFamily = OnIkkiFontFamily
             )
-            val body = if (note.title.isBlank()) note.content.trim().substringAfter('\n', "").trim() else note.content.trim()
+            val plain = com.onikki.app.domain.notes.NoteFormat.plain(note.content).trim()
+            val body = when {
+                note.locked -> "🔒 Maxfiy qayd — ochish uchun ilovaga kiring"
+                note.title.isBlank() -> plain.substringAfter('\n', "").trim()
+                else -> plain
+            }
             if (body.isNotBlank()) {
                 Text(
                     text = body,
