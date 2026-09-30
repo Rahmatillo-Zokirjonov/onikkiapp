@@ -32,20 +32,24 @@ data class ScreenTimeUiState(
     val apps: List<AppUsageRow> = emptyList(),
     val controlled: List<ControlledApp> = emptyList(),
     val zones: List<BlockZone> = emptyList(),
-    val reviewedToday: Boolean = false
+    val reviewedToday: Boolean = false,
+    /** Minutes of screen time in each hour today (24 values). */
+    val hourlyMinutes: List<Int> = List(24) { 0 },
+    val hourlyByApp: Map<String, List<Int>> = emptyMap()
 )
 
 class ScreenTimeViewModel(private val repository: ScreenTimeRepository) : ViewModel() {
 
     private val today: LocalDate = LocalDate.now()
     private val blockedNow = MutableStateFlow<Map<String, BlockReason?>>(emptyMap())
+    private val hourly = MutableStateFlow<Pair<List<Int>, Map<String, List<Int>>>>(List(24) { 0 } to emptyMap())
 
     private val _installedApps = MutableStateFlow<List<InstalledApp>?>(null)
     /** Loaded on first use of the picker (querying every package isn't free). */
     val installedApps: StateFlow<List<InstalledApp>?> = _installedApps
 
     init {
-        viewModelScope.launch { repository.syncToday() }
+        refreshUsage()
         // Re-evaluate "blocked right now" whenever the rules change.
         viewModelScope.launch {
             repository.observeRules().collect { rules ->
@@ -60,8 +64,8 @@ class ScreenTimeViewModel(private val repository: ScreenTimeRepository) : ViewMo
         repository.observeRules(),
         repository.observeZones(),
         repository.observeReviewedToday(today),
-        blockedNow
-    ) { overview, rules, zones, reviewed, blocked ->
+        combine(blockedNow, hourly) { b, h -> b to h }
+    ) { overview, rules, zones, reviewed, (blocked, hourlyData) ->
         val usage = overview.apps.associateBy { it.packageName }
         ScreenTimeUiState(
             hasUsageAccess = overview.hasUsageAccess,
@@ -78,12 +82,19 @@ class ScreenTimeViewModel(private val repository: ScreenTimeRepository) : ViewMo
                 )
             }.sortedBy { it.label.lowercase() },
             zones = zones,
-            reviewedToday = reviewed
+            reviewedToday = reviewed,
+            hourlyMinutes = hourlyData.first,
+            hourlyByApp = hourlyData.second
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ScreenTimeUiState())
 
     fun refreshUsage() {
-        viewModelScope.launch { repository.syncToday() }
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.syncToday()
+            val t = repository.timeline(today)
+            fun toMinutes(ms: LongArray) = ms.map { (it / 60_000L).toInt() }
+            hourly.value = toMinutes(t.hourlyMs) to t.hourlyMsByApp.mapValues { toMinutes(it.value) }
+        }
     }
 
     fun loadInstalledApps() {

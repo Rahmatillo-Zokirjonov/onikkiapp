@@ -116,6 +116,7 @@ fun AppRuleScreen(
     ) {
         SubScreenHeader(title = label, onBack = onDone)
         if (!loaded) return@Column
+        AppUsageToday(packageName = packageName, label = label, minutes = viewModel.uiState.collectAsState().value.hourlyByApp[packageName])
 
         RuleCard(title = "Kunlik limit", subtitle = "Belgilangan daqiqadan keyin bloklanadi", checked = limitOn, onChecked = { limitOn = it }) {
             Text(text = "${limitMinutes.toInt()} daqiqa", color = colors.text, fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
@@ -367,12 +368,34 @@ fun AppPickerScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(11.dp)
             ) {
-                AppBadge(app.label)
+                AppIcon(app.packageName, app.label)
                 Text(text = app.label, color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(1f))
                 if (app.packageName in controlled) {
                     Text(text = "nazoratda", color = colors.accent, fontSize = 11.sp, fontFamily = OnIkkiFontFamily, style = OnIkkiType.kicker)
                 }
             }
+        }
+    }
+}
+
+/** This app today: icon, total minutes and its own hourly chart (same Ustun/Chiziq choice). */
+@Composable
+private fun AppUsageToday(packageName: String, label: String, minutes: List<Int>?) {
+    val colors = LocalOnIkkiColors.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var mode by remember { mutableStateOf(ChartModePref.get(context)) }
+    val total = minutes?.sum() ?: 0
+    OnIkkiCard(modifier = Modifier.fillMaxWidth(), gap = 10.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AppIcon(packageName, label, size = 40.dp)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = com.onikki.app.ui.util.formatMinutesAsDuration(total.toLong()), color = colors.text, fontSize = 20.sp, fontFamily = OnIkkiFontFamily)
+                Text(text = "bugun", color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+            }
+            ChartModeToggle(mode) { mode = it; ChartModePref.set(context, it) }
+        }
+        if (minutes != null && total > 0) {
+            HourlyUsageChart(minutes = minutes, mode = mode, color = colors.accent, currentHour = java.time.LocalTime.now().hour, height = 90.dp)
         }
     }
 }

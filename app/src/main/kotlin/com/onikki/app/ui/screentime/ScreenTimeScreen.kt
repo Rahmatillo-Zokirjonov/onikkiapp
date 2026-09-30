@@ -211,6 +211,7 @@ fun ScreenTimeScreen(
                 onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
             )
         } else {
+            HourlyCard(state.hourlyMinutes)
             WeeklyHistogramCard(state.dailyTotalsLast7Days)
         }
 
@@ -303,7 +304,7 @@ private fun ControlledAppCard(item: ControlledApp, onClick: () -> Unit) {
         gap = 8.dp
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            AppBadge(item.label)
+            AppIcon(item.rule.packageName, item.label)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.label,
@@ -364,7 +365,7 @@ private fun UsageRow(row: AppUsageRow, totalMinutesToday: Int, onClick: () -> Un
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(11.dp)
     ) {
-        AppBadge(row.appName)
+        AppIcon(row.packageName, row.appName)
         Column(modifier = Modifier.weight(1f)) {
             Text(text = row.appName, color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily, maxLines = 1)
             Text(
@@ -426,5 +427,30 @@ private fun WeeklyHistogramCard(dailyTotals: List<Int>) {
             fontFamily = OnIkkiFontFamily,
             modifier = Modifier.padding(start = 4.dp)
         )
+    }
+}
+
+/** Today hour by hour, as bars or a line (the viewer's choice is remembered). */
+@Composable
+private fun HourlyCard(minutes: List<Int>) {
+    val colors = LocalOnIkkiColors.current
+    val context = LocalContext.current
+    var mode by remember { mutableStateOf(ChartModePref.get(context)) }
+    val nowHour = java.time.LocalTime.now().hour
+    val peak = minutes.withIndex().maxByOrNull { it.value }?.takeIf { it.value > 0 }
+    OnIkkiCard(modifier = Modifier.fillMaxWidth(), gap = 10.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Bugun soatma-soat", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
+                Text(
+                    text = peak?.let { "Eng faol: %02d:00 · %d daq".format(it.index, it.value) } ?: "Hali ma'lumot yo'q",
+                    color = colors.text.muted(0.5f),
+                    fontSize = 11.sp,
+                    fontFamily = OnIkkiFontFamily
+                )
+            }
+            ChartModeToggle(mode) { mode = it; ChartModePref.set(context, it) }
+        }
+        HourlyUsageChart(minutes = minutes, mode = mode, color = colors.accent, currentHour = nowHour)
     }
 }

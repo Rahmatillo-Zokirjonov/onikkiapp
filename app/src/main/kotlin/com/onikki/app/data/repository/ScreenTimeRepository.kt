@@ -71,6 +71,9 @@ class ScreenTimeRepository(
 
     fun hasUsageAccess(): Boolean = usageStatsProvider.hasUsageAccess()
 
+    /** Today's foreground time per app and per hour (for the hourly chart). */
+    fun timeline(date: LocalDate) = usageStatsProvider.timeline(date)
+
     /** Pulls today's usage from UsageStatsManager into Room, resolving display names. No-op without permission. */
     suspend fun syncToday() {
         if (!hasUsageAccess()) return
