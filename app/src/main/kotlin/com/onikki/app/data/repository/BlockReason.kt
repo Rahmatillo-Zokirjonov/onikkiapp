@@ -8,6 +8,8 @@ sealed class BlockReason {
     data class Schedule(val start: LocalTime, val end: LocalTime) : BlockReason()
     data class Zone(val zoneName: String) : BlockReason()
     data class PrayerTime(val prayerName: String) : BlockReason()
+    /** Homework in its danger window; [count] pending ones in total. */
+    data class Homework(val subject: String, val title: String, val dueAt: java.time.LocalDateTime, val count: Int) : BlockReason()
 }
 
 /** What should happen when an app comes to the foreground. */

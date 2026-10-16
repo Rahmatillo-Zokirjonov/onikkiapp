@@ -42,7 +42,8 @@ fun BlockedScreen(
     strict: Boolean,
     canChallenge: Boolean,
     onClose: () -> Unit,
-    onStartChallenge: () -> Unit
+    onStartChallenge: () -> Unit,
+    onOpenHomework: () -> Unit = {}
 ) {
     BackHandler(onBack = onClose)
     val colors = LocalOnIkkiColors.current
@@ -101,6 +102,12 @@ fun BlockedScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 13.dp)
             )
             when {
+                reason is BlockReason.Homework -> OnIkkiButton(
+                    text = "📝 Vazifalarni ochish",
+                    onClick = onOpenHomework,
+                    variant = OnIkkiButtonVariant.SECONDARY,
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                )
                 strict -> Text(
                     text = "Qat'iy blok — bu vaqtda ochib bo'lmaydi",
                     color = colors.text.muted(0.5f),
@@ -185,6 +192,13 @@ private fun blockReasonCopy(appName: String, reason: BlockReason): Triple<String
         "Namoz vaqti",
         "${reason.prayerName} namozi yaqinlashdi",
         "$appName namoz vaqtidan oldingi tinch oynada bloklangan."
+    )
+    is BlockReason.Homework -> Triple(
+        "Uy vazifasi",
+        "${reason.subject}: ${reason.title}",
+        "Muddat: ${com.onikki.app.domain.timetable.HomeworkRules.formatLeft(java.time.Duration.between(java.time.LocalDateTime.now(), reason.dueAt)).let { if (it.endsWith("o'tdi")) it else "$it qoldi" }}." +
+            (if (reason.count > 1) " Jami ${reason.count} ta vazifa." else "") +
+            " Bajarib, On ikki'da \"Bajardim\" deb belgilang — $appName ochiladi."
     )
 }
 

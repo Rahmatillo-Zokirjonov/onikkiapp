@@ -150,6 +150,9 @@ fun HomeScreen(
             onCompleteMoney = onCompleteMoney
         )
         state.timetable?.let { TimetableNowCard(it, onClick = { TimetableDeepLink.request(); onOpenTab(OnIkkiTab.PLAN) }) }
+        if (state.homework.isNotEmpty()) {
+            HomeworkHomeCard(state.homework, state.now, onClick = { TimetableDeepLink.request(TimetableDeepLink.Target.HOMEWORK); onOpenTab(OnIkkiTab.PLAN) })
+        }
         MainGoalCard(state, onOpen = onOpenGoal)
         TodayPlanSection(state, onToggleTask = onToggleTask, onOpenPlan = { onOpenTab(OnIkkiTab.PLAN) })
         HabitsSection(habits = state.habits, onTapHabit = onTapHabit, onOpenAll = { onOpenTab(OnIkkiTab.PLAN) })
@@ -508,6 +511,49 @@ private fun HabitTodayCard(stats: HabitStats, onClick: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center
         )
+    }
+}
+
+// ---------------------------------------------------------------- Uy vazifalari
+
+@Composable
+private fun HomeworkHomeCard(list: List<com.onikki.app.data.db.entity.Homework>, now: LocalDateTime, onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val rules = com.onikki.app.domain.timetable.HomeworkRules
+    val first = list.first()
+    val blocking = rules.blocking(list, now)
+    OnIkkiRowCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (blocking.isNotEmpty()) Modifier.border(BorderStroke(1.dp, colors.warmBorder), androidx.compose.foundation.shape.RoundedCornerShape(14.dp)) else Modifier)
+            .clickable(onClick = onClick)
+    ) {
+        Text(text = if (blocking.isNotEmpty()) "⚠" else "📝", fontSize = 18.sp)
+        Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+            Text(
+                text = "${first.subject}: ${first.title}" + if (list.size > 1) "  (+${list.size - 1})" else "",
+                color = colors.text,
+                fontSize = 14.sp,
+                fontFamily = OnIkkiFontFamily,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            val left = rules.formatLeft(rules.timeLeft(first, now))
+            val start = rules.dangerStart(first)
+            Text(
+                text = when {
+                    blocking.isNotEmpty() -> "Ilovalar bloklangan · muddatga $left"
+                    start != null -> "Muddatga $left · ${"%02d:%02d".format(start.hour, start.minute)} dan bloklanadi" + if (start.toLocalDate() != now.toLocalDate()) " (${start.dayOfMonth}-${com.onikki.app.ui.util.monthNameUz(start.monthValue)})" else ""
+                    else -> "Muddatga $left"
+                },
+                color = if (blocking.isNotEmpty()) colors.warmAccent else colors.text.muted(0.5f),
+                fontSize = 11.sp,
+                fontFamily = OnIkkiFontFamily,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Text(text = "→", color = colors.text.muted(0.5f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
     }
 }
 

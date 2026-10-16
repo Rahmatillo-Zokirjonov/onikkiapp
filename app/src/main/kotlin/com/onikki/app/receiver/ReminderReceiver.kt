@@ -76,6 +76,19 @@ class ReminderReceiver : BroadcastReceiver() {
                 )
             }
 
+            ReminderType.HOMEWORK -> {
+                val hw = db.homeworkDao().findById(refId) ?: return
+                if (hw.status != com.onikki.app.data.db.entity.HomeworkStatus.PENDING) return
+                val left = com.onikki.app.domain.timetable.HomeworkRules.formatLeft(java.time.Duration.between(LocalDateTime.now(), hw.dueAt))
+                val danger = intent.getStringExtra(EXTRA_LABEL) == "danger"
+                ReminderNotifier.show(
+                    context, key, ReminderChannel.HOMEWORK,
+                    title = if (danger) "⚠ ${hw.subject}: ${hw.title}" else "📝 ${hw.subject}: ${hw.title}",
+                    text = if (danger) "Muddatga $left qoldi — bajarilmaguncha ilovalar bloklandi"
+                    else "Muddatga $left qoldi" + (com.onikki.app.domain.timetable.HomeworkRules.dangerStart(hw)?.let { " · ${hhmm(it.toLocalTime())} dan bloklanadi" } ?: "")
+                )
+            }
+
             ReminderType.TIMETABLE -> {
                 val entry = db.timetableDao().findById(refId) ?: return
                 if (entry.remindMinutes == null) return

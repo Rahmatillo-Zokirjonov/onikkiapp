@@ -23,6 +23,7 @@ enum class ReminderChannel(
 ) {
     TASKS("tasks", "Vazifalar", "Kunlik reja vazifalari vaqtidan oldin"),
     TIMETABLE("timetable", "Jadval", "Dars va jadval bloklari boshlanishidan oldin"),
+    HOMEWORK("homework", "Uy vazifalari", "Vazifa eslatmasi va bloklash boshlanishi"),
     PRAYER("prayer", "Namoz vaqtlari", "Har namozdan oldin eslatma"),
     HABITS("habits", "Odatlar", "Kechqurun belgilanmagan odatlar"),
     DAY_REVIEW("day_review", "Kun yakuni", "Kunni yakunlash eslatmasi"),

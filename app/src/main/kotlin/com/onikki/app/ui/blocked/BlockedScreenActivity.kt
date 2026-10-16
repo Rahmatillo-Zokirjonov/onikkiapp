@@ -76,7 +76,15 @@ class BlockedScreenActivity : ComponentActivity() {
                         strict = gate.strict,
                         canChallenge = gate.canChallenge,
                         onClose = { goHome() },
-                        onStartChallenge = { lifecycleScope.launch { challenge = loadChallenge(app, settingsStore) } }
+                        onStartChallenge = { lifecycleScope.launch { challenge = loadChallenge(app, settingsStore) } },
+                        onOpenHomework = {
+                            startActivity(
+                                Intent(this@BlockedScreenActivity, com.onikki.app.MainActivity::class.java)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                    .putExtra(com.onikki.app.MainActivity.EXTRA_OPEN_HOMEWORK, true)
+                            )
+                            finish()
+                        }
                     )
                 }
             }
@@ -144,6 +152,8 @@ class BlockedScreenActivity : ComponentActivity() {
         private const val EXTRA_REASON_TYPE = "reason_type"
         private const val EXTRA_REASON_DETAIL = "reason_detail"
         private const val EXTRA_REASON_DETAIL2 = "reason_detail2"
+        private const val EXTRA_REASON_DETAIL3 = "reason_detail3"
+        private const val EXTRA_REASON_COUNT = "reason_count"
         private const val EXTRA_STRICT = "strict"
         private const val EXTRA_CAN_CHALLENGE = "can_challenge"
 
@@ -177,6 +187,13 @@ class BlockedScreenActivity : ComponentActivity() {
                                 putExtra(EXTRA_REASON_TYPE, "PRAYER")
                                 putExtra(EXTRA_REASON_DETAIL, reason.prayerName)
                             }
+                            is BlockReason.Homework -> {
+                                putExtra(EXTRA_REASON_TYPE, "HOMEWORK")
+                                putExtra(EXTRA_REASON_DETAIL, reason.subject)
+                                putExtra(EXTRA_REASON_DETAIL2, reason.title)
+                                putExtra(EXTRA_REASON_DETAIL3, reason.dueAt.toString())
+                                putExtra(EXTRA_REASON_COUNT, reason.count)
+                            }
                         }
                     }
                 }
@@ -193,6 +210,12 @@ class BlockedScreenActivity : ComponentActivity() {
                     )
                     "ZONE" -> BlockReason.Zone(detail)
                     "PRAYER" -> BlockReason.PrayerTime(detail)
+                    "HOMEWORK" -> BlockReason.Homework(
+                        detail,
+                        getStringExtra(EXTRA_REASON_DETAIL2).orEmpty(),
+                        runCatching { java.time.LocalDateTime.parse(getStringExtra(EXTRA_REASON_DETAIL3)) }.getOrDefault(java.time.LocalDateTime.now()),
+                        getIntExtra(EXTRA_REASON_COUNT, 1)
+                    )
                     else -> BlockReason.LimitReached
                 }
                 AppGate.Blocked(reason, getBooleanExtra(EXTRA_STRICT, false), getBooleanExtra(EXTRA_CAN_CHALLENGE, false))

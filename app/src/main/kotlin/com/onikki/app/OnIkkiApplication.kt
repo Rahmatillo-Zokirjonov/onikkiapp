@@ -58,8 +58,9 @@ class OnIkkiApplication : Application() {
                 combine(
                     database.noteDao().observeWithReminder(),
                     database.plannedExpenseDao().observeRemindable(),
-                    database.timetableDao().observeAll()
-                ) { _, _, _ -> },
+                    database.timetableDao().observeAll(),
+                    database.homeworkDao().observePending()
+                ) { _, _, _, _ -> },
                 NotificationSettingsStore(this@OnIkkiApplication).settings,
                 LocationStore(this@OnIkkiApplication).city
             ) { _, _, _, _, _ -> }

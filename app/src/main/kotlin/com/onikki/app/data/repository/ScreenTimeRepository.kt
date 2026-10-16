@@ -198,6 +198,40 @@ class ScreenTimeRepository(
             .sortedBy { it.label.lowercase() }
     }
 
+    /**
+     * Homework in its danger window closes apps — no word challenge, no grace: only marking it done
+     * (or missed) in On ikki opens them. Calls, SMS, settings, the keyboard and the home screen stay open.
+     */
+    private suspend fun homeworkGate(packageName: String, now: LocalDateTime): AppGate? {
+        val db = (context.applicationContext as com.onikki.app.OnIkkiApplication).database
+        val blockers = com.onikki.app.domain.timetable.HomeworkRules.blocking(db.homeworkDao().pending(), now)
+        if (blockers.isEmpty() || isEssential(packageName)) return null
+        val applies = blockers.filter { hw ->
+            when (hw.blockScope) {
+                com.onikki.app.data.db.entity.HomeworkBlockScope.ALL -> context.packageManager.getLaunchIntentForPackage(packageName) != null
+                com.onikki.app.data.db.entity.HomeworkBlockScope.CONTROLLED -> appLimitDao.findByPackage(packageName) != null
+            }
+        }
+        val first = applies.firstOrNull() ?: return null
+        return AppGate.Blocked(BlockReason.Homework(first.subject, first.title, first.dueAt, blockers.size), strict = true, canChallenge = false)
+    }
+
+    private fun isEssential(packageName: String): Boolean {
+        if (packageName == "com.android.systemui" || packageName == "android" || packageName.startsWith("com.android.settings")) return true
+        val pm = context.packageManager
+        val home = runCatching {
+            pm.queryIntentActivities(android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME), 0)
+                .map { it.activityInfo.packageName }
+        }.getOrDefault(emptyList())
+        if (packageName in home) return true
+        val dialer = runCatching { (context.getSystemService(Context.TELECOM_SERVICE) as android.telecom.TelecomManager).defaultDialerPackage }.getOrNull()
+        val sms = runCatching { android.provider.Telephony.Sms.getDefaultSmsPackage(context) }.getOrNull()
+        val keyboards = runCatching {
+            (context.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).enabledInputMethodList.map { it.packageName }
+        }.getOrDefault(emptyList())
+        return packageName == dialer || packageName == sms || packageName in keyboards
+    }
+
     fun appLabel(packageName: String): String? = runCatching {
         val pm = context.packageManager
         pm.getApplicationInfo(packageName, 0).loadLabel(pm).toString()
@@ -252,6 +286,7 @@ class ScreenTimeRepository(
      */
     suspend fun resolveGate(packageName: String, now: LocalDateTime): AppGate {
         if (packageName == context.packageName) return AppGate.Allowed
+        homeworkGate(packageName, now)?.let { return it }
         val rule = appLimitDao.findByPackage(packageName) ?: return AppGate.Allowed
         val reason = activeBlockReason(rule, now)
         if (reason != null && rule.strictMode) return AppGate.Blocked(reason, strict = true, canChallenge = false)

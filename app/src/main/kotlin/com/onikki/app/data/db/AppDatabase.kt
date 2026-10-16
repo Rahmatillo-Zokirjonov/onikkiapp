@@ -16,6 +16,7 @@ import com.onikki.app.data.db.dao.UsageHoursDao
 import com.onikki.app.data.db.dao.NoteFolderDao
 import com.onikki.app.data.db.dao.NoteAttachmentDao
 import com.onikki.app.data.db.dao.TimetableDao
+import com.onikki.app.data.db.dao.HomeworkDao
 import com.onikki.app.data.db.dao.SmsImportDao
 import com.onikki.app.data.db.dao.VocabWordDao
 import com.onikki.app.data.db.dao.CategoryBudgetDao
@@ -37,6 +38,7 @@ import com.onikki.app.data.db.entity.UsageHours
 import com.onikki.app.data.db.entity.NoteFolder
 import com.onikki.app.data.db.entity.NoteAttachment
 import com.onikki.app.data.db.entity.TimetableEntry
+import com.onikki.app.data.db.entity.Homework
 import com.onikki.app.data.db.entity.MerchantCategory
 import com.onikki.app.data.db.entity.SmsImport
 import com.onikki.app.data.db.entity.VocabWord
@@ -56,7 +58,7 @@ import com.onikki.app.data.db.entity.Transaction
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
-        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class
+        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class
     ],
     version = 11,
     exportSchema = true
@@ -84,6 +86,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun noteFolderDao(): NoteFolderDao
     abstract fun noteAttachmentDao(): NoteAttachmentDao
     abstract fun timetableDao(): TimetableDao
+    abstract fun homeworkDao(): HomeworkDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -262,7 +265,7 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
     }
 }
 
-/** Jadval: weekly / daily / one-off time blocks with optional reminders. */
+/** Jadval: weekly / daily / one-off time blocks with optional reminders; homework per subject. */
 val MIGRATION_10_11 = object : Migration(10, 11) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
@@ -270,6 +273,12 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
                 "`title` TEXT NOT NULL, `repeat` TEXT NOT NULL DEFAULT 'WEEKLY', `dayOfWeek` INTEGER NOT NULL DEFAULT 1, " +
                 "`date` TEXT, `start` TEXT NOT NULL, `end` TEXT NOT NULL, `place` TEXT, `note` TEXT, `color` TEXT, " +
                 "`parity` TEXT NOT NULL DEFAULT 'ALL', `remindMinutes` INTEGER)"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `homework` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`subject` TEXT NOT NULL, `title` TEXT NOT NULL, `note` TEXT, `dueAt` TEXT NOT NULL, `remindAt` TEXT, " +
+                "`blockHoursBefore` INTEGER, `blockScope` TEXT NOT NULL DEFAULT 'CONTROLLED', " +
+                "`status` TEXT NOT NULL DEFAULT 'PENDING', `finishedAt` INTEGER, `createdAt` INTEGER NOT NULL)"
         )
     }
 }

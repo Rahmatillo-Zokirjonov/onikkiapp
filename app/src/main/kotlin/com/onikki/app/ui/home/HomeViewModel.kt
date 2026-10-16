@@ -62,7 +62,9 @@ data class HomeUiState(
     val otherGoalCount: Int = 0,
     val hasAnyGoal: Boolean = false,
     /** Jadval: the block on now and the next one today (null when nothing is left today). */
-    val timetable: com.onikki.app.domain.timetable.NowNext? = null
+    val timetable: com.onikki.app.domain.timetable.NowNext? = null,
+    /** Pending homework, most urgent first. */
+    val homework: List<com.onikki.app.data.db.entity.Homework> = emptyList()
 )
 
 private data class GoalPart(val main: BigGoal?, val today: Pair<Int, Int>, val others: Int, val hasAny: Boolean)
@@ -129,9 +131,9 @@ class HomeViewModel(
         GoalPart(main, linked.count { it.isCompleted } to linked.size, tree.count { !it.isDone } - (if (main != null) 1 else 0), goals.isNotEmpty())
     }
 
-    private val goalAndTimetable = combine(goalFlow, db.timetableDao().observeAll()) { g, t -> g to t }
+    private val goalAndTimetable = combine(goalFlow, db.timetableDao().observeAll(), db.homeworkDao().observePending()) { g, t, h -> Triple(g, t, h) }
 
-    val uiState: StateFlow<HomeUiState> = combine(planFlow, moneyFlow, profileFlow, goalAndTimetable, secondTicker()) { plan, money, profile, (goal, timetable), _ ->
+    val uiState: StateFlow<HomeUiState> = combine(planFlow, moneyFlow, profileFlow, goalAndTimetable, secondTicker()) { plan, money, profile, (goal, timetable, homework), _ ->
         val now = LocalDateTime.now()
         val prayers = PrayerTimeCalculator
             .calculate(now.toLocalDate(), profile.city.latitude, profile.city.longitude, profile.city.utcOffsetHours)
@@ -159,7 +161,8 @@ class HomeViewModel(
             mainGoalToday = goal.today,
             otherGoalCount = goal.others,
             hasAnyGoal = goal.hasAny,
-            timetable = com.onikki.app.domain.timetable.Timetable.nowNext(timetable, now).takeIf { it.current != null || it.next != null }
+            timetable = com.onikki.app.domain.timetable.Timetable.nowNext(timetable, now).takeIf { it.current != null || it.next != null },
+            homework = homework
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 

@@ -7,6 +7,8 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.onikki.app.OnIkkiApplication
+import com.onikki.app.data.db.entity.Homework
+import com.onikki.app.data.db.entity.HomeworkStatus
 import com.onikki.app.data.db.entity.Task
 import com.onikki.app.data.db.entity.TimetableEntry
 import com.onikki.app.data.local.LocationStore
@@ -22,10 +24,13 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 
-enum class TimetableView(val label: String) { WEEK("Haftalik"), DAY("Kunlik") }
+enum class TimetableView(val label: String) { WEEK("Haftalik"), DAY("Kunlik"), HOMEWORK("Vazifalar") }
 
 /** New block ([entry] null, starting on [date]) or an existing one. */
 data class EntrySheetTarget(val entry: TimetableEntry?, val date: LocalDate)
+
+/** New homework ([homework] null, optionally for [subject]) or an existing one. */
+data class HomeworkSheetTarget(val homework: Homework?, val subject: String? = null)
 
 data class TimetableUiState(
     val entries: List<TimetableEntry> = emptyList(),
@@ -36,10 +41,12 @@ data class TimetableUiState(
     val tasks: List<Task> = emptyList(),
     val prayers: List<Pair<String, LocalTime>> = emptyList(),
     val sheet: EntrySheetTarget? = null,
+    val homework: List<Homework> = emptyList(),
+    val homeworkSheet: HomeworkSheetTarget? = null,
     val isLoaded: Boolean = false
 )
 
-private data class Ui(val view: TimetableView, val date: LocalDate, val sheet: EntrySheetTarget?)
+private data class Ui(val view: TimetableView, val date: LocalDate, val sheet: EntrySheetTarget?, val homeworkSheet: HomeworkSheetTarget? = null)
 
 class TimetableViewModel(application: Application) : AndroidViewModel(application) {
     private val db = (application as OnIkkiApplication).database
@@ -50,7 +57,7 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
     )
 
     val uiState: StateFlow<TimetableUiState> = ui.flatMapLatest { u ->
-        combine(dao.observeAll(), db.taskDao().observeByDate(u.date), LocationStore(application).city) { entries, tasks, city ->
+        combine(dao.observeAll(), db.taskDao().observeByDate(u.date), LocationStore(application).city, db.homeworkDao().observeAll()) { entries, tasks, city, homework ->
             TimetableUiState(
                 entries = entries,
                 view = u.view,
@@ -58,6 +65,8 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
                 tasks = tasks.filter { it.time != null }.sortedBy { it.time },
                 prayers = PrayerTimeCalculator.calculate(u.date, city.latitude, city.longitude, city.utcOffsetHours).asOrderedList(),
                 sheet = u.sheet,
+                homework = homework,
+                homeworkSheet = u.homeworkSheet,
                 isLoaded = true
             )
         }
@@ -96,6 +105,38 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             dao.delete(entry)
             ui.update { it.copy(sheet = null) }
+        }
+    }
+
+    // ------------------------------------------------------------ homework
+
+    fun openNewHomework(subject: String? = null) = ui.update { it.copy(homeworkSheet = HomeworkSheetTarget(null, subject)) }
+
+    fun openHomework(hw: Homework) = ui.update { it.copy(homeworkSheet = HomeworkSheetTarget(hw)) }
+
+    fun dismissHomework() = ui.update { it.copy(homeworkSheet = null) }
+
+    fun saveHomework(existing: Homework?, draft: Homework) {
+        if (draft.title.isBlank() || draft.subject.isBlank()) return
+        viewModelScope.launch {
+            val db = db.homeworkDao()
+            if (existing == null) db.insert(draft.copy(id = 0)) else db.update(draft.copy(id = existing.id, createdAt = existing.createdAt))
+            ui.update { it.copy(homeworkSheet = null) }
+        }
+    }
+
+    /** Done or missed both lift the block; pending puts it back. */
+    fun setHomeworkStatus(hw: Homework, status: HomeworkStatus) {
+        viewModelScope.launch {
+            db.homeworkDao().setStatus(hw.id, status, if (status == HomeworkStatus.PENDING) null else System.currentTimeMillis())
+            ui.update { it.copy(homeworkSheet = null) }
+        }
+    }
+
+    fun deleteHomework(hw: Homework) {
+        viewModelScope.launch {
+            db.homeworkDao().delete(hw)
+            ui.update { it.copy(homeworkSheet = null) }
         }
     }
 

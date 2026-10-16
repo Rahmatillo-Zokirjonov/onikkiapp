@@ -11,7 +11,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, NOTE, PLANNED_EXPENSE, TIMETABLE, REFRESH }
+enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, NOTE, PLANNED_EXPENSE, TIMETABLE, HOMEWORK, REFRESH }
 
 /**
  * One alarm to set. [key] is stable across re-plans so the same reminder is replaced, not duplicated.
@@ -44,6 +44,7 @@ object ReminderPlanner {
         notes: List<Note>,
         plannedExpenses: List<PlannedExpense>,
         timetable: List<com.onikki.app.data.db.entity.TimetableEntry> = emptyList(),
+        homework: List<com.onikki.app.data.db.entity.Homework> = emptyList(),
         prayerTimesFor: (LocalDate) -> PrayerTimeCalculator.PrayerTimes
     ): List<PlannedReminder> {
         val horizon = now.plusHours(HORIZON_HOURS)
@@ -124,6 +125,16 @@ object ReminderPlanner {
                         ReminderType.TIMETABLE, at, refId = entry.id, label = entry.title, eventTime = entry.start
                     )
                 }
+            }
+        }
+
+        // Homework: the user's own reminder, plus one when the danger window (app blocking) begins.
+        homework.filter { it.status == com.onikki.app.data.db.entity.HomeworkStatus.PENDING }.forEach { hw ->
+            hw.remindAt?.let { at ->
+                if (inWindow(at)) result += PlannedReminder("homework:${hw.id}:remind:$at", ReminderType.HOMEWORK, at, refId = hw.id, label = "remind")
+            }
+            com.onikki.app.domain.timetable.HomeworkRules.dangerStart(hw)?.let { at ->
+                if (inWindow(at)) result += PlannedReminder("homework:${hw.id}:danger:$at", ReminderType.HOMEWORK, at, refId = hw.id, label = "danger")
             }
         }
 

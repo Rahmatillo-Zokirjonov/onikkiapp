@@ -318,6 +318,7 @@ private fun ControlledAppCard(item: ControlledApp, onClick: () -> Unit) {
                         is BlockReason.Schedule -> "Bloklangan · ${hhmm(blocked.start)}–${hhmm(blocked.end)}"
                         is BlockReason.Zone -> "Bloklangan · ${blocked.zoneName}"
                         is BlockReason.PrayerTime -> "Bloklangan · ${blocked.prayerName} namozi"
+                        is BlockReason.Homework -> "Bloklangan · uy vazifasi"
                     },
                     color = if (blocked != null) colors.warmAccent else colors.text.muted(0.5f),
                     fontSize = 11.sp,

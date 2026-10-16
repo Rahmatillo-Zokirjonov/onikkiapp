@@ -39,9 +39,13 @@ class MainActivity : ComponentActivity() {
     private fun handleOpenNote(intent: Intent?) {
         val noteId = intent?.getLongExtra(EXTRA_OPEN_NOTE_ID, 0L) ?: 0L
         if (noteId > 0) NoteDeepLink.request(noteId)
+        if (intent?.getBooleanExtra(EXTRA_OPEN_HOMEWORK, false) == true) {
+            com.onikki.app.ui.timetable.TimetableDeepLink.request(com.onikki.app.ui.timetable.TimetableDeepLink.Target.HOMEWORK)
+        }
     }
 
     companion object {
         const val EXTRA_OPEN_NOTE_ID = "open_note_id"
+        const val EXTRA_OPEN_HOMEWORK = "open_homework"
     }
 }

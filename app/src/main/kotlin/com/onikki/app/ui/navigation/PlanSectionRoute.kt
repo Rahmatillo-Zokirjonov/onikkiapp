@@ -49,12 +49,8 @@ fun PlanSectionRoute() {
     val requestedGoal by GoalDeepLink.requested.collectAsState()
     LaunchedEffect(requestedGoal) { if (requestedGoal != null) subTab = PlanSubTab.GOALS }
     val requestedTimetable by TimetableDeepLink.requested.collectAsState()
-    LaunchedEffect(requestedTimetable) {
-        if (requestedTimetable) {
-            subTab = PlanSubTab.TIMETABLE
-            TimetableDeepLink.consume()
-        }
-    }
+    // The Jadval screen itself consumes the request (it may need to open Vazifalar).
+    LaunchedEffect(requestedTimetable) { if (requestedTimetable != null) subTab = PlanSubTab.TIMETABLE }
     val colors = LocalOnIkkiColors.current
 
     Column(modifier = Modifier.fillMaxSize().background(colors.background)) {

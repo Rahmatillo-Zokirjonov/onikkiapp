@@ -80,6 +80,14 @@ fun TimetableRoute() {
     val viewModel: TimetableViewModel = viewModel()
     val state by viewModel.uiState.collectAsState()
     val colors = LocalOnIkkiColors.current
+    val requested by TimetableDeepLink.requested.collectAsState()
+    LaunchedEffect(requested) {
+        when (requested) {
+            TimetableDeepLink.Target.HOMEWORK -> viewModel.setView(TimetableView.HOMEWORK)
+            TimetableDeepLink.Target.TIMETABLE, null -> Unit
+        }
+        if (requested != null) TimetableDeepLink.consume()
+    }
     // A clock for the "now" line and badges.
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     LaunchedEffect(Unit) {
@@ -96,14 +104,31 @@ fun TimetableRoute() {
                     Text(text = "Jadval", color = colors.text, style = OnIkkiType.screenTitle, modifier = Modifier.weight(1f))
                     ViewToggle(state.view, viewModel::setView)
                 }
-                NavRow(state, now.toLocalDate(), onShift = viewModel::shift, onToday = { viewModel.setDate(now.toLocalDate()) })
+                if (state.view != TimetableView.HOMEWORK) {
+                    NavRow(state, now.toLocalDate(), onShift = viewModel::shift, onToday = { viewModel.setDate(now.toLocalDate()) })
+                }
             }
             when (state.view) {
                 TimetableView.WEEK -> WeekGrid(state, now, onOpen = viewModel::openEdit, onNewOn = viewModel::openNew, onDay = viewModel::openDay)
                 TimetableView.DAY -> DayTimeline(state, now, viewModel)
+                TimetableView.HOMEWORK -> HomeworkList(state, now, viewModel)
             }
         }
-        AddFab(onClick = { viewModel.openNew() }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 16.dp))
+        AddFab(
+            onClick = { if (state.view == TimetableView.HOMEWORK) viewModel.openNewHomework() else viewModel.openNew() },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 16.dp)
+        )
+    }
+    state.homeworkSheet?.let { target ->
+        HomeworkSheet(
+            target = target,
+            entries = state.entries,
+            now = now,
+            onDismiss = viewModel::dismissHomework,
+            onSave = { draft -> viewModel.saveHomework(target.homework, draft) },
+            onStatus = { hw, status -> viewModel.setHomeworkStatus(hw, status) },
+            onDelete = { target.homework?.let(viewModel::deleteHomework) }
+        )
     }
 
     state.sheet?.let { target ->
@@ -133,7 +158,7 @@ private fun ViewToggle(view: TimetableView, onChange: (TimetableView) -> Unit) {
                     .clip(RoundedCornerShape(50))
                     .background(if (selected) colors.accent else Color.Transparent)
                     .clickable { onChange(option) }
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .padding(horizontal = 11.dp, vertical = 6.dp)
             )
         }
     }
@@ -151,6 +176,7 @@ private fun NavRow(state: TimetableUiState, today: LocalDate, onShift: (Long) ->
             else "${weekStart.dayOfMonth} ${monthNameUz(weekStart.monthValue)} – ${end.dayOfMonth} ${monthNameUz(end.monthValue)}"
             "$range · ${Timetable.weekNumber(state.date)}-hafta (${if (Timetable.isOddWeek(state.date)) "toq" else "juft"})"
         }
+        TimetableView.HOMEWORK -> ""
         TimetableView.DAY -> when (state.date) {
             today -> "Bugun, ${weekdayNameUz(state.date.dayOfWeek).lowercase()}"
             today.plusDays(1) -> "Ertaga, ${weekdayNameUz(state.date.dayOfWeek).lowercase()}"
@@ -319,7 +345,21 @@ private fun DayTimeline(state: TimetableUiState, now: LocalDateTime, viewModel: 
             }
             items.forEach { item ->
                 when (item) {
-                    is DayItem.Block -> BlockCard(item.entry, now.takeIf { isToday }, onClick = { viewModel.openEdit(item.entry) })
+                    is DayItem.Block -> {
+                        BlockCard(item.entry, now.takeIf { isToday }, onClick = { viewModel.openEdit(item.entry) })
+                        val due = com.onikki.app.domain.timetable.HomeworkRules.dueOn(state.homework, item.entry.title, state.date)
+                        Text(
+                            text = if (due.isEmpty()) "        + vazifa" else "        📝 ${due.size} ta vazifa: ${due.joinToString { it.title }}",
+                            color = if (due.isEmpty()) colors.text.muted(0.35f) else colors.warmAccent,
+                            fontSize = 12.sp,
+                            fontFamily = OnIkkiFontFamily,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable {
+                                if (due.isEmpty()) viewModel.openNewHomework(item.entry.title) else viewModel.setView(TimetableView.HOMEWORK)
+                            }
+                        )
+                    }
                     is DayItem.TaskItem -> Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth().clickable { viewModel.toggleTask(item.task) }.padding(vertical = 2.dp)

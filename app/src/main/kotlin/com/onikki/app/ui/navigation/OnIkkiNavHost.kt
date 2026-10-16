@@ -24,6 +24,7 @@ import com.onikki.app.ui.finance.FinanceSectionRoute
 import com.onikki.app.ui.home.HomeRoute
 import com.onikki.app.ui.notes.NoteDeepLink
 import com.onikki.app.ui.notes.NotesRoute
+import com.onikki.app.ui.timetable.TimetableDeepLink
 import com.onikki.app.ui.theme.LocalOnIkkiColors
 import com.onikki.app.ui.theme.OnIkkiFontFamily
 
@@ -55,6 +56,18 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
     LaunchedEffect(requestedNote) {
         if (requestedNote != null && currentRoute != OnIkkiTab.NOTES.route()) {
             navController.navigate(OnIkkiTab.NOTES.route()) {
+                popUpTo(OnIkkiTab.HOME.route()) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
+    // The block screen / Home card asked for Jadval or the homework list → go to the Reja tab.
+    val requestedTimetable by TimetableDeepLink.requested.collectAsState()
+    LaunchedEffect(requestedTimetable) {
+        if (requestedTimetable != null && currentRoute != OnIkkiTab.PLAN.route()) {
+            navController.navigate(OnIkkiTab.PLAN.route()) {
                 popUpTo(OnIkkiTab.HOME.route()) { saveState = true }
                 launchSingleTop = true
                 restoreState = true
