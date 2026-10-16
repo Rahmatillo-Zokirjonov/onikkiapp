@@ -2,11 +2,28 @@ package com.onikki.app.domain.screentime
 
 import com.onikki.app.data.db.entity.VocabWord
 import com.onikki.app.data.local.ChallengeDirection
+import com.onikki.app.data.local.QuestionType
+import com.onikki.app.domain.vocab.AnswerCheck
+import com.onikki.app.domain.vocab.Verdict
 import java.util.Locale
 
-/** One question: show [prompt], expect any of [answers]. */
-data class ChallengeQuestion(val word: VocabWord, val prompt: String, val answers: List<String>, val toUzbek: Boolean) {
+enum class QuestionKind { TYPE, CHOICE, LISTEN }
+
+/**
+ * One question: show [prompt], expect any of [answers]. CHOICE offers [options] (one is right);
+ * LISTEN plays the English word and expects it typed (the prompt is its Uzbek meaning, as a hint).
+ */
+data class ChallengeQuestion(
+    val word: VocabWord,
+    val prompt: String,
+    val answers: List<String>,
+    val toUzbek: Boolean,
+    val kind: QuestionKind = QuestionKind.TYPE,
+    val options: List<String> = emptyList()
+) {
     val shownAnswer: String get() = answers.joinToString(" / ")
+    /** The spelling used for the letter boxes. */
+    val primaryAnswer: String get() = answers.first()
 }
 
 /** Pure logic for the unlock challenge: which words to ask and whether an answer counts. */
@@ -16,7 +33,14 @@ object VocabChallenge {
      * Weakest words first (most wrong answers relative to right ones), then the ones not seen for
      * longest — a light spaced-repetition so the challenge actually teaches.
      */
-    fun pickQuestions(words: List<VocabWord>, count: Int, direction: ChallengeDirection, seed: Long = System.nanoTime()): List<ChallengeQuestion> {
+    fun pickQuestions(
+        words: List<VocabWord>,
+        count: Int,
+        direction: ChallengeDirection,
+        seed: Long = System.nanoTime(),
+        type: QuestionType = QuestionType.TYPE,
+        canListen: Boolean = true
+    ): List<ChallengeQuestion> {
         if (words.isEmpty()) return emptyList()
         val random = java.util.Random(seed)
         val ranked = words.sortedWith(
@@ -26,19 +50,43 @@ object VocabChallenge {
         )
         // Mix a few random ones in so the same weak words don't always come first.
         val pool = ranked.take((count * 2).coerceAtLeast(count)).shuffled(random)
+        // Four options need three other words to borrow wrong answers from.
+        val canChoose = words.size >= 4
         return pool.take(count).map { word ->
+            val kind = when (type) {
+                QuestionType.TYPE -> QuestionKind.TYPE
+                QuestionType.CHOICE -> if (canChoose) QuestionKind.CHOICE else QuestionKind.TYPE
+                QuestionType.LISTEN -> if (canListen) QuestionKind.LISTEN else QuestionKind.TYPE
+                QuestionType.MIXED -> listOfNotNull(QuestionKind.TYPE, QuestionKind.CHOICE.takeIf { canChoose }, QuestionKind.LISTEN.takeIf { canListen })
+                    .let { it[random.nextInt(it.size)] }
+            }
+            if (kind == QuestionKind.LISTEN) {
+                return@map ChallengeQuestion(word, word.uzbek.trim(), splitAnswers(word.english), toUzbek = false, kind = kind)
+            }
             val toUzbek = when (direction) {
                 ChallengeDirection.EN_UZ -> true
                 ChallengeDirection.UZ_EN -> false
                 ChallengeDirection.MIXED -> random.nextBoolean()
             }
-            if (toUzbek) {
-                ChallengeQuestion(word, word.english.trim(), splitAnswers(word.uzbek), toUzbek = true)
+            val base = if (toUzbek) {
+                ChallengeQuestion(word, word.english.trim(), splitAnswers(word.uzbek), toUzbek = true, kind = kind)
             } else {
-                ChallengeQuestion(word, word.uzbek.trim(), splitAnswers(word.english), toUzbek = false)
+                ChallengeQuestion(word, word.uzbek.trim(), splitAnswers(word.english), toUzbek = false, kind = kind)
+            }
+            if (kind != QuestionKind.CHOICE) base else {
+                val wrong = words.filter { it.id != word.id }
+                    .map { other -> splitAnswers(if (toUzbek) other.uzbek else other.english).first() }
+                    .filter { AnswerCheck.letters(it) != AnswerCheck.letters(base.primaryAnswer) }
+                    .distinct()
+                    .shuffled(random)
+                    .take(3)
+                base.copy(options = (wrong + base.primaryAnswer).shuffled(random))
             }
         }
     }
+
+    /** Lenient check: case, spaces and apostrophes never matter; one slip in a longer word passes as ALMOST. */
+    fun judge(input: String, question: ChallengeQuestion): Verdict = AnswerCheck.judge(input, question.answers)
 
     fun splitAnswers(raw: String): List<String> =
         raw.split(",", "/", ";").map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(raw.trim()) }

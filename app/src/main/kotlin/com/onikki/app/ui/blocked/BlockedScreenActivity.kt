@@ -103,7 +103,9 @@ class BlockedScreenActivity : ComponentActivity() {
         // No words yet → the typed phrase still works as a challenge.
         return if (settings.mode == ChallengeMode.WORDS && words.isNotEmpty()) {
             ChallengeSpec(
-                questions = VocabChallenge.pickQuestions(words, settings.wordCount.coerceAtMost(words.size), settings.direction),
+                questions = VocabChallenge.pickQuestions(
+                    words, settings.wordCount.coerceAtMost(words.size), settings.direction, type = settings.questionType
+                ),
                 phrase = null,
                 graceMinutes = settings.graceMinutes
             )

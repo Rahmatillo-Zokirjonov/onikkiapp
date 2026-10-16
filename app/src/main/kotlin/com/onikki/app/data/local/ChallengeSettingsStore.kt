@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.map
 
 enum class ChallengeMode(val label: String) { WORDS("So'z yodlash"), PHRASE("Matn yozish") }
 
+/** How each word is asked: type it into letter boxes, pick one of four, or hear it and type it. */
+enum class QuestionType(val label: String) { TYPE("Yozish"), CHOICE("Variant tanlash"), LISTEN("Eshitib yozish"), MIXED("Aralash") }
+
 enum class ChallengeDirection(val label: String) { EN_UZ("English → O'zbek"), UZ_EN("O'zbek → English"), MIXED("Aralash") }
 
 /** How the "earn your way into an app" challenge behaves. All user-editable in Sozlamalar / So'z yodlash. */
@@ -20,6 +23,7 @@ data class ChallengeSettings(
     val mode: ChallengeMode = ChallengeMode.WORDS,
     val wordCount: Int = 3,
     val direction: ChallengeDirection = ChallengeDirection.EN_UZ,
+    val questionType: QuestionType = QuestionType.MIXED,
     /** After passing, the app stays open this long before it asks again; 0 = until the user leaves the app. */
     val graceMinutes: Int = 0,
     /** Lets a (non-strict) blocked app be opened by passing the challenge. */
@@ -41,6 +45,7 @@ class ChallengeSettingsStore(private val context: Context) {
         val mode = stringPreferencesKey("mode")
         val wordCount = intPreferencesKey("word_count")
         val direction = stringPreferencesKey("direction")
+        val questionType = stringPreferencesKey("question_type")
         val grace = intPreferencesKey("grace_minutes")
         val unlockBlocked = booleanPreferencesKey("unlock_blocked")
         val phrase = stringPreferencesKey("phrase")
@@ -55,6 +60,7 @@ class ChallengeSettingsStore(private val context: Context) {
             prefs[Keys.mode] = next.mode.name
             prefs[Keys.wordCount] = next.wordCount
             prefs[Keys.direction] = next.direction.name
+            prefs[Keys.questionType] = next.questionType.name
             prefs[Keys.grace] = next.graceMinutes
             prefs[Keys.unlockBlocked] = next.unlockBlockedApps
             prefs[Keys.phrase] = next.phrase
@@ -68,6 +74,7 @@ class ChallengeSettingsStore(private val context: Context) {
             mode = this[Keys.mode]?.let { runCatching { ChallengeMode.valueOf(it) }.getOrNull() } ?: defaults.mode,
             wordCount = this[Keys.wordCount] ?: defaults.wordCount,
             direction = this[Keys.direction]?.let { runCatching { ChallengeDirection.valueOf(it) }.getOrNull() } ?: defaults.direction,
+            questionType = this[Keys.questionType]?.let { runCatching { QuestionType.valueOf(it) }.getOrNull() } ?: defaults.questionType,
             graceMinutes = this[Keys.grace] ?: defaults.graceMinutes,
             unlockBlockedApps = this[Keys.unlockBlocked] ?: defaults.unlockBlockedApps,
             phrase = this[Keys.phrase]?.takeIf { it.isNotBlank() } ?: defaults.phrase

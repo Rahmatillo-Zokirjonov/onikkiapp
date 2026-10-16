@@ -1,5 +1,13 @@
 package com.onikki.app.ui.vocabulary
 
+import com.onikki.app.data.local.QuestionType
+import com.onikki.app.domain.vocab.EnglishDictionary
+import com.onikki.app.ui.dayreview.ApiKeySheet
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,10 +65,7 @@ import com.onikki.app.ui.theme.muted
 
 @Composable
 fun VocabularyRoute(onBack: () -> Unit) {
-    val app = LocalContext.current.applicationContext as OnIkkiApplication
-    val viewModel: VocabularyViewModel = viewModel(
-        factory = VocabularyViewModel.factory(app.database.vocabWordDao(), ChallengeSettingsStore(app))
-    )
+    val viewModel: VocabularyViewModel = viewModel()
     val state by viewModel.uiState.collectAsState()
     BackHandler(onBack = onBack)
     VocabularyScreen(state = state, viewModel = viewModel, onBack = onBack)
@@ -74,6 +79,7 @@ private fun VocabularyScreen(state: VocabularyUiState, viewModel: VocabularyView
     var adding by remember { mutableStateOf(false) }
     var bulk by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    var popularMessage by remember { mutableStateOf<String?>(null) }
     val visible = state.words.filter {
         query.isBlank() || it.english.contains(query.trim(), true) || it.uzbek.contains(query.trim(), true)
     }
@@ -96,6 +102,17 @@ private fun VocabularyScreen(state: VocabularyUiState, viewModel: VocabularyView
                         fontFamily = OnIkkiFontFamily,
                         modifier = Modifier.weight(1f)
                     )
+                    if (state.dictionaryReady) {
+                        Text(
+                            text = "+ 20 ommabop",
+                            color = colors.accent,
+                            fontSize = 13.sp,
+                            fontFamily = OnIkkiFontFamily,
+                            modifier = Modifier
+                                .clickable { viewModel.addPopular(20) { n -> popularMessage = if (n == 0) "Ro'yxatda hamma ommabop so'zlar bor" else "$n ta yangi so'z qo'shildi" } }
+                                .padding(4.dp)
+                        )
+                    }
                     Text(
                         text = "Ko'p qo'shish",
                         color = colors.accent,
@@ -105,11 +122,14 @@ private fun VocabularyScreen(state: VocabularyUiState, viewModel: VocabularyView
                     )
                 }
             }
+            popularMessage?.let { msg ->
+                item { Text(text = msg, color = colors.accent, fontSize = 12.sp, fontFamily = OnIkkiFontFamily) }
+            }
             if (state.isLoaded && state.words.isEmpty()) {
                 item {
                     OnIkkiCard(modifier = Modifier.fillMaxWidth(), gap = 8.dp) {
                         Text(
-                            text = "Hali so'z yo'q. O'zingiz qo'shing yoki 30 ta boshlang'ich so'z bilan boshlang.",
+                            text = "Hali so'z yo'q. O'zingiz qo'shing (inglizchasini yozsangiz, tarjimasi o'zi chiqadi) yoki tayyor so'zlar bilan boshlang.",
                             color = colors.text.muted(0.65f),
                             fontSize = 13.sp,
                             fontFamily = OnIkkiFontFamily
@@ -142,6 +162,7 @@ private fun VocabularyScreen(state: VocabularyUiState, viewModel: VocabularyView
 
     if (adding || editing != null) {
         WordSheet(
+            viewModel = viewModel,
             word = editing,
             onDismiss = { adding = false; editing = null },
             onSave = { en, uz ->
@@ -182,8 +203,23 @@ private fun ChallengeSettingsCard(settings: ChallengeSettings, update: ((Challen
         if (settings.mode == ChallengeMode.WORDS) {
             SheetFieldLabel("Har safar nechta so'z")
             ChipRow(ChallengeSettings.WORD_COUNT_OPTIONS.map { it to "$it ta" }, settings.wordCount) { n -> update { it.copy(wordCount = n) } }
-            SheetFieldLabel("Yo'nalish")
-            ChipRow(ChallengeDirection.entries.map { it to it.label }, settings.direction) { d -> update { it.copy(direction = d) } }
+            SheetFieldLabel("Savol turi")
+            ChipRow(QuestionType.entries.map { it to it.label }, settings.questionType) { t -> update { it.copy(questionType = t) } }
+            Text(
+                text = when (settings.questionType) {
+                    QuestionType.TYPE -> "Har harf uchun katakcha — bo'sh joy va apostrof o'zi qo'yiladi, bitta harf xatosi kechiriladi."
+                    QuestionType.CHOICE -> "4 ta variantdan to'g'risini tanlaysiz (kamida 4 ta so'z kerak)."
+                    QuestionType.LISTEN -> "Telefon so'zni inglizcha aytadi, siz eshitib yozasiz."
+                    QuestionType.MIXED -> "Yozish, variant tanlash va eshitib yozish aralash keladi."
+                },
+                color = colors.text.muted(0.5f),
+                fontSize = 11.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+            if (settings.questionType != QuestionType.LISTEN) {
+                SheetFieldLabel("Yo'nalish")
+                ChipRow(ChallengeDirection.entries.map { it to it.label }, settings.direction) { d -> update { it.copy(direction = d) } }
+            }
         } else {
             OutlinedTextField(
                 value = phrase,
@@ -287,56 +323,148 @@ private fun WordRow(word: VocabWord, onClick: () -> Unit) {
     }
 }
 
+/**
+ * Add / edit a word. Typing English suggests words like a search box; picking one (or typing a known
+ * word) fills in the Uzbek meaning. Words the built-in list doesn't know can be translated by AI.
+ */
 @Composable
-private fun WordSheet(word: VocabWord?, onDismiss: () -> Unit, onSave: (String, String) -> Unit, onDelete: () -> Unit) {
+private fun WordSheet(viewModel: VocabularyViewModel, word: VocabWord?, onDismiss: () -> Unit, onSave: (String, String) -> Unit, onDelete: () -> Unit) {
     val colors = LocalOnIkkiColors.current
+    val speaker = rememberSpeaker()
+    val translate by viewModel.translate.collectAsState()
     var english by remember(word?.id) { mutableStateOf(word?.english ?: "") }
     var uzbek by remember(word?.id) { mutableStateOf(word?.uzbek ?: "") }
+    // Uzbek filled by us (not typed) may be replaced when the English changes.
+    var autoFilled by remember(word?.id) { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var savedCount by remember { mutableStateOf(0) }
+    var showSuggestions by remember { mutableStateOf(true) }
+    val suggestions = remember(english) { if (english.isBlank()) emptyList() else viewModel.suggest(english) }
+    val known = remember(english) { viewModel.lookup(english) }
+    val duplicate = word == null && english.isNotBlank() && viewModel.isInList(english)
+
+    fun fill(en: String, uz: String) {
+        english = en
+        uzbek = uz
+        autoFilled = true
+        showSuggestions = false
+        error = null
+    }
+
+    LaunchedEffect(known) {
+        if (known != null && (uzbek.isBlank() || autoFilled)) {
+            uzbek = known.uzbek
+            autoFilled = true
+        }
+    }
+    LaunchedEffect(translate) {
+        val t = translate
+        if (t is TranslateState.Done && EnglishDictionary.clean(t.english) == EnglishDictionary.clean(english) && (uzbek.isBlank() || autoFilled)) {
+            uzbek = t.uzbek
+            autoFilled = true
+        }
+    }
+    DisposableEffect(Unit) { onDispose { viewModel.resetTranslate() } }
 
     OnIkkiSheet(title = if (word == null) "Yangi so'z" else "So'zni tahrirlash", onDismiss = onDismiss) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = english,
-                onValueChange = { english = it; error = null },
+                onValueChange = {
+                    english = it
+                    error = null
+                    showSuggestions = true
+                    if (autoFilled) uzbek = ""
+                    viewModel.resetTranslate()
+                },
                 label = { Text("English") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Next),
                 modifier = Modifier.weight(1f)
             )
-            OutlinedTextField(
-                value = uzbek,
-                onValueChange = { uzbek = it; error = null },
-                label = { Text("O'zbekcha") },
-                singleLine = true,
-                modifier = Modifier.weight(1f)
+            if (english.isNotBlank()) SpeakButton(speaker, english.trim())
+        }
+        if (duplicate) {
+            Text(text = "Bu so'z ro'yxatingizda bor", color = colors.warmAccent, fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+        }
+        // Search-box style suggestions while typing.
+        if (showSuggestions && suggestions.isNotEmpty() && !(suggestions.size == 1 && suggestions[0].english == EnglishDictionary.clean(english))) {
+            Column(
+                modifier = Modifier.fillMaxWidth().background(colors.background, RoundedCornerShape(12.dp)).padding(vertical = 4.dp)
+            ) {
+                suggestions.forEach { entry ->
+                    val inList = viewModel.isInList(entry.english)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { fill(entry.english, entry.uzbek) }.padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text(text = entry.english, color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily)
+                        Text(
+                            text = "  —  ${entry.uzbek}",
+                            color = colors.text.muted(0.55f),
+                            fontSize = 13.sp,
+                            fontFamily = OnIkkiFontFamily,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (inList) Text(text = "✓", color = colors.accent, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+        OutlinedTextField(
+            value = uzbek,
+            onValueChange = { uzbek = it; autoFilled = false; error = null },
+            label = { Text("O'zbekcha") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        when {
+            known != null && autoFilled -> Text(text = "📖 Lug'atdan olindi — kerak bo'lsa tahrirlang", color = colors.text.muted(0.5f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+            translate is TranslateState.Done && autoFilled -> Text(text = "✨ AI tarjimasi — tekshirib oling", color = colors.text.muted(0.5f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+            translate is TranslateState.Loading -> Text(text = "✨ Tarjima qilinmoqda…", color = colors.text.muted(0.6f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+            translate is TranslateState.Failed -> Text(text = (translate as TranslateState.Failed).message, color = colors.warmAccent, fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+            known == null && english.trim().length >= 2 && uzbek.isBlank() -> Text(
+                text = "✨ Lug'atda yo'q — AI bilan tarjima qilish",
+                color = colors.accent,
+                fontSize = 13.sp,
+                fontFamily = OnIkkiFontFamily,
+                modifier = Modifier.clickable { viewModel.translateWithAi(english) }.padding(vertical = 4.dp)
+            )
+            else -> Text(
+                text = "Bir nechta to'g'ri javob bo'lsa, vergul bilan yozing: \"katta, ulkan\" (katakchalar birinchisiga qarab chiziladi)",
+                color = colors.text.muted(0.5f),
+                fontSize = 12.sp,
+                fontFamily = OnIkkiFontFamily
             )
         }
-        Text(
-            text = "Bir nechta to'g'ri javob bo'lsa, vergul bilan yozing: \"katta, ulkan\"",
-            color = colors.text.muted(0.5f),
-            fontSize = 12.sp,
-            fontFamily = OnIkkiFontFamily
-        )
         if (word == null && savedCount > 0) {
             Text(text = "$savedCount ta so'z qo'shildi — keyingisini yozing", color = colors.accent, fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
         }
         SheetErrorText(error)
         SheetActions(
             onSave = {
-                if (english.isBlank() || uzbek.isBlank()) {
-                    error = "Ikkala ustunni ham to'ldiring"
-                } else {
-                    onSave(english, uzbek)
-                    if (word == null) {
-                        savedCount++
-                        english = ""
-                        uzbek = ""
+                when {
+                    english.isBlank() || uzbek.isBlank() -> error = "Ikkala ustunni ham to'ldiring"
+                    duplicate -> error = "Bu so'z allaqachon bor"
+                    else -> {
+                        onSave(english, uzbek)
+                        if (word == null) {
+                            savedCount++
+                            english = ""
+                            uzbek = ""
+                            autoFilled = false
+                            viewModel.resetTranslate()
+                        }
                     }
                 }
             },
             onDelete = if (word != null) onDelete else null
         )
+    }
+    if (translate is TranslateState.NeedsKey) {
+        ApiKeySheet(onDismiss = viewModel::resetTranslate, onSave = { key -> viewModel.saveApiKey(key, english) })
     }
 }
 

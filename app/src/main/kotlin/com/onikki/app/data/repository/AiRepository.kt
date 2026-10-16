@@ -76,6 +76,10 @@ private const val NOTE_TASKS_SYSTEM = """Sen qaydlardan bajariladigan ishlarni a
 - time: vaqt aytilgan bo'lsa HH:MM, aks holda "".
 Faqat haqiqiy ishlarni ol; fikr, eslatma yoki ma'lumotni vazifa qilma. Hech narsa bo'lmasa, bo'sh ro'yxat qaytar."""
 
+private const val TRANSLATE_SYSTEM = """Sen ingliz–o'zbek lug'atisan. Foydalanuvchi inglizcha so'z yoki ibora yuboradi.
+Faqat uning o'zbekcha (lotin alifbosida) 1–3 ta eng asosiy ma'nosini vergul bilan ajratib yoz, boshqa hech narsa yozma.
+Fe'llarni "-moq" shaklida yoz (masalan: o'qimoq). Misol: "run" → yugurmoq, chopmoq"""
+
 private const val CATEGORY_SYSTEM = """Sen bank SMS'laridan kelgan to'lovlarni toifalaysan. Har bir tranzaksiya uchun berilgan ro'yxatdan eng mos toifani tanla
 va 1–3 so'zli qisqa izoh yoz (o'zbekcha, masalan "Supermarket", "Taksi", "Telefon to'lovi", "Do'stga o'tkazma").
 Do'kon nomini bilsang, izohda uning turini yoz. Bilmasang, summaga va nomga qarab eng ehtimolli toifani tanla."""
@@ -157,6 +161,14 @@ class AiRepository(private val context: Context, private val db: AppDatabase) {
         when (val r = client.send(CATEGORY_SYSTEM, listOf(ChatTurn(true, message)), maxTokens = 6000, jsonSchema = AiPlans.categorySchema(categories))) {
             is ClaudeResult.Error -> AiOutcome.Failed(r.message)
             is ClaudeResult.Success -> AiOutcome.Ok(AiPlans.parseCategories(r.text, batch.map { it.id }.toSet(), categories))
+        }
+    }
+
+    /** English word/phrase → its 1–3 main Uzbek meanings, comma-separated (for words the built-in list lacks). */
+    suspend fun translateWord(english: String): AiOutcome<String> = call { client ->
+        client.sendMessage(TRANSLATE_SYSTEM, english.trim(), maxTokens = 2000).toOutcome { reply ->
+            reply.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+                .removeSurrounding("\"").trimEnd('.').take(80)
         }
     }
 
