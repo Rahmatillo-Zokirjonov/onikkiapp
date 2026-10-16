@@ -80,16 +80,19 @@ fun AccountPicker(
 @Composable
 fun AccountSheet(
     account: Account?,
+    /** The live balance (start + transactions) — what the card shows and what the user edits. */
+    currentBalance: Long?,
     errorFromDelete: String?,
     onDismiss: () -> Unit,
-    onSave: (name: String, kind: AccountKind, lastDigits: String?, initialBalance: Long) -> Unit,
+    onSave: (name: String, kind: AccountKind, lastDigits: String?, balance: Long) -> Unit,
     onDelete: () -> Unit
 ) {
     val key = account?.id
     var kind by rememberSaveable(key) { mutableStateOf(account?.kind ?: AccountKind.KARTA) }
     var name by rememberSaveable(key) { mutableStateOf(account?.name ?: "") }
     var digits by rememberSaveable(key) { mutableStateOf(account?.lastDigits ?: "") }
-    var initialText by rememberSaveable(key) { mutableStateOf(account?.initialBalance?.takeIf { it != 0L }?.toString() ?: "") }
+    val shown = currentBalance ?: account?.initialBalance
+    var initialText by rememberSaveable(key) { mutableStateOf(shown?.takeIf { it != 0L }?.toString() ?: "") }
     var error by remember(errorFromDelete) { mutableStateOf(errorFromDelete) }
 
     OnIkkiSheet(title = if (account == null) "Yangi hamyon" else "Hamyonni tahrirlash", onDismiss = onDismiss) {
@@ -123,7 +126,10 @@ fun AccountSheet(
             )
         }
         AmountField(value = initialText, onValueChange = { initialText = it }, label = "Hozirgi qoldiq")
-        SheetFieldLabel("Hamyonni qo'shgandagi qoldiq. Keyingi kirim-chiqimlar shunga qo'shiladi.")
+        SheetFieldLabel(
+            if (account == null) "Hamyonda hozir qancha pul bor. Keyingi kirim-chiqimlar shunga qo'shiladi."
+            else "Kartada hozir qancha bo'lsa, shuni yozing — saqlagach aynan shu summa ko'rinadi, kirim-chiqim tarixi o'zgarmaydi."
+        )
         SheetErrorText(error)
         SheetActions(
             onSave = {

@@ -113,6 +113,7 @@ fun FinanceSectionRoute() {
         )
         is FinanceSheet.AccountEdit -> AccountSheet(
             account = sheet.account,
+            currentBalance = sheet.account?.let { a -> state.accounts.firstOrNull { it.account.id == a.id }?.balance },
             errorFromDelete = sheet.error,
             onDismiss = viewModel::dismissSheet,
             onSave = { name, kind, digits, initial -> viewModel.saveAccount(sheet.account, name, kind, digits, initial) },

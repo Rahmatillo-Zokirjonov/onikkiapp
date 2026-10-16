@@ -25,6 +25,7 @@ import com.onikki.app.data.db.entity.RepeatKind
 import com.onikki.app.data.repository.BudgetProgress
 import com.onikki.app.data.repository.CategorySlice
 import com.onikki.app.data.repository.FinanceRepository
+import com.onikki.app.data.repository.initialBalanceFor
 import com.onikki.app.data.repository.AccountBalance
 import com.onikki.app.data.repository.toWallet
 import com.onikki.app.data.repository.dailyBalanceTrend
@@ -298,14 +299,16 @@ class FinanceViewModel(
         launchAndClose { repository.adjustSavings(goal, delta) }
     }
 
-    fun saveAccount(existing: Account?, name: String, kind: AccountKind, lastDigits: String?, initialBalance: Long) {
+    /** [balance] is what the wallet holds now (as the user sees it), not the stored starting balance. */
+    fun saveAccount(existing: Account?, name: String, kind: AccountKind, lastDigits: String?, balance: Long) {
         if (name.isBlank()) return
+        val live = existing?.let { e -> uiState.value.accounts.firstOrNull { it.account.id == e.id }?.balance } ?: existing?.initialBalance ?: 0L
         val updated = (existing ?: Account(name = name, kind = kind, sortOrder = uiState.value.accounts.size))
             .copy(
                 name = name.trim(),
                 kind = kind,
                 lastDigits = lastDigits?.takeIf { kind == AccountKind.KARTA && it.isNotBlank() },
-                initialBalance = initialBalance
+                initialBalance = initialBalanceFor(balance, live, existing?.initialBalance ?: 0L)
             )
         launchAndClose { repository.saveAccount(updated) }
     }

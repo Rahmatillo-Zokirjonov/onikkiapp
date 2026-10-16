@@ -27,6 +27,14 @@ import java.time.LocalDate
 
 data class AccountBalance(val account: Account, val balance: Long)
 
+/**
+ * The user types what the wallet holds *now*; we store a starting balance such that
+ * starting balance + its transactions = [desiredBalance]. History stays as it is.
+ * [currentBalance] / [currentInitial] are the wallet's live balance and stored start (0 / 0 for a new one).
+ */
+fun initialBalanceFor(desiredBalance: Long, currentBalance: Long, currentInitial: Long): Long =
+    desiredBalance - (currentBalance - currentInitial)
+
 /** [fraction] is this category's share of the period's total expense, 0..1. */
 data class CategorySlice(val category: String, val amount: Long, val fraction: Float)
 
