@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.sp
 import com.onikki.app.ui.dailyplan.DailyPlanRoute
 import com.onikki.app.ui.goals.GoalDeepLink
 import com.onikki.app.ui.goals.GoalsRoute
+import com.onikki.app.ui.timetable.TimetableDeepLink
+import com.onikki.app.ui.timetable.TimetableRoute
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import com.onikki.app.ui.habits.HabitsRoute
@@ -37,6 +39,7 @@ import com.onikki.app.ui.theme.OnIkkiShapes
 private enum class PlanSubTab(val label: String) {
     DAILY_PLAN("Kunlik reja"),
     GOALS("Maqsadlar"),
+    TIMETABLE("Jadval"),
     HABITS("Odatlar")
 }
 
@@ -45,6 +48,13 @@ fun PlanSectionRoute() {
     var subTab by rememberSaveable { mutableStateOf(PlanSubTab.DAILY_PLAN) }
     val requestedGoal by GoalDeepLink.requested.collectAsState()
     LaunchedEffect(requestedGoal) { if (requestedGoal != null) subTab = PlanSubTab.GOALS }
+    val requestedTimetable by TimetableDeepLink.requested.collectAsState()
+    LaunchedEffect(requestedTimetable) {
+        if (requestedTimetable) {
+            subTab = PlanSubTab.TIMETABLE
+            TimetableDeepLink.consume()
+        }
+    }
     val colors = LocalOnIkkiColors.current
 
     Column(modifier = Modifier.fillMaxSize().background(colors.background)) {
@@ -53,6 +63,7 @@ fun PlanSectionRoute() {
             when (subTab) {
                 PlanSubTab.DAILY_PLAN -> DailyPlanRoute()
                 PlanSubTab.GOALS -> GoalsRoute()
+                PlanSubTab.TIMETABLE -> TimetableRoute()
                 PlanSubTab.HABITS -> HabitsRoute()
             }
         }

@@ -11,7 +11,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, NOTE, PLANNED_EXPENSE, REFRESH }
+enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, NOTE, PLANNED_EXPENSE, TIMETABLE, REFRESH }
 
 /**
  * One alarm to set. [key] is stable across re-plans so the same reminder is replaced, not duplicated.
@@ -43,6 +43,7 @@ object ReminderPlanner {
         debts: List<Debt>,
         notes: List<Note>,
         plannedExpenses: List<PlannedExpense>,
+        timetable: List<com.onikki.app.data.db.entity.TimetableEntry> = emptyList(),
         prayerTimesFor: (LocalDate) -> PrayerTimeCalculator.PrayerTimes
     ): List<PlannedReminder> {
         val horizon = now.plusHours(HORIZON_HOURS)
@@ -108,6 +109,19 @@ object ReminderPlanner {
                         ReminderType.PLANNED_EXPENSE,
                         earlyAt,
                         refId = expense.id
+                    )
+                }
+            }
+        }
+
+        // Timetable blocks: each block's own lead time; the date and start are in the key, so edits replace it.
+        timetable.filter { it.remindMinutes != null }.forEach { entry ->
+            com.onikki.app.domain.timetable.Timetable.occurrences(entry, days.first(), days.last()).forEach { startAt ->
+                val at = startAt.minusMinutes(entry.remindMinutes!!.toLong())
+                if (inWindow(at)) {
+                    result += PlannedReminder(
+                        "timetable:${entry.id}:${startAt}:${entry.remindMinutes}",
+                        ReminderType.TIMETABLE, at, refId = entry.id, label = entry.title, eventTime = entry.start
                     )
                 }
             }

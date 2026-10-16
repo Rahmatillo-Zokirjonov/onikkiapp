@@ -56,6 +56,7 @@ import com.onikki.app.domain.habits.HabitStats
 import com.onikki.app.ui.components.CircularProgressRing
 import com.onikki.app.ui.components.LinearProgressTrack
 import com.onikki.app.ui.goals.GoalDeepLink
+import com.onikki.app.ui.timetable.TimetableDeepLink
 import com.onikki.app.ui.components.OnIkkiButton
 import com.onikki.app.ui.components.OnIkkiButtonVariant
 import com.onikki.app.ui.components.OnIkkiCard
@@ -148,6 +149,7 @@ fun HomeScreen(
             onOpenPlan = { onOpenTab(OnIkkiTab.PLAN) },
             onCompleteMoney = onCompleteMoney
         )
+        state.timetable?.let { TimetableNowCard(it, onClick = { TimetableDeepLink.request(); onOpenTab(OnIkkiTab.PLAN) }) }
         MainGoalCard(state, onOpen = onOpenGoal)
         TodayPlanSection(state, onToggleTask = onToggleTask, onOpenPlan = { onOpenTab(OnIkkiTab.PLAN) })
         HabitsSection(habits = state.habits, onTapHabit = onTapHabit, onOpenAll = { onOpenTab(OnIkkiTab.PLAN) })
@@ -506,6 +508,56 @@ private fun HabitTodayCard(stats: HabitStats, onClick: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center
         )
+    }
+}
+
+// ---------------------------------------------------------------- Jadval: hozir / keyingi
+
+@Composable
+private fun TimetableNowCard(nn: com.onikki.app.domain.timetable.NowNext, onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
+    OnIkkiRowCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Text(text = "📚", fontSize = 18.sp)
+        Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+            val current = nn.current
+            val next = nn.next
+            if (current != null) {
+                Text(
+                    text = "Hozir: ${current.title}" + (current.place?.let { " · $it" } ?: ""),
+                    color = colors.text,
+                    fontSize = 14.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${nn.minutesLeft} daq qoldi (${hm(current.end)} gacha)" + (next?.let { " · keyin ${hm(it.start)} ${it.title}" } ?: ""),
+                    color = colors.accent,
+                    fontSize = 11.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            } else if (next != null) {
+                Text(
+                    text = "Keyingi: ${hm(next.start)} ${next.title}" + (next.place?.let { " · $it" } ?: ""),
+                    color = colors.text,
+                    fontSize = 14.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                val m = nn.minutesUntilNext ?: 0
+                Text(
+                    text = if (m >= 60) "${m / 60} soat ${m % 60} daqiqadan keyin" else "$m daqiqadan keyin",
+                    color = colors.text.muted(0.5f),
+                    fontSize = 11.sp,
+                    fontFamily = OnIkkiFontFamily
+                )
+            }
+        }
+        Text(text = "→", color = colors.text.muted(0.5f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
     }
 }
 

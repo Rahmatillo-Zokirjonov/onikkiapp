@@ -76,6 +76,18 @@ class ReminderReceiver : BroadcastReceiver() {
                 )
             }
 
+            ReminderType.TIMETABLE -> {
+                val entry = db.timetableDao().findById(refId) ?: return
+                if (entry.remindMinutes == null) return
+                val minutesLeft = minutesUntil(Duration.between(LocalDateTime.now(), LocalDateTime.now().toLocalDate().atTime(entry.start)))
+                val whenText = if (minutesLeft <= 1) "Hozir boshlanadi" else "$minutesLeft daqiqadan keyin"
+                ReminderNotifier.show(
+                    context, key, ReminderChannel.TIMETABLE,
+                    title = entry.title,
+                    text = listOfNotNull("$whenText, ${hhmm(entry.start)}–${hhmm(entry.end)}", entry.place).joinToString(" · ")
+                )
+            }
+
             ReminderType.PRAYER -> {
                 val name = intent.getStringExtra(EXTRA_LABEL).orEmpty()
                 val time = intent.getStringExtra(EXTRA_EVENT_TIME)?.let(LocalTime::parse) ?: return

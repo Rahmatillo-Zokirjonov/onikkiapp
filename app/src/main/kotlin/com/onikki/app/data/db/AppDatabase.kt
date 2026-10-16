@@ -15,6 +15,7 @@ import com.onikki.app.data.db.dao.GoalDao
 import com.onikki.app.data.db.dao.UsageHoursDao
 import com.onikki.app.data.db.dao.NoteFolderDao
 import com.onikki.app.data.db.dao.NoteAttachmentDao
+import com.onikki.app.data.db.dao.TimetableDao
 import com.onikki.app.data.db.dao.SmsImportDao
 import com.onikki.app.data.db.dao.VocabWordDao
 import com.onikki.app.data.db.dao.CategoryBudgetDao
@@ -35,6 +36,7 @@ import com.onikki.app.data.db.entity.Goal
 import com.onikki.app.data.db.entity.UsageHours
 import com.onikki.app.data.db.entity.NoteFolder
 import com.onikki.app.data.db.entity.NoteAttachment
+import com.onikki.app.data.db.entity.TimetableEntry
 import com.onikki.app.data.db.entity.MerchantCategory
 import com.onikki.app.data.db.entity.SmsImport
 import com.onikki.app.data.db.entity.VocabWord
@@ -54,9 +56,9 @@ import com.onikki.app.data.db.entity.Transaction
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
-        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class
+        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -81,6 +83,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun usageHoursDao(): UsageHoursDao
     abstract fun noteFolderDao(): NoteFolderDao
     abstract fun noteAttachmentDao(): NoteAttachmentDao
+    abstract fun timetableDao(): TimetableDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -88,7 +91,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -256,5 +259,17 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
                 "`createdAt` INTEGER NOT NULL)"
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_note_attachments_noteId` ON `note_attachments` (`noteId`)")
+    }
+}
+
+/** Jadval: weekly / daily / one-off time blocks with optional reminders. */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `timetable_entries` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`title` TEXT NOT NULL, `repeat` TEXT NOT NULL DEFAULT 'WEEKLY', `dayOfWeek` INTEGER NOT NULL DEFAULT 1, " +
+                "`date` TEXT, `start` TEXT NOT NULL, `end` TEXT NOT NULL, `place` TEXT, `note` TEXT, `color` TEXT, " +
+                "`parity` TEXT NOT NULL DEFAULT 'ALL', `remindMinutes` INTEGER)"
+        )
     }
 }

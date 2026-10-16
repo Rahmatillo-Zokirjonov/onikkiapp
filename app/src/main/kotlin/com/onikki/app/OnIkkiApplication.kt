@@ -55,7 +55,11 @@ class OnIkkiApplication : Application() {
                 database.taskDao().observeBetween(today, today.plusDays(2)),
                 database.debtDao().observeAll(),
                 // Notes + planned expenses combined into one signal (combine() takes at most 5 flows).
-                combine(database.noteDao().observeWithReminder(), database.plannedExpenseDao().observeRemindable()) { _, _ -> },
+                combine(
+                    database.noteDao().observeWithReminder(),
+                    database.plannedExpenseDao().observeRemindable(),
+                    database.timetableDao().observeAll()
+                ) { _, _, _ -> },
                 NotificationSettingsStore(this@OnIkkiApplication).settings,
                 LocationStore(this@OnIkkiApplication).city
             ) { _, _, _, _, _ -> }

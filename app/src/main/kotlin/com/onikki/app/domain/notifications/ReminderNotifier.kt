@@ -22,6 +22,7 @@ enum class ReminderChannel(
     val importance: Int = NotificationManager.IMPORTANCE_HIGH
 ) {
     TASKS("tasks", "Vazifalar", "Kunlik reja vazifalari vaqtidan oldin"),
+    TIMETABLE("timetable", "Jadval", "Dars va jadval bloklari boshlanishidan oldin"),
     PRAYER("prayer", "Namoz vaqtlari", "Har namozdan oldin eslatma"),
     HABITS("habits", "Odatlar", "Kechqurun belgilanmagan odatlar"),
     DAY_REVIEW("day_review", "Kun yakuni", "Kunni yakunlash eslatmasi"),
