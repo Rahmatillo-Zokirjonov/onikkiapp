@@ -13,13 +13,16 @@ cd "C:\Users\user\Desktop\on ikki"
 powershell -ExecutionPolicy Bypass -File deploy\deploy-test.ps1 -Version 1.4.0 -DryRun
 
 # 2) Haqiqiy chiqarish
-powershell -ExecutionPolicy Bypass -File deploy\deploy-test.ps1 -Version 1.4.0 -Yangiliklar "Kundalik", "Papkalar va maxfiy qaydlar"
+powershell -ExecutionPolicy Bypass -File deploy\deploy-test.ps1 -Version 1.4.0 -Yangiliklar "Kundalik|Papkalar va maxfiy qaydlar"
+
+# 3) Faqat sahifadagi "Yangi" ro'yxatini tuzatish (APK yig'ilmaydi)
+powershell -ExecutionPolicy Bypass -File deploy\deploy-test.ps1 -PageOnly -Yangiliklar "Birinchi band|Ikkinchi band"
 ```
 
 - `-Version` — yangi versiya raqami. Har safar oldingisidan katta bo'lishi shart: 1.3.1 → 1.4.0 → 1.4.1 …
   - Kichik tuzatish bo'lsa, oxirgi raqamni oshiring: 1.4.0 → 1.4.1.
   - Yangi imkoniyat bo'lsa, o'rtadagisini oshiring: 1.4.1 → 1.5.0.
-- `-Yangiliklar` — sahifadagi "Yangi" ro'yxati. Har bir band qo'shtirnoqda, bandlar vergul bilan ajratiladi. Berilmasa, ro'yxat o'zgarmaydi.
+- `-Yangiliklar` — sahifadagi "Yangi" ro'yxati. Hammasi bitta qo'shtirnoq ichida, bandlar **`|`** belgisi bilan ajratiladi (vergul emas — vergul band ichida ham bo'lishi mumkin). Berilmasa, ro'yxat o'zgarmaydi.
 - Oxirida yashil **TAYYOR** yozuvi chiqsa, hammasi bo'ldi: telefonda saytni ochib yangisini o'rnating.
 
 ## Skript ichida nima bo'ladi (o'rganish uchun)

@@ -11,15 +11,19 @@
 
   Examples (run from the project folder "on ikki"):
     powershell -ExecutionPolicy Bypass -File deploy\deploy-test.ps1 -Version 1.4.0 -DryRun
-    powershell -ExecutionPolicy Bypass -File deploy\deploy-test.ps1 -Version 1.4.0 -Yangiliklar "Kundalik","Papkalar va maxfiy qaydlar"
+    powershell -ExecutionPolicy Bypass -File deploy\deploy-test.ps1 -Version 1.4.0 -Yangiliklar "Kundalik|Papkalar va maxfiy qaydlar"
+    powershell -ExecutionPolicy Bypass -File deploy\deploy-test.ps1 -PageOnly -Yangiliklar "Birinchi band|Ikkinchi band"
 
-  -DryRun : only checks (versions, files, SSH connection) - changes nothing, uploads nothing.
-  -NoGit  : skip the git commit/push at the end.
+  -Yangiliklar : the "Yangi" list on the page; items separated by | (powershell -File can't pass a list).
+  -PageOnly    : only rewrite the "Yangi" list and upload index.html (no version change, no build).
+  -DryRun      : only checks (versions, files, SSH connection) - changes nothing, uploads nothing.
+  -NoGit       : skip the git commit/push at the end.
   The script is ASCII-only on purpose: Windows PowerShell 5.1 misreads non-ASCII .ps1 files.
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$Version,
+    [string]$Version = '',
     [string[]]$Yangiliklar = @(),
+    [switch]$PageOnly,
     [switch]$DryRun,
     [switch]$NoGit
 )
@@ -47,9 +51,41 @@ function Fail($text) { Write-Host "    XATO: $text" -ForegroundColor Red; exit 1
 function ReadText($path)        { [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8) }
 function WriteText($path, $txt) { [IO.File]::WriteAllText($path, $txt, $Utf8) }
 
+# "a|b|c" (or several arguments) -> one item each.
+$News = @($Yangiliklar | ForEach-Object { $_ -split '\|' } | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+
+function NewsList($html) {
+    if ($News.Count -eq 0) { return $html }
+    $items = ($News | ForEach-Object { "      <li>$([Net.WebUtility]::HtmlEncode($_))</li>" }) -join "`n"
+    return [regex]::Replace($html, "(<h2>Yangi: [\d.]+</h2>\s*<ul[^>]*>)[\s\S]*?(\s*</ul>)", "`$1`n$items`$2")
+}
+
+# ---------------------------------------------------------------- page only
+if ($PageOnly) {
+    Step "Faqat sahifa"
+    if ($News.Count -eq 0) { Fail "-PageOnly uchun -Yangiliklar kerak" }
+    if (-not (Test-Path $Page)) { Fail "Topilmadi: $Page" }
+    if ($DryRun) { Write-Host "DryRun: $($News.Count) ta band yoziladi:"; $News | ForEach-Object { Write-Host "    - $_" }; exit 0 }
+    WriteText $Page (NewsList (ReadText $Page))
+    & scp -i $Key -q $Page "${Server}:$RemoteDir/index.html"
+    if ($LASTEXITCODE -ne 0) { Fail "index.html yuklanmadi" }
+    Ok "index.html yuklandi ($($News.Count) ta band)"
+    if (-not $NoGit) {
+        Push-Location $Root
+        try {
+            & git add deploy/index.html
+            & git -c user.name=Rahmatillo -c user.email=rahmatillozokirjonov853@gmail.com commit -q -m "Download page: update news list"
+            & git push -q origin main
+        } finally { Pop-Location }
+        Ok "Commit va push qilindi"
+    }
+    Write-Host ""; Write-Host "TAYYOR: $SiteUrl" -ForegroundColor Green
+    exit 0
+}
+
 # ---------------------------------------------------------------- 0. checks
 Step "Tekshiruv"
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { Fail "Versiya 1.4.0 ko'rinishida bo'lsin (hozir: $Version)" }
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { Fail "Versiya 1.4.0 ko'rinishida bo'lsin (hozir: '$Version')" }
 foreach ($f in @($GradleKts, $Page, $Key, $Gradle)) { if (-not (Test-Path $f)) { Fail "Topilmadi: $f" } }
 if (-not (Test-Path (Join-Path $Root 'keystore.properties'))) { Fail "keystore.properties yo'q - release imzosi uchun kerak" }
 
@@ -98,10 +134,7 @@ $dateUz = "$($today.Day)-$($months[$today.Month - 1]) $($today.Year)"
 $html = ReadText $Page
 $html = [regex]::Replace($html, "[\d.]+ MB $Dot versiya [\d.]+ $Dot [^<]+", "$sizeMb MB $Dot versiya $Version $Dot $dateUz")
 $html = [regex]::Replace($html, '<h2>Yangi: [\d.]+</h2>', "<h2>Yangi: $Version</h2>")
-if ($Yangiliklar.Count -gt 0) {
-    $items = ($Yangiliklar | ForEach-Object { "      <li>$([Net.WebUtility]::HtmlEncode($_))</li>" }) -join "`n"
-    $html = [regex]::Replace($html, "(<h2>Yangi: [\d.]+</h2>\s*<ul[^>]*>)[\s\S]*?(\s*</ul>)", "`$1`n$items`$2")
-}
+$html = NewsList $html
 WriteText $Page $html
 Ok "deploy/index.html: versiya $Version, $dateUz"
 
