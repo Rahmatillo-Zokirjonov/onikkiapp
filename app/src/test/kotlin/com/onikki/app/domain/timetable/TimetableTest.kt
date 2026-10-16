@@ -55,4 +55,13 @@ class TimetableTest {
         assertEquals(listOf(mon.atTime(8, 0), mon.plusDays(7).atTime(8, 0)), Timetable.occurrences(english, mon, mon.plusDays(7)))
         assertEquals(3, Timetable.occurrences(sport, mon, mon.plusDays(2)).size)
     }
+
+    @Test
+    fun roomLabels() {
+        assertEquals("204-xona", Timetable.roomLabel(" 204 "))
+        assertEquals("A-12", Timetable.roomLabel("A-12"))
+        assertNull(Timetable.roomLabel("  "))
+        assertNull(Timetable.roomLabel(null))
+        assertEquals(2L, Timetable.lastUsed(listOf(english, math, english.copy(id = 2, place = "301")), "ingliz")!!.id)
+    }
 }

@@ -75,4 +75,15 @@ object Timetable {
             .toList()
 
     fun minutes(from: LocalTime, to: LocalTime): Long = ChronoUnit.MINUTES.between(from, to)
+
+    /** "204" → "204-xona"; anything else ("A-12", "Sport zal") is shown as typed. */
+    fun roomLabel(place: String?): String? {
+        val p = place?.trim().orEmpty()
+        if (p.isEmpty()) return null
+        return if (p.all { it.isDigit() }) "$p-xona" else p
+    }
+
+    /** The room and colour last used for a title, to prefill when the same lesson is added again. */
+    fun lastUsed(entries: List<TimetableEntry>, title: String): TimetableEntry? =
+        entries.filter { it.title.equals(title.trim(), ignoreCase = true) }.maxByOrNull { it.id }
 }

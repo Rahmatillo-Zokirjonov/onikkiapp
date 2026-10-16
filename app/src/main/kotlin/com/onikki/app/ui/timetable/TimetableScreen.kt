@@ -262,8 +262,11 @@ private fun WeekGrid(
                                 .clickable { onOpen(e) }
                                 .padding(horizontal = 3.dp, vertical = 2.dp)
                         ) {
-                            Text(text = e.title, color = colors.text, fontSize = 10.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily, maxLines = 3, overflow = TextOverflow.Ellipsis, lineHeight = 12.sp)
-                            if (height >= 34.dp) Text(text = hm(e.start), color = colors.text.muted(0.6f), fontSize = 9.sp, fontFamily = OnIkkiFontFamily)
+                            Text(text = e.title, color = colors.text, fontSize = 10.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 12.sp)
+                            Timetable.roomLabel(e.place)?.let { room ->
+                                Text(text = room, color = edge, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily, maxLines = 1, overflow = TextOverflow.Clip)
+                            }
+                            if (height >= 44.dp) Text(text = hm(e.start), color = colors.text.muted(0.6f), fontSize = 9.sp, fontFamily = OnIkkiFontFamily)
                         }
                     }
                     if (isToday && now.hour in hours.first until hours.last) {
@@ -399,12 +402,21 @@ private fun BlockCard(e: TimetableEntry, now: LocalDateTime?, onClick: () -> Uni
                     fontFamily = OnIkkiFontFamily,
                     modifier = Modifier.weight(1f)
                 )
-                if (running) Text(text = "HOZIR", color = colors.accent, style = OnIkkiType.kicker)
+                Timetable.roomLabel(e.place)?.let { room ->
+                    Text(
+                        text = "📍 $room",
+                        color = colors.text,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = OnIkkiFontFamily,
+                        modifier = Modifier.background(colors.background.copy(alpha = 0.5f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+                if (running) Text(text = "HOZIR", color = colors.accent, style = OnIkkiType.kicker, modifier = Modifier.padding(start = 6.dp))
             }
             Text(
                 text = listOfNotNull(
                     formatMinutesAsDuration(total),
-                    e.place,
                     when (e.repeat) {
                         TimetableRepeat.DAILY -> "har kuni"
                         TimetableRepeat.ONCE -> "bir martalik"
@@ -466,9 +478,18 @@ private fun EntrySheet(target: EntrySheetTarget, all: List<TimetableEntry>, onDi
     else drafts().flatMap { d -> Timetable.clashes(all, d.copy(id = e?.id ?: -1), target.date) }.distinctBy { it.id }
 
     OnIkkiSheet(title = if (e == null) "Yangi blok" else "Blokni tahrirlash", onDismiss = onDismiss) {
+        fun pickTitle(t: String) {
+            title = t
+            error = null
+            // The same lesson again: bring its room and colour along.
+            if (e == null) Timetable.lastUsed(all, t)?.let { prev ->
+                if (place.isBlank()) place = prev.place.orEmpty()
+                if (color == null) color = prev.color
+            }
+        }
         OutlinedTextField(value = title, onValueChange = { title = it; error = null }, label = { Text("Nomi (dars, ish, sport…)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         val known = all.map { it.title }.distinct().filter { it != title }.take(6)
-        SuggestionChips(options = known.ifEmpty { listOf("Ingliz tili", "Matematika", "Ish", "Sport", "Kitob o'qish") }, selected = title, onSelect = { title = it; error = null })
+        SuggestionChips(options = known.ifEmpty { listOf("Ingliz tili", "Matematika", "Ish", "Sport", "Kitob o'qish") }, selected = title, onSelect = ::pickTitle)
 
         SheetFieldLabel("Takrorlanish")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -510,7 +531,16 @@ private fun EntrySheet(target: EntrySheetTarget, all: List<TimetableEntry>, onDi
             }, modifier = Modifier.weight(1f))
             TimePickerField(label = "Tugashi", time = end, onTimeChange = { end = it; error = null }, modifier = Modifier.weight(1f))
         }
-        OutlinedTextField(value = place, onValueChange = { place = it }, label = { Text("Joyi (ixtiyoriy, masalan 204-xona)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            value = place,
+            onValueChange = { place = it.take(30) },
+            label = { Text("Xona (masalan 204 yoki A-12)") },
+            singleLine = true,
+            supportingText = Timetable.roomLabel(place)?.takeIf { place.trim().all { c -> c.isDigit() } }?.let { { Text("Ko'rinishi: $it") } },
+            modifier = Modifier.fillMaxWidth()
+        )
+        val rooms = all.mapNotNull { it.place?.trim() }.filter { it.isNotEmpty() && it != place.trim() }.distinct().take(6)
+        if (rooms.isNotEmpty()) SuggestionChips(options = rooms, selected = place, onSelect = { place = it })
         OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("Izoh (o'qituvchi, havola…)") }, modifier = Modifier.fillMaxWidth())
 
         SheetFieldLabel("Rang")

@@ -84,7 +84,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 ReminderNotifier.show(
                     context, key, ReminderChannel.TIMETABLE,
                     title = entry.title,
-                    text = listOfNotNull("$whenText, ${hhmm(entry.start)}–${hhmm(entry.end)}", entry.place).joinToString(" · ")
+                    text = listOfNotNull("$whenText, ${hhmm(entry.start)}–${hhmm(entry.end)}", com.onikki.app.domain.timetable.Timetable.roomLabel(entry.place)).joinToString(" · ")
                 )
             }
 

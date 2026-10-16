@@ -524,7 +524,7 @@ private fun TimetableNowCard(nn: com.onikki.app.domain.timetable.NowNext, onClic
             val next = nn.next
             if (current != null) {
                 Text(
-                    text = "Hozir: ${current.title}" + (current.place?.let { " · $it" } ?: ""),
+                    text = "Hozir: ${current.title}" + (com.onikki.app.domain.timetable.Timetable.roomLabel(current.place)?.let { " · $it" } ?: ""),
                     color = colors.text,
                     fontSize = 14.sp,
                     fontFamily = OnIkkiFontFamily,
@@ -541,7 +541,7 @@ private fun TimetableNowCard(nn: com.onikki.app.domain.timetable.NowNext, onClic
                 )
             } else if (next != null) {
                 Text(
-                    text = "Keyingi: ${hm(next.start)} ${next.title}" + (next.place?.let { " · $it" } ?: ""),
+                    text = "Keyingi: ${hm(next.start)} ${next.title}" + (com.onikki.app.domain.timetable.Timetable.roomLabel(next.place)?.let { " · $it" } ?: ""),
                     color = colors.text,
                     fontSize = 14.sp,
                     fontFamily = OnIkkiFontFamily,
