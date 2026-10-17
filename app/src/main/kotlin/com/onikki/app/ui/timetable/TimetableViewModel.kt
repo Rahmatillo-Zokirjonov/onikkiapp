@@ -26,6 +26,9 @@ import java.time.LocalTime
 
 enum class TimetableView(val label: String) { WEEK("Haftalik"), DAY("Kunlik"), HOMEWORK("Vazifalar") }
 
+/** Haftalik as a day-by-day list (everything readable) or as a time grid. */
+enum class WeekLayout { LIST, GRID }
+
 /** New block ([entry] null, starting on [date]) or an existing one. */
 data class EntrySheetTarget(val entry: TimetableEntry?, val date: LocalDate)
 
@@ -43,17 +46,29 @@ data class TimetableUiState(
     val sheet: EntrySheetTarget? = null,
     val homework: List<Homework> = emptyList(),
     val homeworkSheet: HomeworkSheetTarget? = null,
+    val weekLayout: WeekLayout = WeekLayout.LIST,
     val isLoaded: Boolean = false
 )
 
-private data class Ui(val view: TimetableView, val date: LocalDate, val sheet: EntrySheetTarget?, val homeworkSheet: HomeworkSheetTarget? = null)
+private data class Ui(
+    val view: TimetableView,
+    val date: LocalDate,
+    val sheet: EntrySheetTarget?,
+    val homeworkSheet: HomeworkSheetTarget? = null,
+    val weekLayout: WeekLayout = WeekLayout.LIST
+)
 
 class TimetableViewModel(application: Application) : AndroidViewModel(application) {
     private val db = (application as OnIkkiApplication).database
     private val dao = db.timetableDao()
     private val prefs = application.getSharedPreferences("timetable", Context.MODE_PRIVATE)
     private val ui = MutableStateFlow(
-        Ui(runCatching { TimetableView.valueOf(prefs.getString("view", null)!!) }.getOrDefault(TimetableView.WEEK), LocalDate.now(), null)
+        Ui(
+            runCatching { TimetableView.valueOf(prefs.getString("view", null)!!) }.getOrDefault(TimetableView.WEEK),
+            LocalDate.now(),
+            null,
+            weekLayout = runCatching { WeekLayout.valueOf(prefs.getString("week_layout", null)!!) }.getOrDefault(WeekLayout.LIST)
+        )
     )
 
     val uiState: StateFlow<TimetableUiState> = ui.flatMapLatest { u ->
@@ -67,6 +82,7 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
                 sheet = u.sheet,
                 homework = homework,
                 homeworkSheet = u.homeworkSheet,
+                weekLayout = u.weekLayout,
                 isLoaded = true
             )
         }
@@ -78,6 +94,11 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun setDate(date: LocalDate) = ui.update { it.copy(date = date) }
+
+    fun setWeekLayout(layout: WeekLayout) {
+        prefs.edit().putString("week_layout", layout.name).apply()
+        ui.update { it.copy(weekLayout = layout) }
+    }
 
     fun shift(days: Long) = ui.update { it.copy(date = it.date.plusDays(days)) }
 

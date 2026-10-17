@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -166,18 +170,22 @@ private fun HomeworkCard(
     val danger = state == HomeworkState.DANGER || state == HomeworkState.OVERDUE
     val left = HomeworkRules.formatLeft(HomeworkRules.timeLeft(hw, now))
     val dangerStart = HomeworkRules.dangerStart(hw)
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surface, RoundedCornerShape(14.dp))
+            .height(androidx.compose.foundation.layout.IntrinsicSize.Min)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (danger) colors.warmAccent.copy(alpha = 0.08f) else colors.surface)
             .border(BorderStroke(if (danger) 1.5.dp else 1.dp, if (danger) colors.warmAccent else colors.cardBorder), RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .padding(14.dp),
+    ) {
+    Box(modifier = Modifier.width(5.dp).fillMaxHeight().background(subjectColor ?: colors.accent))
+    Column(
+        modifier = Modifier.weight(1f).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(10.dp).background(subjectColor ?: colors.accent, CircleShape))
-            Text(text = hw.subject.uppercase(), color = colors.text.muted(0.6f), style = OnIkkiType.kicker, modifier = Modifier.padding(start = 8.dp).weight(1f))
+            Text(text = hw.subject.uppercase(), color = subjectColor ?: colors.accent, style = OnIkkiType.kicker, modifier = Modifier.weight(1f))
             Text(
                 text = when (state) {
                     HomeworkState.CALM -> "$left qoldi"
@@ -213,6 +221,7 @@ private fun HomeworkCard(
                 OnIkkiButton(text = "✗ Bajarmadim", onClick = onMissed, variant = OnIkkiButtonVariant.SECONDARY, modifier = Modifier.weight(1f))
             }
         }
+    }
     }
 }
 

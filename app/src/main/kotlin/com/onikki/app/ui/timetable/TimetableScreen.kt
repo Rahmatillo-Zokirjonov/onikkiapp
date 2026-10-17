@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -99,17 +100,22 @@ fun TimetableRoute() {
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "Jadval", color = colors.text, style = OnIkkiType.screenTitle, modifier = Modifier.weight(1f))
-                    ViewToggle(state.view, viewModel::setView)
-                }
+            Column(modifier = Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                ViewToggle(state.view, viewModel::setView)
                 if (state.view != TimetableView.HOMEWORK) {
-                    NavRow(state, now.toLocalDate(), onShift = viewModel::shift, onToday = { viewModel.setDate(now.toLocalDate()) })
+                    NavRow(
+                        state, now.toLocalDate(),
+                        onShift = viewModel::shift,
+                        onToday = { viewModel.setDate(now.toLocalDate()) },
+                        onLayout = viewModel::setWeekLayout
+                    )
                 }
             }
             when (state.view) {
-                TimetableView.WEEK -> WeekGrid(state, now, onOpen = viewModel::openEdit, onNewOn = viewModel::openNew, onDay = viewModel::openDay)
+                TimetableView.WEEK -> when (state.weekLayout) {
+                    WeekLayout.LIST -> WeekAgenda(state, now, onOpen = viewModel::openEdit, onNewOn = viewModel::openNew, onDay = viewModel::openDay)
+                    WeekLayout.GRID -> WeekGrid(state, now, onOpen = viewModel::openEdit, onNewOn = viewModel::openNew, onDay = viewModel::openDay)
+                }
                 TimetableView.DAY -> DayTimeline(state, now, viewModel)
                 TimetableView.HOMEWORK -> HomeworkList(state, now, viewModel)
             }
@@ -142,10 +148,11 @@ fun TimetableRoute() {
     }
 }
 
+/** Full-width three-way switch: Haftalik | Kunlik | Vazifalar (the pending-homework count rides along). */
 @Composable
 private fun ViewToggle(view: TimetableView, onChange: (TimetableView) -> Unit) {
     val colors = LocalOnIkkiColors.current
-    Row(modifier = Modifier.background(colors.surface, RoundedCornerShape(50)).padding(3.dp)) {
+    Row(modifier = Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(50)).padding(3.dp)) {
         TimetableView.entries.forEach { option ->
             val selected = option == view
             Text(
@@ -154,52 +161,261 @@ private fun ViewToggle(view: TimetableView, onChange: (TimetableView) -> Unit) {
                 fontSize = 13.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 fontFamily = OnIkkiFontFamily,
+                textAlign = TextAlign.Center,
                 modifier = Modifier
+                    .weight(1f)
                     .clip(RoundedCornerShape(50))
                     .background(if (selected) colors.accent else Color.Transparent)
                     .clickable { onChange(option) }
-                    .padding(horizontal = 11.dp, vertical = 6.dp)
+                    .padding(vertical = 8.dp)
             )
         }
     }
 }
 
 @Composable
-private fun NavRow(state: TimetableUiState, today: LocalDate, onShift: (Long) -> Unit, onToday: () -> Unit) {
+private fun NavRow(state: TimetableUiState, today: LocalDate, onShift: (Long) -> Unit, onToday: () -> Unit, onLayout: (WeekLayout) -> Unit) {
     val colors = LocalOnIkkiColors.current
     val step = if (state.view == TimetableView.WEEK) 7L else 1L
     val weekStart = Timetable.weekStart(state.date)
-    val label = when (state.view) {
+    val (main, sub) = when (state.view) {
         TimetableView.WEEK -> {
             val end = weekStart.plusDays(6)
             val range = if (weekStart.month == end.month) "${weekStart.dayOfMonth}–${end.dayOfMonth} ${monthNameUz(end.monthValue)}"
-            else "${weekStart.dayOfMonth} ${monthNameUz(weekStart.monthValue)} – ${end.dayOfMonth} ${monthNameUz(end.monthValue)}"
-            "$range · ${Timetable.weekNumber(state.date)}-hafta (${if (Timetable.isOddWeek(state.date)) "toq" else "juft"})"
+            else "${weekStart.dayOfMonth} ${monthNameUz(weekStart.monthValue).take(3)} – ${end.dayOfMonth} ${monthNameUz(end.monthValue).take(3)}"
+            range to "${Timetable.weekNumber(state.date)}-hafta · ${if (Timetable.isOddWeek(state.date)) "toq" else "juft"}"
         }
-        TimetableView.HOMEWORK -> ""
-        TimetableView.DAY -> when (state.date) {
-            today -> "Bugun, ${weekdayNameUz(state.date.dayOfWeek).lowercase()}"
-            today.plusDays(1) -> "Ertaga, ${weekdayNameUz(state.date.dayOfWeek).lowercase()}"
-            today.minusDays(1) -> "Kecha, ${weekdayNameUz(state.date.dayOfWeek).lowercase()}"
-            else -> "${state.date.dayOfMonth}-${monthNameUz(state.date.monthValue)}, ${weekdayNameUz(state.date.dayOfWeek).lowercase()}"
+        else -> {
+            val label = when (state.date) {
+                today -> "Bugun"
+                today.plusDays(1) -> "Ertaga"
+                today.minusDays(1) -> "Kecha"
+                else -> "${state.date.dayOfMonth}-${monthNameUz(state.date.monthValue)}"
+            }
+            label to weekdayNameUz(state.date.dayOfWeek)
         }
     }
     val isCurrent = if (state.view == TimetableView.WEEK) weekStart == Timetable.weekStart(today) else state.date == today
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(text = "‹", color = colors.text, fontSize = 22.sp, modifier = Modifier.clip(CircleShape).clickable { onShift(-step) }.padding(horizontal = 10.dp))
-        Text(text = label, color = colors.text.muted(0.85f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-        if (!isCurrent) {
-            Text(text = "Bugun", color = colors.accent, fontSize = 12.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.clickable(onClick = onToday).padding(horizontal = 6.dp, vertical = 4.dp))
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        RoundIcon("‹") { onShift(-step) }
+        Column(modifier = Modifier.weight(1f).padding(horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = main, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily)
+            Text(text = sub, color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
         }
-        Text(text = "›", color = colors.text, fontSize = 22.sp, modifier = Modifier.clip(CircleShape).clickable { onShift(step) }.padding(horizontal = 10.dp))
+        RoundIcon("›") { onShift(step) }
+        if (!isCurrent) {
+            Text(
+                text = "Bugun",
+                color = colors.accent,
+                fontSize = 12.sp,
+                fontFamily = OnIkkiFontFamily,
+                modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).border(BorderStroke(1.dp, colors.accent700), RoundedCornerShape(50)).clickable(onClick = onToday).padding(horizontal = 10.dp, vertical = 5.dp)
+            )
+        }
+        if (state.view == TimetableView.WEEK) {
+            val grid = state.weekLayout == WeekLayout.GRID
+            Text(
+                text = if (grid) "☰" else "▦",
+                color = colors.text.muted(0.8f),
+                fontSize = 17.sp,
+                modifier = Modifier.padding(start = 6.dp).clip(CircleShape).background(colors.surface).clickable { onLayout(if (grid) WeekLayout.LIST else WeekLayout.GRID) }.padding(horizontal = 10.dp, vertical = 4.dp)
+            )
+        }
     }
 }
 
-// ---------------------------------------------------------------- Haftalik
+@Composable
+private fun RoundIcon(symbol: String, onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    Box(
+        modifier = Modifier.size(34.dp).clip(CircleShape).background(colors.surface).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { Text(text = symbol, color = colors.text, fontSize = 20.sp, fontFamily = OnIkkiFontFamily) }
+}
 
-private val HOUR_HEIGHT = 52.dp
-private val TIME_COLUMN = 34.dp
+/** The colour that marks a lesson everywhere (its own, or gold). */
+@Composable
+private fun TimetableEntry.accent(): Color = color?.dot() ?: LocalOnIkkiColors.current.accent
 
+// ---------------------------------------------------------------- Haftalik: ro'yxat
+
+@Composable
+private fun WeekAgenda(
+    state: TimetableUiState,
+    now: LocalDateTime,
+    onOpen: (TimetableEntry) -> Unit,
+    onNewOn: (LocalDate) -> Unit,
+    onDay: (LocalDate) -> Unit
+) {
+    val colors = LocalOnIkkiColors.current
+    val weekStart = Timetable.weekStart(state.date)
+    val days = (0 until 7).map { weekStart.plusDays(it.toLong()) }
+    val total = days.sumOf { Timetable.on(state.entries, it).size }
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(top = 8.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        if (total == 0) {
+            EmptyHint("Bu hafta jadval bo'sh", "+ bilan dars, ish yoki mashg'ulot qo'shing — har hafta, har kuni yoki bir martalik.")
+        }
+        days.forEach { d ->
+            val lessons = Timetable.on(state.entries, d)
+            // Empty weekend days take no space; empty weekdays get one quiet line.
+            if (lessons.isEmpty() && d.dayOfWeek.value >= 6) return@forEach
+            val isToday = d == now.toLocalDate()
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onDay(d) }) {
+                    Text(
+                        text = weekdayNameUz(d.dayOfWeek),
+                        color = if (isToday) colors.accent else colors.text,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = OnIkkiFontFamily
+                    )
+                    Text(
+                        text = "  ${d.dayOfMonth}-${monthNameUz(d.monthValue)}",
+                        color = colors.text.muted(0.45f),
+                        fontSize = 12.sp,
+                        fontFamily = OnIkkiFontFamily
+                    )
+                    if (isToday) {
+                        Text(
+                            text = "BUGUN",
+                            color = colors.onAccent,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = OnIkkiFontFamily,
+                            modifier = Modifier.padding(start = 8.dp).background(colors.accent, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp)
+                        )
+                    }
+                    Box(modifier = Modifier.weight(1f))
+                    Text(
+                        text = if (lessons.isEmpty()) "+" else "${lessons.size} ta  +",
+                        color = colors.text.muted(0.5f),
+                        fontSize = 12.sp,
+                        fontFamily = OnIkkiFontFamily,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).clickable { onNewOn(d) }.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+                if (lessons.isEmpty()) {
+                    Text(text = "Bo'sh kun", color = colors.text.muted(0.35f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+                }
+                lessons.forEach { e ->
+                    LessonCard(
+                        e = e,
+                        now = now.takeIf { isToday },
+                        homework = com.onikki.app.domain.timetable.HomeworkRules.dueOn(state.homework, e.title, d),
+                        onClick = { onOpen(e) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyHint(title: String, body: String) {
+    val colors = LocalOnIkkiColors.current
+    Column(
+        modifier = Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(16.dp)).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(text = "📚 $title", color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily)
+        Text(text = body, color = colors.text.muted(0.55f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+    }
+}
+
+/**
+ * One lesson, everything visible: times on the left, a coloured bar, the title (two lines), the room as
+ * a badge, length / week / reminder, homework due for it, and a progress bar while it's on.
+ */
+@Composable
+private fun LessonCard(e: TimetableEntry, now: LocalDateTime?, homework: List<com.onikki.app.data.db.entity.Homework>, onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val t = now?.toLocalTime()
+    val running = t != null && !t.isBefore(e.start) && t.isBefore(e.end)
+    val done = t != null && !t.isBefore(e.end)
+    val total = Timetable.minutes(e.start, e.end).coerceAtLeast(1)
+    val accent = e.accent()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(androidx.compose.foundation.layout.IntrinsicSize.Min)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (running) accent.copy(alpha = 0.14f) else colors.surface)
+            .border(BorderStroke(if (running) 1.5.dp else 1.dp, if (running) accent else colors.cardBorder), RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .alpha(if (done) 0.6f else 1f)
+    ) {
+        Column(modifier = Modifier.width(62.dp).padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = hm(e.start), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
+            Text(text = hm(e.end), color = colors.text.muted(0.5f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+        }
+        Box(modifier = Modifier.padding(vertical = 10.dp).width(4.dp).fillMaxHeight().background(accent, RoundedCornerShape(2.dp)))
+        Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    text = e.title,
+                    color = colors.text,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = OnIkkiFontFamily,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Timetable.roomLabel(e.place)?.let { room ->
+                    Text(
+                        text = room,
+                        color = accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = OnIkkiFontFamily,
+                        maxLines = 1,
+                        modifier = Modifier.padding(start = 8.dp).background(accent.copy(alpha = 0.15f), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp)
+                    )
+                }
+            }
+            Text(
+                text = listOfNotNull(
+                    formatMinutesAsDuration(total),
+                    when (e.repeat) {
+                        TimetableRepeat.DAILY -> "har kuni"
+                        TimetableRepeat.ONCE -> "bir martalik"
+                        TimetableRepeat.WEEKLY -> if (e.parity == WeekParity.ALL) null else e.parity.label.lowercase()
+                    },
+                    e.remindMinutes?.let { if (it == 0) "🔔" else "🔔 $it daq" }
+                ).joinToString("  ·  "),
+                color = colors.text.muted(0.55f),
+                fontSize = 12.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+            e.note?.let { Text(text = it, color = colors.text.muted(0.6f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            if (homework.isNotEmpty()) {
+                Text(
+                    text = "📝 ${homework.joinToString { it.title }}",
+                    color = colors.warmAccent,
+                    fontSize = 12.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (running) {
+                LinearProgressTrack(progress = Timetable.minutes(e.start, t!!) / total.toFloat(), trackColor = colors.neutral800, progressColor = accent, height = 4.dp)
+                Text(text = "Hozir · ${Timetable.minutes(t, e.end)} daqiqa qoldi", color = accent, fontSize = 11.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily)
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Haftalik: to'r
+
+private val HOUR_HEIGHT = 64.dp
+private val TIME_COLUMN = 38.dp
+private val DAY_COLUMN = 108.dp
+
+/** The time grid, with wide day columns that scroll sideways so every block can show its text. */
 @Composable
 private fun WeekGrid(
     state: TimetableUiState,
@@ -211,93 +427,83 @@ private fun WeekGrid(
     val colors = LocalOnIkkiColors.current
     val weekStart = Timetable.weekStart(state.date)
     val allDays = (0 until 7).map { weekStart.plusDays(it.toLong()) }
-    // Weekends only when something is on them.
     val days = allDays.filter { d -> d.dayOfWeek.value <= 5 || Timetable.on(state.entries, d).isNotEmpty() }
     val inWeek = days.flatMap { Timetable.on(state.entries, it) }
     val hours = Timetable.hourRange(inWeek)
     val totalHeight = HOUR_HEIGHT * (hours.last - hours.first)
+    val horizontal = rememberScrollState()
 
-    Column(modifier = Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp, top = 6.dp)) {
-        Row {
-            Box(modifier = Modifier.width(TIME_COLUMN))
-            days.forEach { d ->
-                val today = d == now.toLocalDate()
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable { onDay(d) }.padding(vertical = 4.dp)
-                ) {
-                    Text(text = weekdayAbbrUz(d.dayOfWeek), color = if (today) colors.accent else colors.text.muted(0.6f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
-                    Text(
-                        text = "${d.dayOfMonth}",
-                        color = if (today) colors.onAccent else colors.text,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        fontFamily = OnIkkiFontFamily,
-                        modifier = Modifier.background(if (today) colors.accent else Color.Transparent, CircleShape).padding(horizontal = 6.dp, vertical = 1.dp)
-                    )
-                }
-            }
-        }
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 6.dp, bottom = 96.dp)) {
         if (inWeek.isEmpty()) {
-            Text(
-                text = "Bu haftada jadval bo'sh. + bilan dars, ish yoki mashg'ulot qo'shing — har hafta, har kuni yoki bir martalik.",
-                color = colors.text.muted(0.5f),
-                fontSize = 13.sp,
-                fontFamily = OnIkkiFontFamily,
-                modifier = Modifier.padding(12.dp)
-            )
+            Box(modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp)) {
+                EmptyHint("Bu hafta jadval bo'sh", "+ bilan qo'shing. Ustunni bossangiz, o'sha kunga blok qo'shiladi.")
+            }
         }
-        Row(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 90.dp)) {
-            Box(modifier = Modifier.width(TIME_COLUMN).height(totalHeight)) {
-                for (h in hours.first until hours.last) {
-                    Text(
-                        text = "%02d".format(h),
-                        color = colors.text.muted(0.4f),
-                        fontSize = 10.sp,
-                        fontFamily = OnIkkiFontFamily,
-                        modifier = Modifier.offset(y = HOUR_HEIGHT * (h - hours.first) - 6.dp)
-                    )
+        Row {
+            // Hour labels stay put while the days scroll sideways.
+            Column(modifier = Modifier.width(TIME_COLUMN)) {
+                Box(modifier = Modifier.height(44.dp))
+                Box(modifier = Modifier.height(totalHeight)) {
+                    for (h in hours.first until hours.last) {
+                        Text(
+                            text = "%02d:00".format(h),
+                            color = colors.text.muted(0.4f),
+                            fontSize = 9.sp,
+                            fontFamily = OnIkkiFontFamily,
+                            modifier = Modifier.offset(x = 4.dp, y = HOUR_HEIGHT * (h - hours.first) - 5.dp)
+                        )
+                    }
                 }
             }
-            days.forEach { d ->
-                val isToday = d == now.toLocalDate()
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(totalHeight)
-                        .padding(horizontal = 1.5.dp)
-                        .background(if (isToday) colors.accent800.copy(alpha = 0.12f) else Color.Transparent)
-                        .clickable { onNewOn(d) }
-                ) {
-                    for (h in hours.first until hours.last) {
-                        Box(modifier = Modifier.offset(y = HOUR_HEIGHT * (h - hours.first)).fillMaxWidth().height(1.dp).background(colors.divider.copy(alpha = 0.4f)))
-                    }
-                    Timetable.on(state.entries, d).forEach { e ->
-                        val top = HOUR_HEIGHT * ((e.start.hour - hours.first) + e.start.minute / 60f)
-                        val height = HOUR_HEIGHT * (Timetable.minutes(e.start, e.end).coerceAtLeast(20) / 60f)
-                        val tint = e.color?.tint() ?: colors.accent800
-                        val edge = e.color?.dot() ?: colors.accent
+            Row(modifier = Modifier.horizontalScroll(horizontal).padding(end = 12.dp)) {
+                days.forEach { d ->
+                    val isToday = d == now.toLocalDate()
+                    Column(modifier = Modifier.width(DAY_COLUMN)) {
                         Column(
-                            modifier = Modifier
-                                .offset(y = top)
-                                .fillMaxWidth()
-                                .height(height - 2.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(tint)
-                                .border(BorderStroke(1.dp, edge.copy(alpha = 0.6f)), RoundedCornerShape(6.dp))
-                                .clickable { onOpen(e) }
-                                .padding(horizontal = 3.dp, vertical = 2.dp)
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 3.dp).clip(RoundedCornerShape(10.dp))
+                                .background(if (isToday) colors.accent else colors.surface).clickable { onDay(d) }.padding(vertical = 4.dp)
                         ) {
-                            Text(text = e.title, color = colors.text, fontSize = 10.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 12.sp)
-                            Timetable.roomLabel(e.place)?.let { room ->
-                                Text(text = room, color = edge, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily, maxLines = 1, overflow = TextOverflow.Clip)
-                            }
-                            if (height >= 44.dp) Text(text = hm(e.start), color = colors.text.muted(0.6f), fontSize = 9.sp, fontFamily = OnIkkiFontFamily)
+                            Text(text = weekdayNameUz(d.dayOfWeek), color = if (isToday) colors.onAccent else colors.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily, maxLines = 1)
+                            Text(text = "${d.dayOfMonth}-${monthNameUz(d.monthValue).take(3)}", color = if (isToday) colors.onAccent.copy(alpha = 0.8f) else colors.text.muted(0.5f), fontSize = 10.sp, fontFamily = OnIkkiFontFamily)
                         }
-                    }
-                    if (isToday && now.hour in hours.first until hours.last) {
-                        val y = HOUR_HEIGHT * ((now.hour - hours.first) + now.minute / 60f)
-                        Box(modifier = Modifier.offset(y = y).fillMaxWidth().height(2.dp).background(colors.warmAccent))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(totalHeight)
+                                .padding(horizontal = 2.dp)
+                                .background(if (isToday) colors.accent.copy(alpha = 0.05f) else Color.Transparent)
+                                .clickable { onNewOn(d) }
+                        ) {
+                            for (h in hours.first until hours.last) {
+                                Box(modifier = Modifier.offset(y = HOUR_HEIGHT * (h - hours.first)).fillMaxWidth().height(1.dp).background(colors.divider.copy(alpha = 0.35f)))
+                            }
+                            Timetable.on(state.entries, d).forEach { e ->
+                                val top = HOUR_HEIGHT * ((e.start.hour - hours.first) + e.start.minute / 60f)
+                                val height = HOUR_HEIGHT * (Timetable.minutes(e.start, e.end).coerceAtLeast(25) / 60f)
+                                val accent = e.accent()
+                                Row(
+                                    modifier = Modifier
+                                        .offset(y = top + 1.dp)
+                                        .fillMaxWidth()
+                                        .height(height - 3.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(accent.copy(alpha = 0.18f))
+                                        .clickable { onOpen(e) }
+                                ) {
+                                    Box(modifier = Modifier.width(3.dp).fillMaxHeight().background(accent))
+                                    Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                        Text(text = e.title, color = colors.text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily, maxLines = if (height > 70.dp) 3 else 2, overflow = TextOverflow.Ellipsis, lineHeight = 13.sp)
+                                        Timetable.roomLabel(e.place)?.let { Text(text = it, color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                                        if (height >= 52.dp) Text(text = "${hm(e.start)}–${hm(e.end)}", color = colors.text.muted(0.6f), fontSize = 9.sp, fontFamily = OnIkkiFontFamily, maxLines = 1)
+                                    }
+                                }
+                            }
+                            if (isToday && now.hour in hours.first until hours.last) {
+                                val y = HOUR_HEIGHT * ((now.hour - hours.first) + now.minute / 60f)
+                                Box(modifier = Modifier.offset(y = y).fillMaxWidth().height(2.dp).background(colors.warmAccent))
+                            }
+                        }
                     }
                 }
             }
@@ -313,6 +519,7 @@ private sealed interface DayItem {
     data class TaskItem(val task: Task) : DayItem { override val time: LocalTime get() = task.time!! }
     data class Prayer(val name: String, override val time: LocalTime) : DayItem
     data class Gap(override val time: LocalTime, val minutes: Long) : DayItem
+    data class Now(override val time: LocalTime) : DayItem
 }
 
 @Composable
@@ -326,59 +533,57 @@ private fun DayTimeline(state: TimetableUiState, now: LocalDateTime, viewModel: 
         if (m >= 30) DayItem.Gap(a.end, m) else null
     }
     val items: List<DayItem> = (blocks.map { DayItem.Block(it) } + state.tasks.map { DayItem.TaskItem(it) } +
-        state.prayers.map { (n, t) -> DayItem.Prayer(n, t) } + gaps).sortedBy { it.time }
+        state.prayers.map { (n, t) -> DayItem.Prayer(n, t) } + gaps +
+        listOfNotNull(DayItem.Now(now.toLocalTime()).takeIf { isToday })).sortedBy { it.time }
 
     Column(modifier = Modifier.fillMaxSize()) {
         WeekStrip(state.date, now.toLocalDate(), state.entries, onPick = viewModel::setDate)
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 90.dp),
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(top = 4.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (blocks.isEmpty()) {
-                Text(
-                    text = "Bu kunda jadval yo'q. + bilan blok qo'shing: masalan 8:00–12:00 \"Ish (chuqur)\".",
-                    color = colors.text.muted(0.5f),
-                    fontSize = 13.sp,
-                    fontFamily = OnIkkiFontFamily,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+                EmptyHint("Bu kunda jadval yo'q", "+ bilan blok qo'shing: masalan 8:00–12:00 \"Ish (chuqur)\" yoki dars.")
             }
             items.forEach { item ->
                 when (item) {
-                    is DayItem.Block -> {
-                        BlockCard(item.entry, now.takeIf { isToday }, onClick = { viewModel.openEdit(item.entry) })
-                        val due = com.onikki.app.domain.timetable.HomeworkRules.dueOn(state.homework, item.entry.title, state.date)
-                        Text(
-                            text = if (due.isEmpty()) "        + vazifa" else "        📝 ${due.size} ta vazifa: ${due.joinToString { it.title }}",
-                            color = if (due.isEmpty()) colors.text.muted(0.35f) else colors.warmAccent,
-                            fontSize = 12.sp,
-                            fontFamily = OnIkkiFontFamily,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.clickable {
-                                if (due.isEmpty()) viewModel.openNewHomework(item.entry.title) else viewModel.setView(TimetableView.HOMEWORK)
-                            }
-                        )
-                    }
+                    is DayItem.Block -> LessonCard(
+                        e = item.entry,
+                        now = now.takeIf { isToday },
+                        homework = com.onikki.app.domain.timetable.HomeworkRules.dueOn(state.homework, item.entry.title, state.date),
+                        onClick = { viewModel.openEdit(item.entry) }
+                    )
                     is DayItem.TaskItem -> Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().clickable { viewModel.toggleTask(item.task) }.padding(vertical = 2.dp)
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { viewModel.toggleTask(item.task) }.padding(vertical = 4.dp)
                     ) {
-                        Text(text = hm(item.time), color = colors.text.muted(0.5f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.width(52.dp))
-                        Text(text = if (item.task.isCompleted) "☑" else "☐", color = if (item.task.isCompleted) colors.accent else colors.text.muted(0.6f), fontSize = 16.sp)
-                        Text(text = item.task.title, color = if (item.task.isCompleted) colors.text.muted(0.45f) else colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.padding(start = 8.dp))
+                        Text(text = hm(item.time), color = colors.text.muted(0.55f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center, modifier = Modifier.width(62.dp))
+                        Text(text = if (item.task.isCompleted) "☑" else "☐", color = if (item.task.isCompleted) colors.accent else colors.text.muted(0.6f), fontSize = 17.sp)
+                        Text(
+                            text = item.task.title,
+                            color = if (item.task.isCompleted) colors.text.muted(0.45f) else colors.text,
+                            fontSize = 14.sp,
+                            fontFamily = OnIkkiFontFamily,
+                            textDecoration = if (item.task.isCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
                     }
-                    is DayItem.Prayer -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = hm(item.time), color = colors.text.muted(0.4f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.width(52.dp))
+                    is DayItem.Prayer -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 1.dp)) {
+                        Text(text = hm(item.time), color = colors.text.muted(0.4f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center, modifier = Modifier.width(62.dp))
                         Text(text = "🕌 ${item.name}", color = colors.text.muted(0.5f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
                     }
-                    is DayItem.Gap -> Text(
-                        text = "        ⋯ bo'sh vaqt ${formatMinutesAsDuration(item.minutes)}",
-                        color = colors.text.muted(0.35f),
-                        fontSize = 11.sp,
-                        fontFamily = OnIkkiFontFamily,
-                        modifier = Modifier.clickable { viewModel.openNew(state.date) }
-                    )
+                    is DayItem.Gap -> Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { viewModel.openNew(state.date) }.padding(vertical = 2.dp)
+                    ) {
+                        Box(modifier = Modifier.width(62.dp), contentAlignment = Alignment.Center) { Text(text = "⋮", color = colors.text.muted(0.3f), fontSize = 14.sp) }
+                        Text(text = "Bo'sh vaqt · ${formatMinutesAsDuration(item.minutes)}   + blok", color = colors.text.muted(0.4f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+                    }
+                    is DayItem.Now -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text(text = hm(item.time), color = colors.warmAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center, modifier = Modifier.width(62.dp))
+                        Box(modifier = Modifier.size(8.dp).background(colors.warmAccent, CircleShape))
+                        Box(modifier = Modifier.weight(1f).height(2.dp).background(colors.warmAccent.copy(alpha = 0.6f)))
+                    }
                 }
             }
         }
@@ -389,89 +594,31 @@ private fun DayTimeline(state: TimetableUiState, now: LocalDateTime, viewModel: 
 private fun WeekStrip(selected: LocalDate, today: LocalDate, entries: List<TimetableEntry>, onPick: (LocalDate) -> Unit) {
     val colors = LocalOnIkkiColors.current
     val start = Timetable.weekStart(selected)
-    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
         (0 until 7).map { start.plusDays(it.toLong()) }.forEach { d ->
             val isSel = d == selected
+            val isToday = d == today
             val count = Timetable.on(entries, d).size
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 2.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (isSel) colors.accent800 else Color.Transparent)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (isSel) colors.accent else colors.surface)
+                    .border(BorderStroke(1.dp, if (isToday && !isSel) colors.accent else Color.Transparent), RoundedCornerShape(14.dp))
                     .clickable { onPick(d) }
-                    .padding(vertical = 6.dp)
+                    .padding(vertical = 7.dp)
             ) {
-                Text(text = weekdayAbbrUz(d.dayOfWeek), color = if (d == today) colors.accent else colors.text.muted(0.6f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
-                Text(text = "${d.dayOfMonth}", color = if (isSel) colors.accent100 else colors.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily)
-                Text(text = if (count > 0) "•".repeat(count.coerceAtMost(3)) else " ", color = colors.accent, fontSize = 10.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun BlockCard(e: TimetableEntry, now: LocalDateTime?, onClick: () -> Unit) {
-    val colors = LocalOnIkkiColors.current
-    val t = now?.toLocalTime()
-    val running = t != null && !t.isBefore(e.start) && t.isBefore(e.end)
-    val done = t != null && !t.isBefore(e.end)
-    val total = Timetable.minutes(e.start, e.end).coerceAtLeast(1)
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.width(52.dp)) {
-            Text(text = hm(e.start), color = if (running) colors.accent else colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily)
-            Text(text = hm(e.end), color = colors.text.muted(0.45f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
-        }
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(12.dp))
-                .background(e.color?.tint() ?: colors.surface)
-                .border(BorderStroke(if (running) 1.5.dp else 1.dp, if (running) colors.accent else (e.color?.dot()?.copy(alpha = 0.4f) ?: colors.cardBorder)), RoundedCornerShape(12.dp))
-                .clickable(onClick = onClick)
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = weekdayAbbrUz(d.dayOfWeek), color = if (isSel) colors.onAccent.copy(alpha = 0.8f) else colors.text.muted(0.55f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+                Text(text = "${d.dayOfMonth}", color = if (isSel) colors.onAccent else colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
                 Text(
-                    text = e.title,
-                    color = if (done) colors.text.muted(0.5f) else colors.text,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = OnIkkiFontFamily,
-                    modifier = Modifier.weight(1f)
+                    text = if (count > 0) "$count" else " ",
+                    color = if (isSel) colors.onAccent.copy(alpha = 0.8f) else colors.accent,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = OnIkkiFontFamily
                 )
-                Timetable.roomLabel(e.place)?.let { room ->
-                    Text(
-                        text = "📍 $room",
-                        color = colors.text,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = OnIkkiFontFamily,
-                        modifier = Modifier.background(colors.background.copy(alpha = 0.5f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-                if (running) Text(text = "HOZIR", color = colors.accent, style = OnIkkiType.kicker, modifier = Modifier.padding(start = 6.dp))
-            }
-            Text(
-                text = listOfNotNull(
-                    formatMinutesAsDuration(total),
-                    when (e.repeat) {
-                        TimetableRepeat.DAILY -> "har kuni"
-                        TimetableRepeat.ONCE -> "bir martalik"
-                        TimetableRepeat.WEEKLY -> if (e.parity == WeekParity.ALL) null else e.parity.label.lowercase()
-                    },
-                    e.remindMinutes?.let { if (it == 0) "🔔" else "🔔 $it daq oldin" }
-                ).joinToString(" · "),
-                color = colors.text.muted(0.55f),
-                fontSize = 12.sp,
-                fontFamily = OnIkkiFontFamily
-            )
-            e.note?.let { Text(text = it, color = colors.text.muted(0.5f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-            if (running) {
-                LinearProgressTrack(progress = Timetable.minutes(e.start, t!!) / total.toFloat(), trackColor = colors.neutral800, progressColor = colors.accent, height = 4.dp)
-                Text(text = "${Timetable.minutes(t, e.end)} daqiqa qoldi", color = colors.accent, fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
             }
         }
     }
