@@ -28,6 +28,16 @@ interface VocabWordDao {
     @Delete
     suspend fun delete(word: VocabWord)
 
+    @Query("SELECT * FROM vocab_words WHERE id = :id")
+    suspend fun findById(id: Long): VocabWord?
+
+    /** Learning-path order: by deck, then the order words were added (lessons are 8-word chunks of it). */
+    @Query("SELECT * FROM vocab_words ORDER BY deckId, id")
+    fun observeInPathOrder(): Flow<List<VocabWord>>
+
+    @Query("UPDATE vocab_words SET deckId = :deckId WHERE deckId IS NULL")
+    suspend fun adoptOrphans(deckId: Long)
+
     @Query("UPDATE vocab_words SET correctCount = correctCount + :correct, wrongCount = wrongCount + :wrong, lastAskedAt = :at WHERE id = :id")
     suspend fun recordAnswer(id: Long, correct: Int, wrong: Int, at: Long)
 }

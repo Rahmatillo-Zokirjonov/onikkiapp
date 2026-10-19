@@ -28,6 +28,7 @@ class OnIkkiApplication : Application() {
         BlockOverrides.init(this)
         ReminderNotifier.createChannels(this)
         keepRemindersInSync()
+        appScope.launch(Dispatchers.IO) { runCatching { com.onikki.app.data.repository.VocabSeeder.ensure(this@OnIkkiApplication, database) } }
         appScope.launch(Dispatchers.IO) {
             runCatching {
                 ScreenTimeRepository(

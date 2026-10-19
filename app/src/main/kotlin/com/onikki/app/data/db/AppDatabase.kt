@@ -17,6 +17,9 @@ import com.onikki.app.data.db.dao.NoteFolderDao
 import com.onikki.app.data.db.dao.NoteAttachmentDao
 import com.onikki.app.data.db.dao.TimetableDao
 import com.onikki.app.data.db.dao.HomeworkDao
+import com.onikki.app.data.db.dao.VocabDeckDao
+import com.onikki.app.data.db.dao.VocabReviewDao
+import com.onikki.app.data.db.dao.VocabLessonDao
 import com.onikki.app.data.db.dao.SmsImportDao
 import com.onikki.app.data.db.dao.VocabWordDao
 import com.onikki.app.data.db.dao.CategoryBudgetDao
@@ -39,6 +42,9 @@ import com.onikki.app.data.db.entity.NoteFolder
 import com.onikki.app.data.db.entity.NoteAttachment
 import com.onikki.app.data.db.entity.TimetableEntry
 import com.onikki.app.data.db.entity.Homework
+import com.onikki.app.data.db.entity.VocabDeck
+import com.onikki.app.data.db.entity.VocabReview
+import com.onikki.app.data.db.entity.VocabLessonResult
 import com.onikki.app.data.db.entity.MerchantCategory
 import com.onikki.app.data.db.entity.SmsImport
 import com.onikki.app.data.db.entity.VocabWord
@@ -58,9 +64,9 @@ import com.onikki.app.data.db.entity.Transaction
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
-        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class
+        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class, VocabDeck::class, VocabReview::class, VocabLessonResult::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -87,6 +93,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun noteAttachmentDao(): NoteAttachmentDao
     abstract fun timetableDao(): TimetableDao
     abstract fun homeworkDao(): HomeworkDao
+    abstract fun vocabDeckDao(): VocabDeckDao
+    abstract fun vocabReviewDao(): VocabReviewDao
+    abstract fun vocabLessonDao(): VocabLessonDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -94,7 +103,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -279,6 +288,47 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
                 "`subject` TEXT NOT NULL, `title` TEXT NOT NULL, `note` TEXT, `dueAt` TEXT NOT NULL, `remindAt` TEXT, " +
                 "`blockHoursBefore` INTEGER, `blockScope` TEXT NOT NULL DEFAULT 'CONTROLLED', " +
                 "`status` TEXT NOT NULL DEFAULT 'PENDING', `finishedAt` INTEGER, `createdAt` INTEGER NOT NULL)"
+        )
+    }
+}
+
+/**
+ * O'rganish: SRS fields + deck / example / past form / level on words, decks, an answer log and lesson results.
+ * Words already used by the app blocker move to "Mening so'zlarim" and are due for review today, so the
+ * blocker keeps working exactly as before. The "Lesson 1" deck is added by VocabSeeder (also on new installs).
+ */
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        listOf(
+            "partOfSpeech TEXT", "pastForm TEXT", "example TEXT", "level TEXT", "deckId INTEGER",
+            "status TEXT NOT NULL DEFAULT 'NEW'", "intervalDays INTEGER NOT NULL DEFAULT 0", "ease REAL NOT NULL DEFAULT 2.5",
+            "dueDate TEXT", "stage INTEGER NOT NULL DEFAULT 0", "lapses INTEGER NOT NULL DEFAULT 0",
+            "lastReviewedAt INTEGER NOT NULL DEFAULT 0"
+        ).forEach { db.execSQL("ALTER TABLE vocab_words ADD COLUMN $it") }
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_vocab_words_deckId` ON `vocab_words` (`deckId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_vocab_words_dueDate` ON `vocab_words` (`dueDate`)")
+
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `vocab_decks` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL DEFAULT 0)"
+        )
+        db.execSQL("INSERT INTO vocab_decks (id, name, sortOrder) VALUES (1, 'Mening so''zlarim', 1)")
+        db.execSQL(
+            "UPDATE vocab_words SET deckId = 1, status = 'REVIEW', intervalDays = 1, stage = 2, " +
+                "dueDate = date('now', 'localtime')"
+        )
+
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `vocab_reviews` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`wordId` INTEGER NOT NULL, `at` INTEGER NOT NULL, `day` TEXT NOT NULL, `grade` TEXT NOT NULL, " +
+                "`xp` INTEGER NOT NULL DEFAULT 0, `source` TEXT NOT NULL, `exercise` TEXT NOT NULL)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_vocab_reviews_wordId` ON `vocab_reviews` (`wordId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_vocab_reviews_day` ON `vocab_reviews` (`day`)")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `vocab_lessons` (`deckId` INTEGER NOT NULL, `lessonIndex` INTEGER NOT NULL, " +
+                "`completedAt` INTEGER NOT NULL, `accuracy` INTEGER NOT NULL, `xp` INTEGER NOT NULL, `seconds` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`deckId`, `lessonIndex`))"
         )
     }
 }
