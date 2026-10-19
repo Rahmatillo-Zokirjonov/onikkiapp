@@ -32,20 +32,36 @@ data class LearnHomeState(
     val next: PathLesson? = null,
     val due: List<VocabWord> = emptyList(),
     val totalXp: Int = 0,
+    val todayXp: Int = 0,
     val streak: Int = 0,
+    val studiedToday: Boolean = false,
     val wordCount: Int = 0,
+    val newToday: Int = 0,
+    /** Most-missed words, for the heart-refill practice. */
+    val hardest: List<VocabWord> = emptyList(),
     val isLoaded: Boolean = false
 )
 
 sealed interface SessionKind {
     data class Path(val lesson: PathLesson, val unitName: String) : SessionKind
     data object Review : SessionKind
+    /** Practising mistakes to win hearts back; ends when the bar is full. */
+    data object Heal : SessionKind
 }
 
 /** What the panel under an answered exercise shows. */
-data class Feedback(val verdict: Verdict, val rightAnswer: String?, val xp: Int)
+data class Feedback(val verdict: Verdict, val rightAnswer: String?, val xp: Int, val combo: Int)
 
-data class LessonSummary(val accuracy: Int, val seconds: Int, val xp: Int, val mistakes: List<VocabWord>, val answered: Int)
+data class LessonSummary(
+    val accuracy: Int,
+    val seconds: Int,
+    val xp: Int,
+    val mistakes: List<VocabWord>,
+    val answered: Int,
+    val bestCombo: Int,
+    /** This session was the first study of the day: the streak went up. */
+    val streakExtended: Boolean
+)
 
 data class LessonSession(
     val kind: SessionKind,
@@ -57,7 +73,12 @@ data class LessonSession(
     val startedAt: Long = System.currentTimeMillis(),
     val mistakes: List<VocabWord> = emptyList(),
     val feedback: Feedback? = null,
-    val summary: LessonSummary? = null
+    val summary: LessonSummary? = null,
+    val combo: Int = 0,
+    val bestCombo: Int = 0,
+    /** Hearts ran out mid-lesson (or before it): the lesson stops and offers practice. */
+    val outOfHearts: Boolean = false,
+    val studiedBefore: Boolean = true
 ) {
     val current: Exercise? get() = exercises.getOrNull(index)
     val progress: Float get() = if (exercises.isEmpty()) 0f else index / exercises.size.toFloat()
@@ -74,29 +95,74 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
     private val _session = MutableStateFlow<LessonSession?>(null)
     val session: StateFlow<LessonSession?> = _session
 
+    private val prefs = com.onikki.app.data.local.LearnPrefs(application)
+    val settings = prefs.settings
+    private val _hearts = MutableStateFlow(prefs.hearts())
+    val hearts: StateFlow<com.onikki.app.domain.vocab.HeartState> = _hearts
+
+    fun refreshHearts() { _hearts.value = prefs.hearts() }
+
+    fun updateSettings(transform: (com.onikki.app.data.local.LearnSettings) -> com.onikki.app.data.local.LearnSettings) = prefs.update(transform)
+
+    private fun setHearts(state: com.onikki.app.domain.vocab.HeartState) {
+        prefs.saveHearts(state)
+        _hearts.value = state
+    }
+
+    private val today = LocalDate.now()
+
+    private data class Counters(val totalXp: Int, val todayXp: Int, val days: List<LocalDate>, val newToday: Int, val missed: List<com.onikki.app.data.db.dao.VocabMissCount>)
+
+    private val counters = combine(
+        db.vocabReviewDao().observeTotalXp(),
+        db.vocabReviewDao().observeXpOn(today),
+        db.vocabReviewDao().observeActiveDays(),
+        db.vocabReviewDao().observeFirstSeenOn(today),
+        db.vocabReviewDao().observeMostMissed(12)
+    ) { total, todayXp, days, newToday, missed -> Counters(total, todayXp, days, newToday, missed) }
+
     val home: StateFlow<LearnHomeState> = combine(
         db.vocabDeckDao().observeAll(),
         db.vocabWordDao().observeInPathOrder(),
         db.vocabLessonDao().observeAll(),
-        db.vocabReviewDao().observeTotalXp(),
-        db.vocabReviewDao().observeActiveDays()
-    ) { decks, words, results, xp, days ->
+        counters
+    ) { decks, words, results, c ->
         allWords = words
         val units = LearningPath.build(decks, words, results)
-        val today = LocalDate.now()
+        val byId = words.associateBy { it.id }
         LearnHomeState(
             units = units,
             next = LearningPath.nextLesson(units),
             due = Srs.dueQueue(words, today),
-            totalXp = xp,
-            streak = Journal.streak(days.toSet(), today),
+            totalXp = c.totalXp,
+            todayXp = c.todayXp,
+            streak = Journal.streak(c.days.toSet(), today),
+            studiedToday = today in c.days,
             wordCount = words.size,
+            newToday = c.newToday,
+            hardest = c.missed.mapNotNull { byId[it.wordId] },
             isLoaded = true
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LearnHomeState())
 
     fun startLesson(lesson: PathLesson, unitName: String) {
+        refreshHearts()
+        if (_hearts.value.hearts <= 0) {
+            _session.value = LessonSession(SessionKind.Path(lesson, unitName), emptyList(), outOfHearts = true)
+            return
+        }
         begin(SessionKind.Path(lesson, unitName), LessonPlanner.lesson(lesson.words, allWords, random))
+    }
+
+    /** Win hearts back: the last session's mistakes first, then the most-missed words, then anything due. */
+    fun startHeal() {
+        val fromSession = _session.value?.mistakes.orEmpty()
+        val words = (fromSession + home.value.hardest + home.value.due + allWords.filter { it.status != com.onikki.app.data.db.entity.WordStatus.NEW })
+            .distinctBy { it.id }
+            .map { w -> allWords.firstOrNull { it.id == w.id } ?: w }
+            .take(LessonPlanner.MAX_REVIEW_WORDS)
+        if (words.isEmpty()) return
+        begin(SessionKind.Heal, LessonPlanner.review(words, allWords, random))
     }
 
     fun startReview() {
@@ -108,7 +174,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
     private fun begin(kind: SessionKind, exercises: List<Exercise>) {
         scheduler = SessionScheduler()
         retried.clear()
-        _session.value = LessonSession(kind, exercises)
+        _session.value = LessonSession(kind, exercises, studiedBefore = home.value.studiedToday)
     }
 
     /** An exercise reported its answers (empty for a card: just go on). */
@@ -128,6 +194,15 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             gainedXp += Srs.xpFor(grade, exercise.type.hard)
         }
         val missed = answers.filter { it.verdict == Verdict.WRONG }.mapNotNull { byId[it.wordId] }
+        // Hearts: lessons cost one per miss; the heal practice gives one per right answer.
+        val now = System.currentTimeMillis()
+        when (s.kind) {
+            is SessionKind.Path -> repeat(missed.size) { setHearts(com.onikki.app.domain.vocab.Hearts.lose(_hearts.value, now)) }
+            SessionKind.Heal -> repeat(answers.count { it.verdict != Verdict.WRONG }) { setHearts(com.onikki.app.domain.vocab.Hearts.gain(_hearts.value, now)) }
+            SessionKind.Review -> Unit
+        }
+        var combo = s.combo
+        answers.forEach { combo = com.onikki.app.domain.vocab.Combo.next(combo, it.verdict) }
         // A missed word comes back once at the end of the session as a plain question.
         val retries = missed.filter { retried.add(it.id) }.map { LessonPlanner.retry(it, allWords, random) }
         _session.update {
@@ -137,7 +212,9 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
                 correct = it.correct + answers.count { a -> a.verdict != Verdict.WRONG },
                 xp = it.xp + gainedXp,
                 mistakes = (it.mistakes + missed).distinctBy { w -> w.id },
-                feedback = Feedback(worst, rightAnswerOf(exercise), gainedXp)
+                combo = combo,
+                bestCombo = maxOf(it.bestCombo, combo),
+                feedback = Feedback(worst, rightAnswerOf(exercise), gainedXp, combo)
             )
         }
         viewModelScope.launch {
@@ -159,13 +236,18 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
     fun advance() {
         val s = _session.value ?: return
         val next = s.index + 1
-        if (next < s.exercises.size) {
+        if (s.kind is SessionKind.Path && _hearts.value.hearts <= 0) {
+            _session.value = s.copy(feedback = null, outOfHearts = true)
+            return
+        }
+        val healed = s.kind == SessionKind.Heal && _hearts.value.hearts >= com.onikki.app.domain.vocab.Hearts.MAX
+        if (next < s.exercises.size && !healed) {
             _session.value = s.copy(index = next, feedback = null)
             return
         }
         val seconds = ((System.currentTimeMillis() - s.startedAt) / 1000).toInt()
         val accuracy = if (s.graded == 0) 100 else s.correct * 100 / s.graded
-        val summary = LessonSummary(accuracy, seconds, s.xp, s.mistakes, s.graded)
+        val summary = LessonSummary(accuracy, seconds, s.xp, s.mistakes, s.graded, s.bestCombo, streakExtended = !s.studiedBefore && s.graded > 0)
         _session.value = s.copy(index = s.exercises.size, feedback = null, summary = summary)
         val kind = s.kind
         if (kind is SessionKind.Path) {

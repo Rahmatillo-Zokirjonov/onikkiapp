@@ -553,7 +553,7 @@ private fun WordChip(text: String, enabled: Boolean, onClick: () -> Unit) {
  * or red "Noto'g'ri" with the right answer, and a big Davom etish.
  */
 @Composable
-fun AnswerPanel(verdict: Verdict, rightAnswer: String?, onContinue: () -> Unit) {
+fun AnswerPanel(verdict: Verdict, rightAnswer: String?, onContinue: () -> Unit, xp: Int = 0, combo: Int = 0) {
     val colors = LocalOnIkkiColors.current
     val tint = when (verdict) {
         Verdict.CORRECT -> colors.habitAccent
@@ -564,17 +564,24 @@ fun AnswerPanel(verdict: Verdict, rightAnswer: String?, onContinue: () -> Unit) 
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)).background(tint.copy(alpha = 0.16f)).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            text = when (verdict) {
-                Verdict.CORRECT -> "✓ To'g'ri!"
-                Verdict.ALMOST -> "≈ Deyarli to'g'ri"
-                Verdict.WRONG -> "✗ Noto'g'ri"
-            },
-            color = tint,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = OnIkkiFontFamily
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = when (verdict) {
+                    Verdict.CORRECT -> "✓ To'g'ri!"
+                    Verdict.ALMOST -> "≈ Deyarli to'g'ri"
+                    Verdict.WRONG -> "✗ Noto'g'ri"
+                },
+                color = tint,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = OnIkkiFontFamily,
+                modifier = Modifier.weight(1f)
+            )
+            if (com.onikki.app.domain.vocab.Combo.shouldShow(combo)) {
+                Text(text = "🔥 $combo ketma-ket", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily, modifier = Modifier.padding(end = 10.dp))
+            }
+            if (xp > 0) Text(text = "+$xp XP", color = tint, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+        }
         if (verdict != Verdict.CORRECT && rightAnswer != null) {
             Text(text = "To'g'ri javob: $rightAnswer", color = colors.text, fontSize = 15.sp, fontFamily = OnIkkiFontFamily)
         }

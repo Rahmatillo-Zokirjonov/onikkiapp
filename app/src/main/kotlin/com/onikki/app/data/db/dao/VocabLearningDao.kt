@@ -47,6 +47,13 @@ interface VocabReviewDao {
     @Query("SELECT DISTINCT day FROM vocab_reviews ORDER BY day DESC LIMIT 400")
     fun observeActiveDays(): Flow<List<LocalDate>>
 
+    /** Words met for the very first time on [day] (their first logged answer) — the daily new-word count. */
+    @Query("SELECT COUNT(*) FROM (SELECT wordId, MIN(day) AS first FROM vocab_reviews GROUP BY wordId) WHERE first = :day")
+    fun observeFirstSeenOn(day: LocalDate): Flow<Int>
+
+    @Query("SELECT COALESCE(SUM(xp), 0) FROM vocab_reviews WHERE day = :day")
+    fun observeXpOn(day: LocalDate): Flow<Int>
+
     @Query("SELECT COALESCE(SUM(xp), 0) FROM vocab_reviews")
     fun observeTotalXp(): Flow<Int>
 
