@@ -68,7 +68,16 @@ class Speaker(context: Context) {
     }
 
     fun speak(text: String) {
-        if (ready) tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "onikki-word")
+        if (!ready) return
+        tts?.setSpeechRate(0.9f)
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "onikki-word")
+    }
+
+    /** Slower, for listening exercises (🐢). */
+    fun speakSlow(text: String) {
+        if (!ready) return
+        tts?.setSpeechRate(0.55f)
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "onikki-word-slow")
     }
 
     fun shutdown() {

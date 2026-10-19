@@ -80,6 +80,11 @@ private fun VocabularyScreen(state: VocabularyUiState, viewModel: VocabularyView
     var bulk by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var popularMessage by remember { mutableStateOf<String?>(null) }
+    var playground by remember { mutableStateOf(false) }
+    if (playground) {
+        com.onikki.app.ui.learn.ExercisePlaygroundRoute(onBack = { playground = false })
+        return
+    }
     val visible = state.words.filter {
         query.isBlank() || it.english.contains(query.trim(), true) || it.uzbek.contains(query.trim(), true)
     }
@@ -90,6 +95,15 @@ private fun VocabularyScreen(state: VocabularyUiState, viewModel: VocabularyView
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item { SubScreenHeader(title = "So'z yodlash", onBack = onBack) }
+            item {
+                Text(
+                    text = "🧪 Mashq turlarini sinab ko'rish",
+                    color = colors.accent,
+                    fontSize = 14.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.clickable { playground = true }.padding(vertical = 4.dp)
+                )
+            }
             item { ChallengeSettingsCard(state.settings, viewModel::updateSettings) }
 
             item {
