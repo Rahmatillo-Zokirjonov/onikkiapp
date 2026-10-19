@@ -18,7 +18,6 @@ import com.onikki.app.data.local.ChallengeSettingsStore
 import com.onikki.app.data.repository.AppGate
 import com.onikki.app.data.repository.BlockOverrides
 import com.onikki.app.data.repository.BlockReason
-import com.onikki.app.domain.screentime.VocabChallenge
 import com.onikki.app.ui.theme.OnIkkiTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -30,6 +29,9 @@ import java.time.LocalTime
  * finishing it after a passed challenge drops the user straight back into the app they opened.
  */
 class BlockedScreenActivity : ComponentActivity() {
+    /** One challenge = one session: a word's schedule moves once even if it's asked twice. */
+    private val scheduler = com.onikki.app.domain.vocab.SessionScheduler()
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,10 +57,18 @@ class BlockedScreenActivity : ComponentActivity() {
                     ChallengeScreen(
                         appName = appName,
                         spec = spec,
-                        onAnswer = { wordId, correct ->
+                        onAnswer = { answer, exercise ->
+                            // Same path as lessons: SRS (once per word per challenge) + the answer log + XP.
+                            val grade = com.onikki.app.domain.vocab.Srs.gradeFor(answer.verdict, answer.usedHint)
+                            val schedule = scheduler.gradeToApply(answer.wordId, grade) != null
                             lifecycleScope.launch {
-                                app.database.vocabWordDao().recordAnswer(
-                                    wordId, if (correct) 1 else 0, if (correct) 0 else 1, System.currentTimeMillis()
+                                com.onikki.app.data.repository.LearnRepository(app.database).recordAnswer(
+                                    wordId = answer.wordId,
+                                    grade = grade,
+                                    source = com.onikki.app.data.db.entity.ReviewSource.BLOCKER,
+                                    exercise = exercise.type.name,
+                                    hardExercise = exercise.type.hard,
+                                    schedule = schedule
                                 )
                             }
                         },
@@ -110,15 +120,9 @@ class BlockedScreenActivity : ComponentActivity() {
         val words = app.database.vocabWordDao().getAll()
         // No words yet → the typed phrase still works as a challenge.
         return if (settings.mode == ChallengeMode.WORDS && words.isNotEmpty()) {
-            ChallengeSpec(
-                questions = VocabChallenge.pickQuestions(
-                    words, settings.wordCount.coerceAtMost(words.size), settings.direction, type = settings.questionType
-                ),
-                phrase = null,
-                graceMinutes = settings.graceMinutes
-            )
+            ChallengeSpec(words = words, needed = settings.wordCount, type = settings.questionType, phrase = null, graceMinutes = settings.graceMinutes)
         } else {
-            ChallengeSpec(questions = emptyList(), phrase = settings.phrase, graceMinutes = settings.graceMinutes)
+            ChallengeSpec(words = emptyList(), needed = 0, type = settings.questionType, phrase = settings.phrase, graceMinutes = settings.graceMinutes)
         }
     }
 

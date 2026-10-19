@@ -31,7 +31,21 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.onikki.app.domain.screentime.ChallengeQuestion
+import com.onikki.app.data.db.entity.VocabWord
+import com.onikki.app.data.local.QuestionType
+import com.onikki.app.domain.vocab.BlockerChallenge
+import com.onikki.app.domain.vocab.Exercise
+import com.onikki.app.domain.vocab.Srs
+import com.onikki.app.ui.learn.AnswerPanel
+import com.onikki.app.ui.learn.ExerciseView
+import com.onikki.app.ui.learn.WordAnswer
+import com.onikki.app.ui.learn.rememberFeedbackFx
+import com.onikki.app.ui.learn.rightAnswerOf
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.key
+import java.time.LocalDate
+import kotlin.random.Random
 import com.onikki.app.domain.screentime.QuestionKind
 import com.onikki.app.domain.vocab.AnswerCheck
 import com.onikki.app.domain.vocab.Verdict
@@ -52,36 +66,47 @@ import com.onikki.app.ui.theme.OnIkkiFontFamily
 import com.onikki.app.ui.theme.OnIkkiType
 import com.onikki.app.ui.theme.muted
 
-/** What the user must do to get in: answer [questions], or (when empty) type [phrase]. */
-data class ChallengeSpec(val questions: List<ChallengeQuestion>, val phrase: String?, val graceMinutes: Int)
+/**
+ * What the user must do to get in: [needed] right answers on [words] (the learning words, due ones
+ * first — see BlockerChallenge), or, when there are no words, type [phrase].
+ */
+data class ChallengeSpec(
+    val words: List<VocabWord>,
+    val needed: Int,
+    val type: QuestionType,
+    val phrase: String?,
+    val graceMinutes: Int
+)
 
 /**
- * The unlock challenge. Words: each must be answered correctly; a wrong answer shows the right one and
- * the word comes back at the end, so the only way through is actually knowing them. Phrase: type it exactly.
+ * The unlock challenge. Words: right answers open the app, at least one typed; a miss shows the right
+ * answer and the next question takes another word. Every answer goes into the learning schedule.
+ * Phrase: type it exactly.
  */
 @Composable
 fun ChallengeScreen(
     appName: String,
     spec: ChallengeSpec,
-    onAnswer: (wordId: Long, correct: Boolean) -> Unit,
+    onAnswer: (WordAnswer, Exercise) -> Unit,
     onPassed: () -> Unit,
     onGiveUp: () -> Unit
 ) {
     BackHandler(onBack = onGiveUp)
     val colors = LocalOnIkkiColors.current
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
             .systemBarsPadding()
             .imePadding()
-            .padding(22.dp),
-        contentAlignment = Alignment.Center
+            .verticalScroll(rememberScrollState())
+            .padding(18.dp),
+        verticalArrangement = Arrangement.Center
     ) {
-        OnIkkiCard(modifier = Modifier.fillMaxWidth(), padding = androidx.compose.foundation.layout.PaddingValues(20.dp), gap = 12.dp) {
+        OnIkkiCard(modifier = Modifier.fillMaxWidth(), padding = androidx.compose.foundation.layout.PaddingValues(18.dp), gap = 12.dp) {
             Text(text = "$appName ni ochish uchun".uppercase(), color = colors.accent, style = OnIkkiType.kicker)
-            if (spec.questions.isNotEmpty()) {
-                WordQuiz(spec.questions, onAnswer, onPassed)
+            if (spec.words.isNotEmpty()) {
+                LearnQuiz(spec, onAnswer, onPassed)
             } else {
                 PhraseTask(spec.phrase.orEmpty(), onPassed)
             }
@@ -102,200 +127,61 @@ fun ChallengeScreen(
     }
 }
 
-/** Where the current question stands after "Tekshirish". */
-private sealed interface Outcome {
-    data object Asking : Outcome
-    data class Almost(val right: String) : Outcome
-    data class Wrong(val right: String) : Outcome
-}
-
 @Composable
-private fun WordQuiz(
-    questions: List<ChallengeQuestion>,
-    onAnswer: (wordId: Long, correct: Boolean) -> Unit,
-    onPassed: () -> Unit
-) {
+private fun LearnQuiz(spec: ChallengeSpec, onAnswer: (WordAnswer, Exercise) -> Unit, onPassed: () -> Unit) {
     val colors = LocalOnIkkiColors.current
     val speaker = rememberSpeaker()
-    var queue by remember { mutableStateOf(questions) }
-    var solved by remember { mutableIntStateOf(0) }
-    var typed by remember { mutableStateOf("") }
-    var hints by remember { mutableIntStateOf(0) }
-    var outcome by remember { mutableStateOf<Outcome>(Outcome.Asking) }
-    var picked by remember { mutableStateOf<String?>(null) }
-    val focus = remember { FocusRequester() }
-    val current = queue.firstOrNull()
-
+    val fx = rememberFeedbackFx()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val learnSettings = remember { com.onikki.app.data.local.LearnPrefs(context).settings.value }
+    val challenge = remember { BlockerChallenge(spec.words, LocalDate.now(), spec.needed.coerceAtLeast(1), spec.type, Random(System.nanoTime())) }
+    var exercise by remember { mutableStateOf(challenge.next()) }
+    var round by remember { mutableIntStateOf(0) }
+    var feedback by remember { mutableStateOf<Triple<Verdict, String?, Int>?>(null) }
+    val current = exercise
     if (current == null) {
         LaunchedEffect(Unit) { onPassed() }
         return
     }
-    val slots = remember(current) { AnswerCheck.slots(current.primaryAnswer) }
-    val letterCount = AnswerCheck.letterCount(slots)
-    val answerLetters = remember(current) { AnswerCheck.letters(current.primaryAnswer) }
 
-    LaunchedEffect(current) {
-        if (current.kind != QuestionKind.CHOICE) runCatching { focus.requestFocus() }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "${challenge.solved} / ${challenge.needed} to'g'ri",
+            color = colors.text,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = OnIkkiFontFamily,
+            modifier = Modifier.weight(1f)
+        )
+        if (!challenge.typedDone) Text(text = "✍ kamida 1 tasi yozib", color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
     }
-    // Listening questions say the word as soon as they appear (the voice may need a moment to load).
-    LaunchedEffect(current, speaker.ready) {
-        if (current.kind == QuestionKind.LISTEN && speaker.ready) speaker.speak(current.primaryAnswer)
-    }
-
-    fun next(moveToBack: Boolean) {
-        queue = if (moveToBack) queue.drop(1) + current else queue.drop(1)
-        if (!moveToBack) solved++
-        typed = ""
-        hints = 0
-        picked = null
-        outcome = Outcome.Asking
-    }
-
-    fun check(answer: String) {
-        when (outcome) {
-            is Outcome.Almost -> { next(moveToBack = false); return }
-            is Outcome.Wrong -> { next(moveToBack = true); return }
-            Outcome.Asking -> Unit
-        }
-        if (AnswerCheck.letters(answer).isEmpty()) return
-        // A word solved with letter hints still passes, but counts as "not known yet" for practice.
-        when (VocabChallenge.judge(answer, current)) {
-            Verdict.CORRECT -> { onAnswer(current.word.id, hints == 0); next(moveToBack = false) }
-            Verdict.ALMOST -> { onAnswer(current.word.id, hints == 0); outcome = Outcome.Almost(current.shownAnswer) }
-            Verdict.WRONG -> { onAnswer(current.word.id, false); outcome = Outcome.Wrong(current.shownAnswer) }
+    LinearProgressTrack(progress = challenge.solved / challenge.needed.toFloat(), trackColor = colors.neutral800, progressColor = colors.habitAccent)
+    key(round) {
+        ExerciseView(current, speaker) { answers ->
+            val a = answers.firstOrNull() ?: return@ExerciseView
+            challenge.answer(current, a.verdict)
+            onAnswer(a, current)
+            fx.play(a.verdict, learnSettings.sound, learnSettings.vibration)
+            val grade = Srs.gradeFor(a.verdict, a.usedHint)
+            feedback = Triple(a.verdict, rightAnswerOf(current), Srs.xpFor(grade, current.type.hard))
         }
     }
-
-    Text(
-        text = when (current.kind) {
-            QuestionKind.LISTEN -> "Eshiting va inglizcha yozing"
-            QuestionKind.CHOICE -> "To'g'ri tarjimani tanlang"
-            QuestionKind.TYPE -> "So'zni ${if (current.toUzbek) "o'zbekchaga" else "inglizchaga"} tarjima qiling"
-        },
-        color = colors.text.muted(0.6f),
-        fontSize = 13.sp,
-        fontFamily = OnIkkiFontFamily
-    )
-    LinearProgressTrack(progress = solved / questions.size.toFloat(), trackColor = colors.neutral800, progressColor = colors.accent)
-
-    if (current.kind == QuestionKind.LISTEN) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            SpeakButton(speaker, current.primaryAnswer, big = true)
-            Text(
-                text = if (speaker.ready) "Ma'nosi: ${current.prompt}" else "Ovoz yo'q — ma'nosi: ${current.prompt}",
-                color = colors.text.muted(0.55f),
-                fontSize = 13.sp,
-                fontFamily = OnIkkiFontFamily
-            )
-        }
-    } else {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-            Text(
-                text = current.prompt,
-                color = colors.text,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Medium,
-                fontFamily = OnIkkiFontFamily,
-                textAlign = TextAlign.Center
-            )
-            if (current.toUzbek) {
-                Box(modifier = Modifier.padding(start = 10.dp)) { SpeakButton(speaker, current.prompt) }
-            }
-        }
-    }
-
-    if (current.kind == QuestionKind.CHOICE) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            current.options.forEach { option ->
-                val isRight = AnswerCheck.letters(option) == AnswerCheck.letters(current.primaryAnswer)
-                val bg = when {
-                    picked == null -> colors.surface
-                    isRight -> colors.habitAccent.copy(alpha = 0.25f)
-                    option == picked -> colors.warmAccent.copy(alpha = 0.25f)
-                    else -> colors.surface
+    feedback?.let { (verdict, right, xp) ->
+        AnswerPanel(
+            verdict = verdict,
+            rightAnswer = right,
+            xp = xp,
+            onContinue = {
+                if (challenge.passed) onPassed()
+                else {
+                    feedback = null
+                    exercise = challenge.next()
+                    round++
                 }
-                Text(
-                    text = option,
-                    color = colors.text,
-                    fontSize = 16.sp,
-                    fontFamily = OnIkkiFontFamily,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(bg, RoundedCornerShape(12.dp))
-                        .border(1.dp, colors.cardBorder, RoundedCornerShape(12.dp))
-                        .clickable(enabled = picked == null) {
-                            picked = option
-                            if (isRight) {
-                                onAnswer(current.word.id, true)
-                                next(moveToBack = false)
-                            } else {
-                                onAnswer(current.word.id, false)
-                                outcome = Outcome.Wrong(current.shownAnswer)
-                            }
-                        }
-                        .padding(vertical = 13.dp, horizontal = 12.dp)
-                )
-            }
-        }
-    } else {
-        LetterBoxInput(
-            answer = current.primaryAnswer,
-            typed = typed,
-            onTyped = { if (outcome == Outcome.Asking) typed = it },
-            onDone = { check(AnswerCheck.assemble(slots, typed)) },
-            focusRequester = focus,
-            state = when (outcome) {
-                Outcome.Asking -> BoxState.TYPING
-                is Outcome.Almost -> BoxState.RIGHT
-                is Outcome.Wrong -> BoxState.WRONG
             }
         )
-        if (current.answers.size > 1 && outcome == Outcome.Asking) {
-            Text(
-                text = "Boshqa to'g'ri javoblar ham bor — kataklar birinchisiga mos",
-                color = colors.text.muted(0.4f),
-                fontSize = 11.sp,
-                fontFamily = OnIkkiFontFamily
-            )
-        }
-    }
-
-    when (val o = outcome) {
-        is Outcome.Almost -> Text(
-            text = "Deyarli to'g'ri! To'g'ri yozilishi: ${o.right}",
-            color = colors.habitAccent,
-            fontSize = 13.sp,
-            fontFamily = OnIkkiFontFamily
-        )
-        is Outcome.Wrong -> Text(
-            text = "Noto'g'ri. To'g'ri javob: ${o.right}",
-            color = colors.warmAccent,
-            fontSize = 13.sp,
-            fontFamily = OnIkkiFontFamily
-        )
-        Outcome.Asking -> Unit
-    }
-
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = "$solved / ${questions.size}", color = colors.text.muted(0.5f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(1f))
-        if (current.kind != QuestionKind.CHOICE && outcome == Outcome.Asking && typed.length < letterCount) {
-            // Each hint fills in the next correct letter (the typed part is corrected first).
-            OnIkkiButton(
-                text = "💡 Harf",
-                onClick = {
-                    val correctPrefix = typed.zip(answerLetters).takeWhile { (a, b) -> a == b }.size
-                    typed = answerLetters.take(correctPrefix + 1)
-                    hints++
-                },
-                variant = OnIkkiButtonVariant.SECONDARY
-            )
-        }
-        if (current.kind != QuestionKind.CHOICE || outcome != Outcome.Asking) {
-            OnIkkiButton(
-                text = if (outcome == Outcome.Asking) "Tekshirish" else "Keyingi",
-                onClick = { check(AnswerCheck.assemble(slots, typed)) }
-            )
+        if (verdict == Verdict.WRONG) {
+            Text(text = "Keyingi savol boshqa so'zdan bo'ladi", color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
         }
     }
 }

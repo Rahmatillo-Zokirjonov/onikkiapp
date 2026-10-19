@@ -202,25 +202,22 @@ private fun ChallengeSettingsCard(settings: ChallengeSettings, update: ((Challen
         ChipRow(ChallengeMode.entries.map { it to it.label }, settings.mode) { mode -> update { it.copy(mode = mode) } }
 
         if (settings.mode == ChallengeMode.WORDS) {
-            SheetFieldLabel("Har safar nechta so'z")
+            SheetFieldLabel("Ochish uchun nechta to'g'ri javob")
             ChipRow(ChallengeSettings.WORD_COUNT_OPTIONS.map { it to "$it ta" }, settings.wordCount) { n -> update { it.copy(wordCount = n) } }
             SheetFieldLabel("Savol turi")
             ChipRow(QuestionType.entries.map { it to it.label }, settings.questionType) { t -> update { it.copy(questionType = t) } }
             Text(
                 text = when (settings.questionType) {
-                    QuestionType.TYPE -> "Har harf uchun katakcha — bo'sh joy va apostrof o'zi qo'yiladi, bitta harf xatosi kechiriladi."
-                    QuestionType.CHOICE -> "4 ta variantdan to'g'risini tanlaysiz (kamida 4 ta so'z kerak)."
-                    QuestionType.LISTEN -> "Telefon so'zni inglizcha aytadi, siz eshitib yozasiz."
-                    QuestionType.MIXED -> "Yozish, variant tanlash va eshitib yozish aralash keladi."
-                },
+                    QuestionType.TYPE -> "O'zbekchasi ko'rsatiladi, inglizchasini katakchalarga yozasiz; bitta harf xatosi kechiriladi."
+                    QuestionType.CHOICE -> "O'zbekchasiga qarab 4 ta inglizcha variantdan tanlaysiz."
+                    QuestionType.LISTEN -> "Telefon so'zni inglizcha aytadi, siz ma'nosini tanlaysiz."
+                    QuestionType.MIXED -> "Yozish, tanlash va tinglash aralash keladi."
+                } + " Avval muddati kelgan so'zlar so'raladi, kamida bittasi albatta yozish bo'ladi; javoblar O'rganish jadvaliga yoziladi.",
                 color = colors.text.muted(0.5f),
                 fontSize = 11.sp,
                 fontFamily = OnIkkiFontFamily
             )
-            if (settings.questionType != QuestionType.LISTEN) {
-                SheetFieldLabel("Yo'nalish")
-                ChipRow(ChallengeDirection.entries.map { it to it.label }, settings.direction) { d -> update { it.copy(direction = d) } }
-            }
+
         } else {
             OutlinedTextField(
                 value = phrase,
