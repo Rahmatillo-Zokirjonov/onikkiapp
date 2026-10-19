@@ -203,6 +203,16 @@ private fun LearnHome(
                 }
             }
         }
+        item {
+            BigAction(
+                kicker = "✍️ GAP TUZISH",
+                title = "O'zbekchadan tarjima va o'z gapingiz",
+                subtitle = if (state.wordCount > state.unsorted.size) "5 ta so'z · bloklardan yig'ish, yozish, AI tekshiruvi (ixtiyoriy)" else "Avval bir nechta so'z o'rganing",
+                enabled = state.due.isNotEmpty() || state.units.any { u -> u.lessons.any { l -> l.words.any { it.status != com.onikki.app.data.db.entity.WordStatus.NEW } } },
+                primary = false,
+                onClick = viewModel::startSentences
+            )
+        }
         if (state.verbs.isNotEmpty()) {
             item {
                 BigAction(
@@ -441,7 +451,7 @@ private fun LessonRunner(s: LessonSession, hearts: Int, settings: com.onikki.app
             when (s.kind) {
                 is SessionKind.Path -> Text(text = "❤️ $hearts", color = colors.warmAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
                 SessionKind.Heal -> Text(text = "❤️ $hearts/${com.onikki.app.domain.vocab.Hearts.MAX}", color = colors.warmAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
-                SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs -> Text(text = "⭐ ${s.xp}", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+                SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs, SessionKind.Sentences -> Text(text = "⭐ ${s.xp}", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
             }
         }
         Column(
@@ -459,7 +469,7 @@ private fun LessonRunner(s: LessonSession, hearts: Int, settings: com.onikki.app
             }
             // Each exercise gets fresh state.
             key(s.index, exercise) {
-                ExerciseView(exercise, speaker) { answers -> viewModel.answer(answers) }
+                ExerciseView(exercise, speaker, viewModel.checkSentence) { answers -> viewModel.answer(answers) }
             }
         }
         s.feedback?.let { fb ->
@@ -478,6 +488,7 @@ private fun LessonResult(s: LessonSession, streak: Int, onDone: () -> Unit, onPr
         SessionKind.Heal -> "Jonlar tiklandi!"
         SessionKind.Relearn -> "Bilmaganlar takrorlandi!"
         SessionKind.Verbs -> "Fe'llar mashqi tugadi!"
+        SessionKind.Sentences -> "Gap tuzish tugadi!"
     }
     // A small celebration: the trophy pops in and the XP counts up.
     var shown by remember { mutableStateOf(false) }

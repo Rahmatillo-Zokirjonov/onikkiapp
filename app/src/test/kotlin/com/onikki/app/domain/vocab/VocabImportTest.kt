@@ -9,7 +9,7 @@ class VocabImportTest {
     fun lessonOneHasTwentyWordsWithExamplesAndPastForms() {
         val words = VocabImport.parse(VocabImport.LESSON_1)
         assertEquals(20, words.size)
-        assertEquals(ImportedWord("decide", "qaror qilmoq", "I decided to study English.", "decided"), words[0])
+        assertEquals(ImportedWord("decide", "qaror qilmoq", "I decided to study English.", "decided", exampleUz = "Men ingliz tilini o'rganishga qaror qildim."), words[0])
         assertEquals("spent", words.first { it.english == "spend" }.pastForm)
         assertEquals("sarflamoq, o'tkazmoq", words.first { it.english == "spend" }.uzbek)
         assertNull(words.first { it.english == "remember" }.pastForm)

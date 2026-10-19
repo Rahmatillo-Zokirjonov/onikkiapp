@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -55,7 +56,16 @@ import com.onikki.app.ui.vocabulary.LetterBoxInput
 import com.onikki.app.ui.vocabulary.Speaker
 
 /** How one word was answered inside an exercise (Match reports five). */
-data class WordAnswer(val wordId: Long, val verdict: Verdict, val usedHint: Boolean = false)
+data class WordAnswer(
+    val wordId: Long,
+    val verdict: Verdict,
+    val usedHint: Boolean = false,
+    /** Shown in the answer panel instead of the fixed right answer (the AI's correction of an own sentence). */
+    val note: String? = null
+)
+
+/** Checks an own sentence with the AI; null = no key / offline / failed, so the offline check is used. */
+typealias SentenceChecker = suspend (VocabWord, String) -> com.onikki.app.domain.vocab.SentenceVerdict?
 
 /**
  * One exercise. It takes the answer, shows right/wrong on its own controls, then calls [onAnswer] once;
@@ -63,7 +73,7 @@ data class WordAnswer(val wordId: Long, val verdict: Verdict, val usedHint: Bool
  * an empty list when the user is ready.
  */
 @Composable
-fun ExerciseView(exercise: Exercise, speaker: Speaker, onAnswer: (List<WordAnswer>) -> Unit) {
+fun ExerciseView(exercise: Exercise, speaker: Speaker, checkSentence: SentenceChecker? = null, onAnswer: (List<WordAnswer>) -> Unit) {
     when (exercise) {
         is Exercise.Card -> CardExercise(exercise.word, speaker, onDone = { onAnswer(emptyList()) })
         is Exercise.Choose -> OptionsExercise(
@@ -95,6 +105,8 @@ fun ExerciseView(exercise: Exercise, speaker: Speaker, onAnswer: (List<WordAnswe
             onRevealed = { speaker.speak(verbLine(exercise.word)) }
         )
         is Exercise.Forms -> FormsExercise(exercise, speaker, onAnswer)
+        is Exercise.Translate -> TranslateExercise(exercise, speaker, onAnswer)
+        is Exercise.Compose -> ComposeExercise(exercise, speaker, checkSentence, onAnswer)
         is Exercise.Dictate -> TypedAnswer(
             title = "Eshiting va yozing",
             prompt = { ListenPrompt(exercise.word.english, speaker) },
@@ -567,11 +579,14 @@ private fun BuildExercise(ex: Exercise.Build, speaker: Speaker, onAnswer: (List<
     // Bank indices, so repeated words ("I ... I") stay distinct.
     val chosen = remember(ex) { mutableStateListOf<Int>() }
     var verdict by remember(ex) { mutableStateOf<Verdict?>(null) }
-    LaunchedEffect(ex, speaker.ready) { if (speaker.ready) speaker.speak(ex.sentence) }
+    val translated = ex.translation != null
+    LaunchedEffect(ex, speaker.ready) { if (speaker.ready && !translated) speaker.speak(ex.sentence) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ExerciseTitle("Gapni tinglang va yig'ing")
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        ExerciseTitle(if (translated) "Inglizchaga tarjima qiling" else "Gapni tinglang va yig'ing")
+        if (translated) {
+            UzbekSentence(ex.translation!!)
+        } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SpeakerButton(speaker, ex.sentence, size = 56)
             SpeakerButton(speaker, ex.sentence, size = 44, slow = true)
             Text(
@@ -622,10 +637,130 @@ private fun BuildExercise(ex: Exercise.Build, speaker: Speaker, onAnswer: (List<
                     if (chosen.isEmpty()) return@OnIkkiButton
                     val v = Exercises.checkBuild(chosen.map { ex.bank[it] }, ex.tokens)
                     verdict = v
+                    if (translated) speaker.speak(ex.sentence)
                     onAnswer(listOf(WordAnswer(ex.word.id, v)))
                 },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun UzbekSentence(text: String) {
+    val colors = LocalOnIkkiColors.current
+    Text(
+        text = text,
+        color = colors.text,
+        fontSize = 20.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontFamily = OnIkkiFontFamily,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).padding(18.dp)
+    )
+}
+
+/** Uzbek sentence → type it in English; one slipped word counts as "deyarli". */
+@Composable
+private fun TranslateExercise(ex: Exercise.Translate, speaker: Speaker, onAnswer: (List<WordAnswer>) -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    var text by remember(ex) { mutableStateOf("") }
+    var verdict by remember(ex) { mutableStateOf<Verdict?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ExerciseTitle("Gapni inglizcha yozing")
+        UzbekSentence(ex.uzbek)
+        Text(text = "Kalit so'z: ${ex.word.english}", color = colors.text.muted(0.55f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+        androidx.compose.material3.OutlinedTextField(
+            value = text,
+            onValueChange = { if (verdict == null) text = it },
+            label = { Text("English") },
+            minLines = 2,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences, autoCorrectEnabled = false),
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (verdict == null) {
+            OnIkkiButton(
+                text = "Tekshirish",
+                onClick = {
+                    if (text.isBlank()) return@OnIkkiButton
+                    val v = com.onikki.app.domain.vocab.SentenceCheck.compare(text, ex.answer)
+                    verdict = v
+                    speaker.speak(ex.answer)
+                    onAnswer(listOf(WordAnswer(ex.word.id, v)))
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
+            )
+        }
+    }
+}
+
+/** The word in an own sentence: the AI checks grammar and meaning when it can, otherwise only that the word is used. */
+@Composable
+private fun ComposeExercise(ex: Exercise.Compose, speaker: Speaker, checkSentence: SentenceChecker?, onAnswer: (List<WordAnswer>) -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var text by remember(ex) { mutableStateOf("") }
+    var checking by remember(ex) { mutableStateOf(false) }
+    var done by remember(ex) { mutableStateOf(false) }
+    var error by remember(ex) { mutableStateOf<String?>(null) }
+
+    fun finish(result: com.onikki.app.domain.vocab.SentenceVerdict) {
+        done = true
+        checking = false
+        val note = listOfNotNull(result.corrected?.let { "✔ $it" }, result.note.ifBlank { null }).joinToString("\n").ifBlank { null }
+        onAnswer(listOf(WordAnswer(ex.word.id, result.verdict, note = note)))
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ExerciseTitle("Shu so'z bilan o'zingiz gap tuzing")
+        VerbPrompt(ex.word, speaker)
+        androidx.compose.material3.OutlinedTextField(
+            value = text,
+            onValueChange = { if (!done && !checking) { text = it; error = null } },
+            label = { Text("Inglizcha gapingiz") },
+            minLines = 2,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = if (checkSentence != null) "AI grammatika va ma'noni tekshiradi (kalit bo'lsa). Kalitsiz — so'z ishlatilgani tekshiriladi." else "So'z gapda ishlatilgani tekshiriladi.",
+            color = colors.text.muted(0.5f),
+            fontSize = 12.sp,
+            fontFamily = OnIkkiFontFamily
+        )
+        error?.let { Text(text = it, color = colors.warmAccent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily) }
+        if (!done) {
+            if (checking) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
+                    androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = colors.accent)
+                    Text(text = "Tekshirilmoqda…", color = colors.text.muted(0.7f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+                }
+            } else {
+                OnIkkiButton(
+                    text = "Tekshirish",
+                    onClick = {
+                        val sentence = text.trim()
+                        if (sentence.isEmpty()) return@OnIkkiButton
+                        // The obvious misses are caught at once, without spending an AI call.
+                        val quick = com.onikki.app.domain.vocab.SentenceCheck.offline(sentence, ex.word)
+                        if (quick.verdict == Verdict.WRONG || checkSentence == null) {
+                            if (quick.verdict == Verdict.WRONG) { error = quick.note; return@OnIkkiButton }
+                            finish(quick)
+                            return@OnIkkiButton
+                        }
+                        checking = true
+                        scope.launch { finish(checkSentence(ex.word, sentence) ?: quick) }
+                    },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
+                )
+                OnIkkiButton(
+                    text = "Bilmayman — misolni ko'rsat",
+                    onClick = {
+                        finish(com.onikki.app.domain.vocab.SentenceVerdict(Verdict.WRONG, ex.word.example, ex.word.exampleUz ?: "Misol gapni o'qing va keyingi safar o'zingiz tuzing."))
+                    },
+                    variant = OnIkkiButtonVariant.SECONDARY,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
@@ -706,6 +841,8 @@ fun rightAnswerOf(exercise: Exercise): String? = when (exercise) {
     is Exercise.FormChoice -> verbLine(exercise.word).replace(", ", " — ")
     is Exercise.Forms -> verbLine(exercise.word).replace(", ", " — ")
     is Exercise.Dictate -> "${exercise.word.english} — ${Exercises.primary(exercise.word.uzbek)}"
+    is Exercise.Translate -> exercise.answer
+    is Exercise.Compose -> exercise.word.example
 }
 
 /** Kicker style re-export for screens in this package. */

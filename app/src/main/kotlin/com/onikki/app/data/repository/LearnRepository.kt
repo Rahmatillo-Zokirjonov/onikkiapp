@@ -53,11 +53,10 @@ class LearnRepository(private val db: AppDatabase) {
             val known = existing[key]
             if (known != null) {
                 skipped++
-                if ((known.example == null && item.example != null) || (known.pastForm == null && item.pastForm != null) || (known.participle == null && item.participle != null)) {
-                    words.update(known.copy(example = known.example ?: item.example, pastForm = known.pastForm ?: item.pastForm, participle = known.participle ?: item.participle))
-                }
+                val merged = merge(known, item)
+                if (merged != known) words.update(merged)
             } else {
-                val w = VocabWord(english = item.english.trim(), uzbek = item.uzbek.trim(), example = item.example, pastForm = item.pastForm, participle = item.participle, level = level, deckId = deckId)
+                val w = VocabWord(english = item.english.trim(), uzbek = item.uzbek.trim(), example = item.example, pastForm = item.pastForm, participle = item.participle, exampleUz = item.exampleUz, level = level, deckId = deckId)
                 existing[key] = w.copy(id = words.insert(w))
                 added++
             }
@@ -85,6 +84,17 @@ class LearnRepository(private val db: AppDatabase) {
         return AnswerOutcome(updated, xp)
     }
 
+    /** A word already in the list gets what it lacks (example + its translation, V2, V3) — never overwritten. */
+    private fun merge(known: VocabWord, item: com.onikki.app.domain.vocab.ImportedWord): VocabWord {
+        val sameExample = known.example == null || item.example == null || known.example.equals(item.example, ignoreCase = true)
+        return known.copy(
+            example = known.example ?: item.example,
+            exampleUz = known.exampleUz ?: item.exampleUz?.takeIf { sameExample },
+            pastForm = known.pastForm ?: item.pastForm,
+            participle = known.participle ?: item.participle
+        )
+    }
+
     /** "Bilaman / Bilmayman" sorting of a new word. */
     suspend fun sortWord(wordId: Long, known: Boolean, nowMillis: Long = System.currentTimeMillis()) {
         val word = words.findById(wordId) ?: return
@@ -110,6 +120,7 @@ object VocabSeeder {
     private const val PREFS = "vocab_seed"
     private const val KEY_LESSON_1 = "lesson1_v1"
     private const val KEY_IRREGULAR = "irregular_v1"
+    private const val KEY_EXAMPLE_UZ = "example_uz_v1"
     const val MY_WORDS = "Mening so'zlarim"
 
     suspend fun ensure(context: Context, db: AppDatabase) {
@@ -126,7 +137,7 @@ object VocabSeeder {
             VocabImport.parse(VocabImport.LESSON_1).forEach { w ->
                 val known = existing[AnswerCheck.normalize(w.english)]
                 if (known == null) {
-                    wordDao.insert(VocabWord(english = w.english, uzbek = w.uzbek, example = w.example, pastForm = w.pastForm, level = "A2", deckId = lessonDeck))
+                    wordDao.insert(VocabWord(english = w.english, uzbek = w.uzbek, example = w.example, exampleUz = w.exampleUz, pastForm = w.pastForm, level = "A2", deckId = lessonDeck))
                 } else if (known.example == null || known.pastForm == null) {
                     // Already in the user's list: just give it the example / past form.
                     wordDao.update(known.copy(example = known.example ?: w.example, pastForm = known.pastForm ?: w.pastForm))
@@ -137,6 +148,24 @@ object VocabSeeder {
         if (!prefs.getBoolean(KEY_IRREGULAR, false)) {
             seedIrregular(db)
             prefs.edit().putBoolean(KEY_IRREGULAR, true).apply()
+        }
+        if (!prefs.getBoolean(KEY_EXAMPLE_UZ, false)) {
+            backfillExampleUz(db)
+            prefs.edit().putBoolean(KEY_EXAMPLE_UZ, true).apply()
+        }
+    }
+
+    /** Starter words seeded before example translations existed get them (only when the example is the seeded one). */
+    private suspend fun backfillExampleUz(db: AppDatabase) {
+        val wordDao = db.vocabWordDao()
+        val seeded = (VocabImport.parse(VocabImport.LESSON_1) + IrregularVerbs.ALL.flatMap { VocabImport.parse(it.second) })
+            .filter { it.example != null && it.exampleUz != null }
+            .associateBy { AnswerCheck.normalize(it.english) }
+        wordDao.getAll().forEach { w ->
+            val s = seeded[AnswerCheck.normalize(w.english)] ?: return@forEach
+            if (w.exampleUz == null && w.example != null && w.example.equals(s.example, ignoreCase = true)) {
+                wordDao.update(w.copy(exampleUz = s.exampleUz))
+            }
         }
     }
 
@@ -156,7 +185,7 @@ object VocabSeeder {
                 val known = existing[AnswerCheck.normalize(v.english)]
                 if (known == null) {
                     wordDao.insert(
-                        VocabWord(english = v.english, uzbek = v.uzbek, example = v.example, pastForm = v.pastForm, participle = v.participle, partOfSpeech = "verb", level = level, deckId = deckId)
+                        VocabWord(english = v.english, uzbek = v.uzbek, example = v.example, exampleUz = v.exampleUz, pastForm = v.pastForm, participle = v.participle, partOfSpeech = "verb", level = level, deckId = deckId)
                     )
                 } else {
                     wordDao.update(known.copy(pastForm = known.pastForm ?: v.pastForm, participle = known.participle ?: v.participle, example = known.example ?: v.example))

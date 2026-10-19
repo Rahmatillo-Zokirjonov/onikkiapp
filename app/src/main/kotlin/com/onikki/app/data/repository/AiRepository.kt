@@ -80,6 +80,13 @@ private const val TRANSLATE_SYSTEM = """Sen ingliz–o'zbek lug'atisan. Foydalan
 Faqat uning o'zbekcha (lotin alifbosida) 1–3 ta eng asosiy ma'nosini vergul bilan ajratib yoz, boshqa hech narsa yozma.
 Fe'llarni "-moq" shaklida yoz (masalan: o'qimoq). Misol: "run" → yugurmoq, chopmoq"""
 
+private const val SENTENCE_SYSTEM = """Sen ingliz tili o'qituvchisisan. O'zbek o'quvchi berilgan so'zni ishlatib inglizcha gap yozdi. Uni tekshir:
+- uses_word: so'z (yoki uning shakli: -s, -ed, -ing, V2, V3) gapda berilgan ma'noda ishlatilganmi;
+- correct: gap grammatik va ma'no jihatdan to'g'ri va tabiiymi (kichik tinish belgisi yoki bosh harf xatolari hisob emas);
+- minor: correct=false bo'lsa, xato kichikmi (bitta artikl, predlog yoki qo'shimcha);
+- corrected: gapning to'g'rilangan varianti (to'g'ri bo'lsa, o'zi);
+- explanation: o'zbekcha (lotin), 1–2 jumla: nima xato va nega, yoki to'g'ri bo'lsa qisqa maqtov."""
+
 private const val LISTENING_SYSTEM = """Sen ingliz tili o'qituvchisisan. O'zbek o'quvchi uchun berilgan CEFR darajasida qisqa tinglash matni yoz.
 - 5–8 ta gap, kundalik va qiziqarli mavzu, tabiiy ingliz tili, darajaga mos grammatika va so'zlar;
 - berilgan so'zlardan 3–6 tasini tabiiy holda ishlat (mos kelmasa, majburlama);
@@ -175,6 +182,16 @@ class AiRepository(private val context: Context, private val db: AppDatabase) {
         client.sendMessage(TRANSLATE_SYSTEM, english.trim(), maxTokens = 2000).toOutcome { reply ->
             reply.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
                 .removeSurrounding("\"").trimEnd('.').take(80)
+        }
+    }
+
+    /** Is [sentence] a correct English sentence that uses [english] (in any form) with its meaning? */
+    suspend fun checkSentence(english: String, uzbek: String, sentence: String): AiOutcome<com.onikki.app.domain.vocab.SentenceVerdict> = call { client ->
+        val message = "So'z: $english ($uzbek)\nO'quvchining gapi: $sentence"
+        when (val r = client.send(SENTENCE_SYSTEM, listOf(ChatTurn(true, message)), maxTokens = 3000, jsonSchema = com.onikki.app.domain.ai.AiPlans.sentenceSchema)) {
+            is ClaudeResult.Error -> AiOutcome.Failed(r.message)
+            is ClaudeResult.Success -> com.onikki.app.domain.ai.AiPlans.parseSentence(r.text, sentence)?.let { AiOutcome.Ok(it) }
+                ?: AiOutcome.Failed("AI javobini o'qib bo'lmadi")
         }
     }
 

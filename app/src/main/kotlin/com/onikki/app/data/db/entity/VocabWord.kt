@@ -54,5 +54,7 @@ data class VocabWord(
     /** Right answers in separate sessions since it went on the list. */
     @ColumnInfo(defaultValue = "0") val relearnHits: Int = 0,
     /** Irregular verbs: the past participle (V3), "gone", "forgotten". */
-    val participle: String? = null
+    val participle: String? = null,
+    /** The example sentence in Uzbek, for translating it back into English. */
+    val exampleUz: String? = null
 )

@@ -334,12 +334,13 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
     }
 }
 
-/** "Bilmaganlarim" (words still being learned after a miss start on the list), listening, verb V3 forms. */
+/** "Bilmaganlarim" (words still being learned after a miss start on the list), listening, verb V3 forms, example translations. */
 val MIGRATION_12_13 = object : Migration(12, 13) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE vocab_words ADD COLUMN unknownSince INTEGER")
         db.execSQL("ALTER TABLE vocab_words ADD COLUMN relearnHits INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE vocab_words ADD COLUMN participle TEXT")
+        db.execSQL("ALTER TABLE vocab_words ADD COLUMN exampleUz TEXT")
         db.execSQL(
             "UPDATE vocab_words SET unknownSince = CASE WHEN lastReviewedAt > 0 THEN lastReviewedAt ELSE lastAskedAt END " +
                 "WHERE status = 'LEARNING' AND wrongCount > 0 AND (lastReviewedAt > 0 OR lastAskedAt > 0)"

@@ -46,7 +46,7 @@ fun BulkImportBody(text: String, onText: (String) -> Unit) {
     val parsed = remember(text) { VocabImport.parse(text) }
     val lines = remember(text) { text.lines().count { it.isNotBlank() && !it.trim().startsWith("#") } }
     Text(
-        text = "Har qatorga bitta so'z:\nenglish | o'zbekcha | misol gap\n\nMasalan:\ngo (went, gone) | bormoq | She went home.\ndecide (decided) | qaror qilmoq\napple | olma",
+        text = "Har qatorga bitta so'z:\nenglish | o'zbekcha | misol gap | gap tarjimasi\n\nMasalan:\ngo (went, gone) | bormoq | She went home. | U uyga ketdi.\ndecide (decided) | qaror qilmoq\napple | olma",
         color = colors.text.muted(0.6f),
         fontSize = 12.sp,
         fontFamily = OnIkkiFontFamily
@@ -84,6 +84,7 @@ fun AddWordsSheet(decks: List<VocabDeck>, onDismiss: () -> Unit, onSubmit: (Deck
     var english by remember { mutableStateOf("") }
     var uzbek by remember { mutableStateOf("") }
     var example by remember { mutableStateOf("") }
+    var exampleUz by remember { mutableStateOf("") }
     var past by remember { mutableStateOf("") }
     var text by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
@@ -119,10 +120,13 @@ fun AddWordsSheet(decks: List<VocabDeck>, onDismiss: () -> Unit, onSubmit: (Deck
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = english, onValueChange = { english = it; error = null }, label = { Text("English") }, singleLine = true, modifier = Modifier.weight(1f))
-                OutlinedTextField(value = past, onValueChange = { past = it }, label = { Text("O'tgan zamon") }, singleLine = true, modifier = Modifier.weight(0.7f))
+                OutlinedTextField(value = past, onValueChange = { past = it }, label = { Text("V2, V3") }, singleLine = true, modifier = Modifier.weight(0.7f))
             }
             OutlinedTextField(value = uzbek, onValueChange = { uzbek = it; error = null }, label = { Text("O'zbekcha (bir nechta bo'lsa — vergul bilan)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = example, onValueChange = { example = it }, label = { Text("Misol gap (inglizcha, ixtiyoriy)") }, modifier = Modifier.fillMaxWidth())
+            if (example.isNotBlank()) {
+                OutlinedTextField(value = exampleUz, onValueChange = { exampleUz = it }, label = { Text("Gap tarjimasi (o'zbekcha) — tarjima mashqi uchun") }, modifier = Modifier.fillMaxWidth())
+            }
         }
         message?.let { Text(text = it, color = colors.accent, fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily) }
         SheetErrorText(error)
@@ -131,7 +135,7 @@ fun AddWordsSheet(decks: List<VocabDeck>, onDismiss: () -> Unit, onSubmit: (Deck
             onClick = {
                 val t = target()
                 val items = if (bulk) VocabImport.parse(text)
-                else if (english.isNotBlank() && uzbek.isNotBlank()) listOf(ImportedWord(english.trim(), uzbek.trim(), example.trim().ifBlank { null }, past.trim().ifBlank { null }))
+                else if (english.isNotBlank() && uzbek.isNotBlank()) listOf(ImportedWord(english.trim(), uzbek.trim(), example.trim().ifBlank { null }, past.split(',').getOrNull(0)?.trim()?.ifBlank { null }, participle = past.split(',').getOrNull(1)?.trim()?.ifBlank { null }, exampleUz = exampleUz.trim().ifBlank { null }?.takeIf { example.isNotBlank() }))
                 else emptyList()
                 when {
                     t == null -> error = "Deck tanlang yoki nomini yozing"
@@ -140,7 +144,7 @@ fun AddWordsSheet(decks: List<VocabDeck>, onDismiss: () -> Unit, onSubmit: (Deck
                         message = result
                         if (bulk) text = "" else {
                             added++
-                            english = ""; uzbek = ""; example = ""; past = ""
+                            english = ""; uzbek = ""; example = ""; exampleUz = ""; past = ""
                         }
                     }
                 }

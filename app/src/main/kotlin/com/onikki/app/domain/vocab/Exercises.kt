@@ -15,7 +15,9 @@ enum class ExerciseType(val label: String, val hard: Boolean = false) {
     BUILD("Gap yig'ish", hard = true),
     FORM_CHOICE("Fe'l shaklini tanlash"),
     FORMS("V2 va V3 ni yozish", hard = true),
-    DICTATE("Eshitib yozish", hard = true)
+    DICTATE("Eshitib yozish", hard = true),
+    TRANSLATE("Gapni tarjima qilish", hard = true),
+    COMPOSE("So'zni gapda ishlatish", hard = true)
 }
 
 /** Which verb form an exercise asks for. */
@@ -77,6 +79,18 @@ sealed interface Exercise {
         override val wordIds get() = listOf(word.id)
     }
 
+    /** The Uzbek translation of the example → type the English sentence. */
+    data class Translate(val word: VocabWord, val uzbek: String, val answer: String) : Exercise {
+        override val type get() = ExerciseType.TRANSLATE
+        override val wordIds get() = listOf(word.id)
+    }
+
+    /** Write an own sentence with the word; checked by the AI when there is a key, else offline. */
+    data class Compose(val word: VocabWord) : Exercise {
+        override val type get() = ExerciseType.COMPOSE
+        override val wordIds get() = listOf(word.id)
+    }
+
     /** The English word is spoken → type what you heard (letter boxes). */
     data class Dictate(val word: VocabWord, val answers: List<String>) : Exercise {
         override val type get() = ExerciseType.DICTATE
@@ -89,8 +103,11 @@ sealed interface Exercise {
         override val wordIds get() = listOf(word.id)
     }
 
-    /** Put the example sentence back together from shuffled blocks (plus a couple of extra words). */
-    data class Build(val word: VocabWord, val sentence: String, val tokens: List<String>, val bank: List<String>) : Exercise {
+    /**
+     * Put the example sentence back together from shuffled blocks (plus a couple of extra words): heard,
+     * or — when [translation] is set — from its Uzbek translation.
+     */
+    data class Build(val word: VocabWord, val sentence: String, val tokens: List<String>, val bank: List<String>, val translation: String? = null) : Exercise {
         override val type get() = ExerciseType.BUILD
         override val wordIds get() = listOf(word.id)
     }
@@ -129,7 +146,10 @@ object Exercises {
         else -> {
             val blank = word.example?.let { blank(it, word.english, word.pastForm, word.participle) }
             val tokens = word.example?.let(::tokens).orEmpty()
+            val translatable = word.exampleUz != null && tokens.size in 3..12
             when {
+                // With a translation, a third of the sentence questions go Uzbek → English.
+                translatable && random.nextInt(3) == 0 -> if (random.nextBoolean()) build(word, pool, random, translated = true) else translate(word)
                 blank != null && (tokens.size !in 3..10 || random.nextBoolean()) -> cloze(word, blank, pool, random, typed = random.nextBoolean())
                 tokens.size in 3..10 -> build(word, pool, random)
                 else -> typeIn(word)
@@ -212,7 +232,21 @@ object Exercises {
         return Exercise.Cloze(word, blank.before, blank.after, blank.answer, options)
     }
 
-    fun build(word: VocabWord, pool: List<VocabWord>, random: Random): Exercise.Build {
+    fun translate(word: VocabWord): Exercise.Translate = Exercise.Translate(word, word.exampleUz!!.trim(), word.example!!.trim())
+
+    /**
+     * "Gap tuzish": per word, its sentence from Uzbek (blocks while it's young, typed later), then the
+     * word in an own sentence. Words without a translated example only get the own sentence.
+     */
+    fun sentencePractice(words: List<VocabWord>, pool: List<VocabWord>, random: Random): List<Exercise> = words.flatMap { w ->
+        val tokens = w.example?.let(::tokens).orEmpty()
+        listOfNotNull(
+            if (w.exampleUz != null && tokens.size in 3..12) (if (w.stage >= 3) translate(w) else build(w, pool, random, translated = true)) else null,
+            Exercise.Compose(w)
+        )
+    }
+
+    fun build(word: VocabWord, pool: List<VocabWord>, random: Random, translated: Boolean = false): Exercise.Build {
         val sentence = word.example!!.trim()
         val tokens = tokens(sentence)
         val extra = pool.filter { it.id != word.id }.flatMap { w -> w.example?.let(::tokens).orEmpty() }
@@ -220,7 +254,7 @@ object Exercises {
             .distinctBy { it.lowercase() }
             .shuffled(random)
             .take(2)
-        return Exercise.Build(word, sentence, tokens, (tokens + extra).shuffled(random))
+        return Exercise.Build(word, sentence, tokens, (tokens + extra).shuffled(random), word.exampleUz?.trim()?.takeIf { translated })
     }
 
     /** The right option plus up to three different wrong ones, shuffled; returns the options and the right index. */

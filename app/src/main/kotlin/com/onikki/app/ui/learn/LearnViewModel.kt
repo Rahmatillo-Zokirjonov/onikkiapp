@@ -79,6 +79,8 @@ sealed interface SessionKind {
     data object Relearn : SessionKind
     /** Irregular verb forms (V2 / V3). */
     data object Verbs : SessionKind
+    /** "Gap tuzish": sentences from Uzbek and own sentences. */
+    data object Sentences : SessionKind
 }
 
 /** What the panel under an answered exercise shows. */
@@ -293,6 +295,23 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         begin(SessionKind.Verbs, (first + typedLater).take(LessonPlanner.MAX_EXERCISES))
     }
 
+    private val ai = com.onikki.app.data.repository.AiRepository(application, db)
+
+    /** For own sentences: the AI's verdict, or null (no key, offline, failed) so the screen checks offline. */
+    val checkSentence: SentenceChecker = { word, sentence ->
+        (ai.checkSentence(word.english, com.onikki.app.domain.vocab.Exercises.primary(word.uzbek), sentence) as? com.onikki.app.data.repository.AiOutcome.Ok)?.value
+    }
+
+    /** Words for "Gap tuzish": studied ones, unknown and young first, those with a translated example preferred. */
+    fun startSentences() {
+        val studied = allWords.filter { it.status != com.onikki.app.data.db.entity.WordStatus.NEW }
+        if (studied.isEmpty()) return
+        val picked = studied.shuffled(random).sortedWith(
+            compareBy<VocabWord>({ if (it.unknownSince != null) 0 else 1 }, { if (it.exampleUz != null) 0 else 1 }, { it.stage })
+        ).take(SENTENCE_WORDS)
+        begin(SessionKind.Sentences, com.onikki.app.domain.vocab.Exercises.sentencePractice(picked.shuffled(random), allWords, random))
+    }
+
     private val _sort = MutableStateFlow<SortSession?>(null)
     val sort: StateFlow<SortSession?> = _sort
 
@@ -357,7 +376,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             // Another try of a missed word is part of learning it: no heart for that.
             is SessionKind.Path -> if (!s.isRetry) repeat(missed.size) { setHearts(com.onikki.app.domain.vocab.Hearts.lose(_hearts.value, now)) }
             SessionKind.Heal -> repeat(answers.count { it.verdict != Verdict.WRONG }) { setHearts(com.onikki.app.domain.vocab.Hearts.gain(_hearts.value, now)) }
-            SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs -> Unit
+            SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs, SessionKind.Sentences -> Unit
         }
         var combo = s.combo
         answers.forEach { combo = com.onikki.app.domain.vocab.Combo.next(combo, it.verdict) }
@@ -383,7 +402,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
                 mistakes = (it.mistakes + missed).distinctBy { w -> w.id },
                 combo = combo,
                 bestCombo = maxOf(it.bestCombo, combo),
-                feedback = Feedback(worst, rightAnswerOf(exercise), gainedXp, combo)
+                feedback = Feedback(worst, answers.firstNotNullOfOrNull { a -> a.note } ?: rightAnswerOf(exercise), gainedXp, combo)
             )
         }
         viewModelScope.launch {
@@ -442,5 +461,6 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         const val SORT_SIZE = 20
         const val VERB_DRILL = 10
+        const val SENTENCE_WORDS = 5
     }
 }

@@ -152,6 +152,36 @@ object AiPlans {
         null
     }
 
+    val sentenceSchema: JSONObject = obj(
+        "uses_word" to type("boolean"),
+        "correct" to type("boolean"),
+        "minor" to type("boolean"),
+        "corrected" to type("string"),
+        "explanation" to type("string")
+    )
+
+    /**
+     * The AI's judgement of an own sentence: right, or a small slip ("deyarli"), or wrong / not using the word.
+     * Null when unreadable.
+     */
+    fun parseSentence(json: String, original: String): com.onikki.app.domain.vocab.SentenceVerdict? = try {
+        val r = JSONObject(extractJson(json))
+        val uses = r.optBoolean("uses_word", false)
+        val correct = r.optBoolean("correct", false)
+        val minor = r.optBoolean("minor", false)
+        val corrected = r.optString("corrected").trim().take(300).ifBlank { null }
+            ?.takeUnless { com.onikki.app.domain.vocab.SentenceCheck.words(it) == com.onikki.app.domain.vocab.SentenceCheck.words(original) }
+        val verdict = when {
+            !uses -> com.onikki.app.domain.vocab.Verdict.WRONG
+            correct -> com.onikki.app.domain.vocab.Verdict.CORRECT
+            minor -> com.onikki.app.domain.vocab.Verdict.ALMOST
+            else -> com.onikki.app.domain.vocab.Verdict.WRONG
+        }
+        com.onikki.app.domain.vocab.SentenceVerdict(verdict, if (verdict == com.onikki.app.domain.vocab.Verdict.CORRECT) null else corrected, r.optString("explanation").trim().take(400))
+    } catch (e: JSONException) {
+        null
+    }
+
     val listeningSchema: JSONObject = obj(
         "title" to type("string"),
         "sentences" to arrayOf(type("string"))
