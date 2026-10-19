@@ -39,7 +39,17 @@ data class LearnHomeState(
     val newToday: Int = 0,
     /** Most-missed words, for the heart-refill practice. */
     val hardest: List<VocabWord> = emptyList(),
+    val decks: List<com.onikki.app.data.db.entity.VocabDeck> = emptyList(),
     val isLoaded: Boolean = false
+)
+
+/** A word the user misses a lot, with how often. */
+data class HardWord(val word: VocabWord, val wrong: Int, val total: Int)
+
+data class LearnStatsState(
+    val stats: com.onikki.app.domain.vocab.LearnStats = com.onikki.app.domain.vocab.LearnStats(),
+    val hardest: List<HardWord> = emptyList(),
+    val totalXp: Int = 0
 )
 
 sealed interface SessionKind {
@@ -141,9 +151,48 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             wordCount = words.size,
             newToday = c.newToday,
             hardest = c.missed.mapNotNull { byId[it.wordId] },
+            decks = decks,
             isLoaded = true
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LearnHomeState())
+
+    val stats: StateFlow<LearnStatsState> = combine(
+        db.vocabWordDao().observeInPathOrder(),
+        db.vocabReviewDao().observeDailyTotals(today.minusDays(6)),
+        db.vocabReviewDao().observeActiveDays(),
+        db.vocabReviewDao().observeMostMissed(10),
+        db.vocabReviewDao().observeTotalXp()
+    ) { words, days, active, missed, xp ->
+        val byId = words.associateBy { it.id }
+        LearnStatsState(
+            stats = com.onikki.app.domain.vocab.VocabStats.build(
+                words,
+                days.map { com.onikki.app.domain.vocab.DayPractice(it.day, it.xp, it.answers, it.correct) },
+                active.toSet(),
+                today
+            ),
+            hardest = missed.mapNotNull { m -> byId[m.wordId]?.let { HardWord(it, m.wrong, m.total) } },
+            totalXp = xp
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LearnStatsState())
+
+    /** "So'z qo'shish": into an existing deck or a new one; [onDone] gets the message to show. */
+    fun addWords(target: DeckTarget, items: List<com.onikki.app.domain.vocab.ImportedWord>, level: String?, onDone: (String) -> Unit) {
+        viewModelScope.launch {
+            val deckId = when (target) {
+                is DeckTarget.Existing -> target.id
+                is DeckTarget.New -> repository.createDeck(target.name)
+            }
+            val r = repository.importWords(deckId, items, level)
+            onDone(
+                when {
+                    r.added == 0 -> "Hammasi ro'yxatda bor edi (${r.skipped} ta)"
+                    r.skipped == 0 -> "${r.added} ta so'z qo'shildi — yangi lessonlar tayyor"
+                    else -> "${r.added} ta qo'shildi, ${r.skipped} tasi allaqachon bor edi"
+                }
+            )
+        }
+    }
 
     fun startLesson(lesson: PathLesson, unitName: String) {
         refreshHearts()

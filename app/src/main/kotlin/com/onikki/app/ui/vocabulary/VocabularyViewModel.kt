@@ -95,11 +95,13 @@ class VocabularyViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch { settingsStore.update(transform) }
     }
 
+    private val learn = com.onikki.app.data.repository.LearnRepository(db)
+
     fun saveWord(existing: VocabWord?, english: String, uzbek: String) {
         if (english.isBlank() || uzbek.isBlank()) return
         viewModelScope.launch {
             if (existing == null) {
-                wordDao.insert(VocabWord(english = english.trim(), uzbek = uzbek.trim()))
+                wordDao.insert(VocabWord(english = english.trim(), uzbek = uzbek.trim(), deckId = learn.myWordsDeckId()))
             } else {
                 wordDao.update(existing.copy(english = english.trim(), uzbek = uzbek.trim()))
             }
@@ -112,11 +114,14 @@ class VocabularyViewModel(application: Application) : AndroidViewModel(applicati
 
     /** Adds pairs, skipping ones whose English word is already in the list. Returns how many were new. */
     fun addPairs(pairs: List<Pair<String, String>>, onDone: (Int) -> Unit = {}) {
+        addImported(pairs.map { (en, uz) -> com.onikki.app.domain.vocab.ImportedWord(en, uz, null, null) }, onDone)
+    }
+
+    /** Bulk text ("english | uzbek | misol gap") or pairs → "Mening so'zlarim", duplicates skipped. */
+    fun addImported(items: List<com.onikki.app.domain.vocab.ImportedWord>, onDone: (Int) -> Unit = {}) {
         viewModelScope.launch {
-            val known = uiState.value.words.map { VocabChallenge.normalize(it.english) }.toMutableSet()
-            val fresh = pairs.filter { (english, _) -> known.add(VocabChallenge.normalize(english)) }
-            if (fresh.isNotEmpty()) wordDao.insertAll(fresh.map { (en, uz) -> VocabWord(english = en, uzbek = uz) })
-            onDone(fresh.size)
+            val result = learn.importWords(learn.myWordsDeckId(), items)
+            onDone(result.added)
         }
     }
 

@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -64,10 +65,15 @@ fun LearnRoute(onBack: () -> Unit) {
     val hearts by viewModel.hearts.collectAsState()
     val settings by viewModel.settings.collectAsState()
     LaunchedEffect(Unit) { viewModel.refreshHearts() }
+    var statsOpen by rememberSaveable { mutableStateOf(false) }
     val s = session
-    if (s == null) {
+    if (s == null && statsOpen) {
+        BackHandler { statsOpen = false }
+        val stats by viewModel.stats.collectAsState()
+        LearnStatsScreen(stats, onBack = { statsOpen = false })
+    } else if (s == null) {
         BackHandler(onBack = onBack)
-        LearnHome(home, hearts, settings, viewModel, onBack)
+        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true })
     } else {
         BackHandler(onBack = viewModel::close)
         when {
@@ -86,10 +92,12 @@ private fun LearnHome(
     hearts: com.onikki.app.domain.vocab.HeartState,
     settings: com.onikki.app.data.local.LearnSettings,
     viewModel: LearnViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onStats: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     var settingsOpen by remember { mutableStateOf(false) }
+    var addOpen by remember { mutableStateOf(false) }
     var overLimitFor by remember { mutableStateOf<Pair<PathLesson, String>?>(null) }
     val onStart: (PathLesson, String) -> Unit = { lesson, unit ->
         val introducesNew = lesson.words.any { it.status == com.onikki.app.data.db.entity.WordStatus.NEW }
@@ -103,7 +111,11 @@ private fun LearnHome(
     ) {
         item {
             SubScreenHeader(title = "O'rganish", onBack = onBack) {
-                Text(text = "⚙", color = colors.text.muted(0.7f), fontSize = 20.sp, modifier = Modifier.clip(CircleShape).clickable { settingsOpen = true }.padding(8.dp))
+                Row {
+                    Text(text = "📊", fontSize = 19.sp, modifier = Modifier.clip(CircleShape).clickable(onClick = onStats).padding(8.dp))
+                    Text(text = "＋", color = colors.accent, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clip(CircleShape).clickable { addOpen = true }.padding(horizontal = 8.dp, vertical = 4.dp))
+                    Text(text = "⚙", color = colors.text.muted(0.7f), fontSize = 20.sp, modifier = Modifier.clip(CircleShape).clickable { settingsOpen = true }.padding(8.dp))
+                }
             }
         }
         item {
@@ -161,6 +173,7 @@ private fun LearnHome(
     }
 
     if (settingsOpen) LearnSettingsSheet(settings, onChange = viewModel::updateSettings, onDismiss = { settingsOpen = false })
+    if (addOpen) AddWordsSheet(state.decks, onDismiss = { addOpen = false }, onSubmit = { target, items, level, done -> viewModel.addWords(target, items, level, done) })
     overLimitFor?.let { (lesson, unit) ->
         com.onikki.app.ui.components.OnIkkiSheet(title = "Bugungi limit", onDismiss = { overLimitFor = null }) {
             Text(

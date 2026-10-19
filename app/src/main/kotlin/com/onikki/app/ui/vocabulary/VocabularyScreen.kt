@@ -175,7 +175,7 @@ private fun VocabularyScreen(state: VocabularyUiState, viewModel: VocabularyView
         )
     }
     if (bulk) {
-        BulkSheet(onDismiss = { bulk = false }, onAdd = { pairs -> viewModel.addPairs(pairs) { bulk = false } })
+        BulkSheet(onDismiss = { bulk = false }, onAdd = { items -> viewModel.addImported(items) { bulk = false } })
     }
 }
 
@@ -467,24 +467,11 @@ private fun WordSheet(viewModel: VocabularyViewModel, word: VocabWord?, onDismis
 }
 
 @Composable
-private fun BulkSheet(onDismiss: () -> Unit, onAdd: (List<Pair<String, String>>) -> Unit) {
-    val colors = LocalOnIkkiColors.current
+private fun BulkSheet(onDismiss: () -> Unit, onAdd: (List<com.onikki.app.domain.vocab.ImportedWord>) -> Unit) {
     var text by remember { mutableStateOf("") }
-    val parsed = VocabChallenge.parseBulk(text)
+    val parsed = remember(text) { com.onikki.app.ui.learn.parseImport(text) }
     OnIkkiSheet(title = "Ko'p so'z qo'shish", onDismiss = onDismiss) {
-        Text(
-            text = "Har qatorga bitta juftlik: inglizcha - o'zbekcha\nMasalan:\napple - olma\nto run - yugurmoq",
-            color = colors.text.muted(0.6f),
-            fontSize = 12.sp,
-            fontFamily = OnIkkiFontFamily
-        )
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
-            label = { Text("So'zlar") },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp)
-        )
-        Text(text = "${parsed.size} ta juftlik topildi", color = colors.text.muted(0.5f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+        com.onikki.app.ui.learn.BulkImportBody(text, onText = { text = it })
         OnIkkiButton(
             text = "Qo'shish",
             onClick = { if (parsed.isNotEmpty()) onAdd(parsed) },

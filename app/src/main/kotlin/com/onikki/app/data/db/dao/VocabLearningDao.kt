@@ -31,7 +31,7 @@ interface VocabDeckDao {
 }
 
 /** XP and answers per day, for the streak and the weekly chart. */
-data class VocabDayTotal(val day: LocalDate, val xp: Int, val answers: Int)
+data class VocabDayTotal(val day: LocalDate, val xp: Int, val answers: Int, val correct: Int)
 
 /** How often a word was missed, for "Eng qiyin so'zlar". */
 data class VocabMissCount(val wordId: Long, val wrong: Int, val total: Int)
@@ -41,7 +41,10 @@ interface VocabReviewDao {
     @Insert
     suspend fun insert(review: VocabReview): Long
 
-    @Query("SELECT day, SUM(xp) AS xp, COUNT(*) AS answers FROM vocab_reviews WHERE day >= :from GROUP BY day ORDER BY day")
+    @Query(
+        "SELECT day, SUM(xp) AS xp, COUNT(*) AS answers, SUM(CASE WHEN grade != 'AGAIN' THEN 1 ELSE 0 END) AS correct " +
+            "FROM vocab_reviews WHERE day >= :from GROUP BY day ORDER BY day"
+    )
     fun observeDailyTotals(from: LocalDate): Flow<List<VocabDayTotal>>
 
     @Query("SELECT DISTINCT day FROM vocab_reviews ORDER BY day DESC LIMIT 400")

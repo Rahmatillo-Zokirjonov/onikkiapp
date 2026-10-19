@@ -18,9 +18,51 @@ import java.time.ZoneId
 data class AnswerOutcome(val word: VocabWord, val xp: Int)
 
 /** Every answer from lessons, reviews and the app blocker goes through here, so SRS and stats stay in one place. */
+/** How an import went. */
+data class ImportResult(val added: Int, val skipped: Int)
+
 class LearnRepository(private val db: AppDatabase) {
     private val words = db.vocabWordDao()
     private val reviews = db.vocabReviewDao()
+
+    /** "Mening so'zlarim" — where words added without a deck go. */
+    suspend fun myWordsDeckId(): Long {
+        val decks = db.vocabDeckDao().getAll()
+        return decks.firstOrNull { it.name == VocabSeeder.MY_WORDS }?.id
+            ?: db.vocabDeckDao().insert(VocabDeck(name = VocabSeeder.MY_WORDS, sortOrder = (decks.maxOfOrNull { it.sortOrder } ?: 0) + 1))
+    }
+
+    /** A new deck at the end of the path. */
+    suspend fun createDeck(name: String): Long {
+        val decks = db.vocabDeckDao().getAll()
+        decks.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) }?.let { return it.id }
+        return db.vocabDeckDao().insert(VocabDeck(name = name.trim().take(40), sortOrder = (decks.maxOfOrNull { it.sortOrder } ?: 0) + 1))
+    }
+
+    /**
+     * Adds words to [deckId] as NEW — the learning path turns them into new lessons at the end of the deck.
+     * A word whose spelling is already anywhere in the list is skipped (but gets a missing example / past form).
+     */
+    suspend fun importWords(deckId: Long, items: List<com.onikki.app.domain.vocab.ImportedWord>, level: String? = null): ImportResult {
+        val existing = words.getAll().associateBy { AnswerCheck.normalize(it.english) }.toMutableMap()
+        var added = 0
+        var skipped = 0
+        items.forEach { item ->
+            val key = AnswerCheck.normalize(item.english)
+            val known = existing[key]
+            if (known != null) {
+                skipped++
+                if ((known.example == null && item.example != null) || (known.pastForm == null && item.pastForm != null)) {
+                    words.update(known.copy(example = known.example ?: item.example, pastForm = known.pastForm ?: item.pastForm))
+                }
+            } else {
+                val w = VocabWord(english = item.english.trim(), uzbek = item.uzbek.trim(), example = item.example, pastForm = item.pastForm, level = level, deckId = deckId)
+                existing[key] = w.copy(id = words.insert(w))
+                added++
+            }
+        }
+        return ImportResult(added, skipped)
+    }
 
     suspend fun recordAnswer(
         wordId: Long,
