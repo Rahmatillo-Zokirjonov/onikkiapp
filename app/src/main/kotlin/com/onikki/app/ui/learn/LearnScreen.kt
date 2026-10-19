@@ -66,10 +66,13 @@ fun LearnRoute(onBack: () -> Unit) {
     val settings by viewModel.settings.collectAsState()
     LaunchedEffect(Unit) { viewModel.refreshHearts() }
     var statsOpen by rememberSaveable { mutableStateOf(false) }
+    var listeningOpen by rememberSaveable { mutableStateOf(false) }
     val sort by viewModel.sort.collectAsState()
     val s = session
     val so = sort
-    if (s == null && so != null) {
+    if (s == null && listeningOpen) {
+        ListeningRoute(onBack = { listeningOpen = false })
+    } else if (s == null && so != null) {
         BackHandler(onBack = viewModel::closeSort)
         SortScreen(so, onReveal = viewModel::revealSort, onAnswer = viewModel::sortAnswer, onRelearn = viewModel::relearnSorted, onClose = viewModel::closeSort)
     } else if (s == null && statsOpen) {
@@ -78,7 +81,7 @@ fun LearnRoute(onBack: () -> Unit) {
         LearnStatsScreen(stats, onBack = { statsOpen = false })
     } else if (s == null) {
         BackHandler(onBack = onBack)
-        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true })
+        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true })
     } else {
         BackHandler(onBack = viewModel::close)
         when {
@@ -98,7 +101,8 @@ private fun LearnHome(
     settings: com.onikki.app.data.local.LearnSettings,
     viewModel: LearnViewModel,
     onBack: () -> Unit,
-    onStats: () -> Unit
+    onStats: () -> Unit,
+    onListening: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     var settingsOpen by remember { mutableStateOf(false) }
@@ -165,6 +169,16 @@ private fun LearnHome(
                 enabled = state.due.isNotEmpty(),
                 primary = false,
                 onClick = onReview
+            )
+        }
+        item {
+            BigAction(
+                kicker = "🎧 LISTENING",
+                title = "Tinglab, bo'sh joylarni to'ldiring",
+                subtitle = "A1 · A2 · B1 · B2 darajadagi matnlar",
+                enabled = true,
+                primary = false,
+                onClick = onListening
             )
         }
         item {

@@ -18,7 +18,7 @@ data class VocabDeck(
 enum class ReviewGrade(val label: String) { AGAIN("Bilmadim"), HARD("Qiyin"), EASY("Oson") }
 
 /** Where an answer was given. */
-enum class ReviewSource { LESSON, REVIEW, BLOCKER }
+enum class ReviewSource { LESSON, REVIEW, BLOCKER, LISTENING }
 
 /**
  * One answered exercise. Streak, XP per day, today's reviews and the hardest words are all

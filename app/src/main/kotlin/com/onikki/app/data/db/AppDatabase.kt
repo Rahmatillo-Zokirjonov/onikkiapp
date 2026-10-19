@@ -64,7 +64,7 @@ import com.onikki.app.data.db.entity.Transaction
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
-        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class, VocabDeck::class, VocabReview::class, VocabLessonResult::class
+        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class, VocabDeck::class, VocabReview::class, VocabLessonResult::class, com.onikki.app.data.db.entity.ListeningCustomText::class, com.onikki.app.data.db.entity.ListeningAttempt::class
     ],
     version = 13,
     exportSchema = true
@@ -96,6 +96,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun vocabDeckDao(): VocabDeckDao
     abstract fun vocabReviewDao(): VocabReviewDao
     abstract fun vocabLessonDao(): VocabLessonDao
+    abstract fun listeningDao(): com.onikki.app.data.db.dao.ListeningDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -333,7 +334,7 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
     }
 }
 
-/** "Bilmaganlarim": words still being learned after a miss start on the list. */
+/** "Bilmaganlarim" (words still being learned after a miss start on the list) and listening. */
 val MIGRATION_12_13 = object : Migration(12, 13) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE vocab_words ADD COLUMN unknownSince INTEGER")
@@ -342,5 +343,16 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
             "UPDATE vocab_words SET unknownSince = CASE WHEN lastReviewedAt > 0 THEN lastReviewedAt ELSE lastAskedAt END " +
                 "WHERE status = 'LEARNING' AND wrongCount > 0 AND (lastReviewedAt > 0 OR lastAskedAt > 0)"
         )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `listening_texts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`level` TEXT NOT NULL, `title` TEXT NOT NULL, `body` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `listening_attempts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`textId` TEXT NOT NULL, `level` TEXT NOT NULL, `at` INTEGER NOT NULL, `day` TEXT NOT NULL, " +
+                "`accuracy` INTEGER NOT NULL, `xp` INTEGER NOT NULL)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_listening_attempts_textId` ON `listening_attempts` (`textId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_listening_attempts_day` ON `listening_attempts` (`day`)")
     }
 }

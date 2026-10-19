@@ -152,6 +152,22 @@ object AiPlans {
         null
     }
 
+    val listeningSchema: JSONObject = obj(
+        "title" to type("string"),
+        "sentences" to arrayOf(type("string"))
+    )
+
+    /** Title and 4–9 sentences, or null when the reply isn't usable. */
+    fun parseListening(json: String): Pair<String, List<String>>? = try {
+        val root = JSONObject(extractJson(json))
+        val arr = root.optJSONArray("sentences") ?: JSONArray()
+        val sentences = (0 until arr.length()).map { arr.optString(it).trim().replace('\u2019', '\'') }.filter { it.length > 3 }.take(9)
+        val title = root.optString("title").trim().take(60).ifBlank { "Listening" }
+        if (sentences.size < 4) null else title to sentences
+    } catch (e: JSONException) {
+        null
+    }
+
     /** Structured output is already bare JSON; this also tolerates a ```json fence or stray text around it. */
     private fun extractJson(text: String): String {
         val start = text.indexOf('{')

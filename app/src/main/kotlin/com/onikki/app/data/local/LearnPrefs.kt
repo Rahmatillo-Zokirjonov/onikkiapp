@@ -42,6 +42,13 @@ class LearnPrefs(context: Context) {
         _settings.value = next
     }
 
+    /** The listening level the user picked; null = follow the suggestion. */
+    fun listenLevel(): String? = prefs.getString("listen_level", null)
+
+    fun setListenLevel(level: String) {
+        prefs.edit().putString("listen_level", level).apply()
+    }
+
     private fun readSettings() = LearnSettings(
         newPerDay = prefs.getInt("new_per_day", 15),
         sound = prefs.getBoolean("sound", true),

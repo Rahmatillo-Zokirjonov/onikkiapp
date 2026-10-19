@@ -80,6 +80,12 @@ private const val TRANSLATE_SYSTEM = """Sen ingliz–o'zbek lug'atisan. Foydalan
 Faqat uning o'zbekcha (lotin alifbosida) 1–3 ta eng asosiy ma'nosini vergul bilan ajratib yoz, boshqa hech narsa yozma.
 Fe'llarni "-moq" shaklida yoz (masalan: o'qimoq). Misol: "run" → yugurmoq, chopmoq"""
 
+private const val LISTENING_SYSTEM = """Sen ingliz tili o'qituvchisisan. O'zbek o'quvchi uchun berilgan CEFR darajasida qisqa tinglash matni yoz.
+- 5–8 ta gap, kundalik va qiziqarli mavzu, tabiiy ingliz tili, darajaga mos grammatika va so'zlar;
+- berilgan so'zlardan 3–6 tasini tabiiy holda ishlat (mos kelmasa, majburlama);
+- ism, raqam va qisqartmalar kam bo'lsin; oddiy tinish belgilari va oddiy apostrof (') ishlat;
+- title: 2–4 so'zli inglizcha sarlavha; sentences: har bir gap alohida element."""
+
 private const val CATEGORY_SYSTEM = """Sen bank SMS'laridan kelgan to'lovlarni toifalaysan. Har bir tranzaksiya uchun berilgan ro'yxatdan eng mos toifani tanla
 va 1–3 so'zli qisqa izoh yoz (o'zbekcha, masalan "Supermarket", "Taksi", "Telefon to'lovi", "Do'stga o'tkazma").
 Do'kon nomini bilsang, izohda uning turini yoz. Bilmasang, summaga va nomga qarab eng ehtimolli toifani tanla."""
@@ -169,6 +175,16 @@ class AiRepository(private val context: Context, private val db: AppDatabase) {
         client.sendMessage(TRANSLATE_SYSTEM, english.trim(), maxTokens = 2000).toOutcome { reply ->
             reply.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
                 .removeSurrounding("\"").trimEnd('.').take(80)
+        }
+    }
+
+    /** A short listening text at [level], using some of [words] naturally. */
+    suspend fun writeListening(level: String, words: List<String>): AiOutcome<Pair<String, List<String>>> = call { client ->
+        val message = "Daraja: $level\nSo'zlar: ${words.take(15).joinToString(", ").ifBlank { "-" }}"
+        when (val r = client.send(LISTENING_SYSTEM, listOf(ChatTurn(true, message)), maxTokens = 6000, jsonSchema = com.onikki.app.domain.ai.AiPlans.listeningSchema)) {
+            is ClaudeResult.Error -> AiOutcome.Failed(r.message)
+            is ClaudeResult.Success -> com.onikki.app.domain.ai.AiPlans.parseListening(r.text)?.let { AiOutcome.Ok(it) }
+                ?: AiOutcome.Failed("AI matn tuza olmadi, qayta urinib ko'ring")
         }
     }
 

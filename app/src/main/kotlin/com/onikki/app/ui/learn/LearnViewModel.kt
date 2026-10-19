@@ -160,8 +160,15 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         db.vocabDeckDao().observeAll(),
         db.vocabWordDao().observeInPathOrder(),
         db.vocabLessonDao().observeAll(),
-        counters
-    ) { decks, words, results, c ->
+        counters,
+        db.listeningDao().observeAttempts()
+    ) { decks, words, results, c0, listened ->
+        // Listening counts towards XP and the streak too.
+        val c = c0.copy(
+            totalXp = c0.totalXp + listened.sumOf { it.xp },
+            todayXp = c0.todayXp + listened.filter { it.day == today }.sumOf { it.xp },
+            days = (c0.days + listened.map { it.day }).distinct()
+        )
         allWords = words
         val units = LearningPath.build(decks, words, results)
         val byId = words.associateBy { it.id }
