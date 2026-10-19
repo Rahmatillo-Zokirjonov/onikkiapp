@@ -80,7 +80,12 @@ import java.time.LocalTime
 private const val HOME_TASK_LIMIT = 5
 
 @Composable
-fun HomeRoute(onNavigateToDayReview: () -> Unit = {}, onNavigateToAssistant: () -> Unit = {}, onNavigateToTab: (OnIkkiTab) -> Unit = {}) {
+fun HomeRoute(
+    onNavigateToDayReview: () -> Unit = {},
+    onNavigateToAssistant: () -> Unit = {},
+    onNavigateToLearn: () -> Unit = {},
+    onNavigateToTab: (OnIkkiTab) -> Unit = {}
+) {
     val app = LocalContext.current.applicationContext as OnIkkiApplication
     val db = app.database
     val habitRepository = remember { HabitRepository(db.habitDao(), db.habitLogDao()) }
@@ -98,6 +103,7 @@ fun HomeRoute(onNavigateToDayReview: () -> Unit = {}, onNavigateToAssistant: () 
         onCompleteMoney = viewModel::completeMoney,
         onOpenDayReview = onNavigateToDayReview,
         onOpenAssistant = onNavigateToAssistant,
+        onOpenLearn = onNavigateToLearn,
         onOpenGoal = { id ->
             GoalDeepLink.request(id)
             onNavigateToTab(OnIkkiTab.PLAN)
@@ -125,6 +131,7 @@ fun HomeScreen(
     onCompleteMoney: (PlannedExpense) -> Unit,
     onOpenDayReview: () -> Unit,
     onOpenAssistant: () -> Unit,
+    onOpenLearn: () -> Unit,
     onOpenGoal: (Long) -> Unit,
     onOpenTab: (OnIkkiTab) -> Unit,
     onEditName: () -> Unit
@@ -154,6 +161,7 @@ fun HomeScreen(
             HomeworkHomeCard(state.homework, state.now, onClick = { TimetableDeepLink.request(TimetableDeepLink.Target.HOMEWORK); onOpenTab(OnIkkiTab.PLAN) })
         }
         MainGoalCard(state, onOpen = onOpenGoal)
+        LearnEntryCard(onClick = onOpenLearn)
         TodayPlanSection(state, onToggleTask = onToggleTask, onOpenPlan = { onOpenTab(OnIkkiTab.PLAN) })
         HabitsSection(habits = state.habits, onTapHabit = onTapHabit, onOpenAll = { onOpenTab(OnIkkiTab.PLAN) })
         AssistantEntryRow(onClick = onOpenAssistant)
@@ -697,6 +705,47 @@ private fun MainGoalCard(state: HomeUiState, onOpen: (Long) -> Unit) {
                 Text(text = "+${state.otherGoalCount} maqsad →", color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------- O'rganish
+
+/** Streak + words due today, read straight from the vocab tables. */
+@Composable
+private fun LearnEntryCard(onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val db = (androidx.compose.ui.platform.LocalContext.current.applicationContext as OnIkkiApplication).database
+    val words by remember { db.vocabWordDao().observeInPathOrder() }.collectAsState(initial = emptyList())
+    val days by remember { db.vocabReviewDao().observeActiveDays() }.collectAsState(initial = emptyList())
+    val today = java.time.LocalDate.now()
+    val due = words.count { com.onikki.app.domain.vocab.Srs.isDue(it, today) }
+    val newCount = words.count { it.status == com.onikki.app.data.db.entity.WordStatus.NEW }
+    val streak = com.onikki.app.domain.notes.Journal.streak(days.toSet(), today)
+    val studiedToday = today in days
+    OnIkkiRowCard(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        borderColor = if (!studiedToday && (due > 0 || newCount > 0)) colors.accent700 else colors.cardBorder
+    ) {
+        Text(text = if (streak > 0) "🔥" else "📚", fontSize = 20.sp)
+        Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+            Text(
+                text = if (streak > 0) "O'rganish · $streak kun ketma-ket" else "O'rganish · ingliz tili",
+                color = colors.text,
+                fontSize = 14.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+            Text(
+                text = when {
+                    due > 0 -> "$due ta so'z takrorlashni kutyapti"
+                    newCount > 0 -> "$newCount ta yangi so'z · bugungi darsni boshlang"
+                    else -> "Bugungi mashg'ulot tayyor"
+                },
+                color = if (due > 0) colors.accent else colors.text.muted(0.5f),
+                fontSize = 11.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+        }
+        Text(text = "→", color = colors.text.muted(0.5f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
     }
 }
 

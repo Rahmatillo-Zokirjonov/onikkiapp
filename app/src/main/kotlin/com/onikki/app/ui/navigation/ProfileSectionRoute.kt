@@ -25,7 +25,7 @@ import com.onikki.app.ui.theme.OnIkkiFontFamily
 import com.onikki.app.ui.theme.OnIkkiType
 import com.onikki.app.ui.theme.muted
 
-private enum class ProfileDestination { MENU, APP_CONTROL, SETTINGS, VOCABULARY }
+private enum class ProfileDestination { MENU, APP_CONTROL, SETTINGS, VOCABULARY, LEARN }
 
 @Composable
 fun ProfileSectionRoute() {
@@ -38,7 +38,8 @@ fun ProfileSectionRoute() {
         ProfileDestination.MENU -> ProfileMenu(
             onOpenAppControl = { destination = ProfileDestination.APP_CONTROL },
             onOpenVocabulary = { openVocabulary(ProfileDestination.MENU) },
-            onOpenSettings = { destination = ProfileDestination.SETTINGS }
+            onOpenSettings = { destination = ProfileDestination.SETTINGS },
+            onOpenLearn = { destination = ProfileDestination.LEARN }
         )
         ProfileDestination.APP_CONTROL -> ScreenTimeRoute(
             onBack = { destination = ProfileDestination.MENU },
@@ -50,11 +51,12 @@ fun ProfileSectionRoute() {
             onOpenVocabulary = { openVocabulary(ProfileDestination.SETTINGS) }
         )
         ProfileDestination.VOCABULARY -> VocabularyRoute(onBack = { destination = vocabularyReturn })
+        ProfileDestination.LEARN -> com.onikki.app.ui.learn.LearnRoute(onBack = { destination = ProfileDestination.MENU })
     }
 }
 
 @Composable
-private fun ProfileMenu(onOpenAppControl: () -> Unit, onOpenVocabulary: () -> Unit, onOpenSettings: () -> Unit) {
+private fun ProfileMenu(onOpenAppControl: () -> Unit, onOpenVocabulary: () -> Unit, onOpenSettings: () -> Unit, onOpenLearn: () -> Unit) {
     val colors = LocalOnIkkiColors.current
     Column(
         modifier = Modifier
@@ -66,6 +68,7 @@ private fun ProfileMenu(onOpenAppControl: () -> Unit, onOpenVocabulary: () -> Un
     ) {
         Text(text = "Profil", color = colors.text, style = OnIkkiType.screenTitle)
 
+        MenuRow(title = "O'rganish", subtitle = "Ingliz tili: darslar, takrorlash, XP va streak", onClick = onOpenLearn)
         MenuRow(title = "Ilovalar nazorati", subtitle = "Limit, vaqt va hudud bo'yicha blok", onClick = onOpenAppControl)
         MenuRow(title = "So'z yodlash", subtitle = "Inglizcha so'zlar va ilova ochish sharti", onClick = onOpenVocabulary)
         MenuRow(title = "Sozlamalar", subtitle = "Shahar, ruxsatlar, AI kaliti", onClick = onOpenSettings)

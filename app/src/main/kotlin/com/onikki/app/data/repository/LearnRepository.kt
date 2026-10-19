@@ -28,11 +28,13 @@ class LearnRepository(private val db: AppDatabase) {
         source: ReviewSource,
         exercise: String,
         hardExercise: Boolean,
+        /** False: log the answer (and its XP) without moving the word's schedule — see SessionScheduler. */
+        schedule: Boolean = true,
         nowMillis: Long = System.currentTimeMillis()
     ): AnswerOutcome? {
         val word = words.findById(wordId) ?: return null
         val today = Instant.ofEpochMilli(nowMillis).atZone(ZoneId.systemDefault()).toLocalDate()
-        val updated = Srs.review(word, grade, today, nowMillis)
+        val updated = if (schedule) Srs.review(word, grade, today, nowMillis) else word.copy(lastAskedAt = nowMillis)
         val xp = Srs.xpFor(grade, hardExercise)
         words.update(updated)
         reviews.insert(VocabReview(wordId = wordId, at = nowMillis, day = today, grade = grade, xp = xp, source = source, exercise = exercise))
