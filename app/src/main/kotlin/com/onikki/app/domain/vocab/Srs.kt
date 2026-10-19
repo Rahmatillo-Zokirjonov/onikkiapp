@@ -48,7 +48,9 @@ object Srs {
                 )
             }
             ReviewGrade.EASY -> {
-                val interval = nextStep(word.intervalDays, word.ease)
+                val step = nextStep(word.intervalDays, word.ease)
+                // A "qiyin" word (forgotten again and again) climbs slower.
+                val interval = if (word.lapses >= Relearn.LEECH_LAPSES) maxOf(word.intervalDays + 1, (step * 0.6).roundToInt()) else step
                 word.copy(
                     status = statusFor(interval, word.status),
                     intervalDays = interval,

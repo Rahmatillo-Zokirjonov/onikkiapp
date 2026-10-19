@@ -76,11 +76,28 @@ class LearnRepository(private val db: AppDatabase) {
     ): AnswerOutcome? {
         val word = words.findById(wordId) ?: return null
         val today = Instant.ofEpochMilli(nowMillis).atZone(ZoneId.systemDefault()).toLocalDate()
-        val updated = if (schedule) Srs.review(word, grade, today, nowMillis) else word.copy(lastAskedAt = nowMillis)
+        val updated = if (schedule) com.onikki.app.domain.vocab.Relearn.track(Srs.review(word, grade, today, nowMillis), grade, nowMillis)
+        else word.copy(lastAskedAt = nowMillis)
         val xp = Srs.xpFor(grade, hardExercise)
         words.update(updated)
         reviews.insert(VocabReview(wordId = wordId, at = nowMillis, day = today, grade = grade, xp = xp, source = source, exercise = exercise))
         return AnswerOutcome(updated, xp)
+    }
+
+    /** "Bilaman / Bilmayman" sorting of a new word. */
+    suspend fun sortWord(wordId: Long, known: Boolean, nowMillis: Long = System.currentTimeMillis()) {
+        val word = words.findById(wordId) ?: return
+        val today = Instant.ofEpochMilli(nowMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+        words.update(
+            if (known) com.onikki.app.domain.vocab.Relearn.markKnown(word, today, nowMillis)
+            else com.onikki.app.domain.vocab.Relearn.markUnknown(word, nowMillis)
+        )
+    }
+
+    /** Takes a word off "Bilmaganlarim" by hand. */
+    suspend fun forgetUnknown(wordId: Long) {
+        val word = words.findById(wordId) ?: return
+        words.update(word.copy(unknownSince = null, relearnHits = 0))
     }
 }
 

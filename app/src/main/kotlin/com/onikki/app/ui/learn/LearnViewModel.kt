@@ -40,8 +40,24 @@ data class LearnHomeState(
     /** Most-missed words, for the heart-refill practice. */
     val hardest: List<VocabWord> = emptyList(),
     val decks: List<com.onikki.app.data.db.entity.VocabDeck> = emptyList(),
+    /** "Bilmaganlarim", oldest first. */
+    val unknown: List<VocabWord> = emptyList(),
+    /** New words not sorted yet, for "Bilaman / Bilmayman". */
+    val unsorted: List<VocabWord> = emptyList(),
     val isLoaded: Boolean = false
 )
+
+/** "Bilaman / Bilmayman" cards over new words. */
+data class SortSession(
+    val words: List<VocabWord>,
+    val index: Int = 0,
+    val revealed: Boolean = false,
+    val known: Int = 0,
+    val unknown: List<VocabWord> = emptyList()
+) {
+    val current: VocabWord? get() = words.getOrNull(index)
+    val done: Boolean get() = index >= words.size
+}
 
 /** A word the user misses a lot, with how often. */
 data class HardWord(val word: VocabWord, val wrong: Int, val total: Int)
@@ -57,6 +73,8 @@ sealed interface SessionKind {
     data object Review : SessionKind
     /** Practising mistakes to win hearts back; ends when the bar is full. */
     data object Heal : SessionKind
+    /** "Bilmaganlarim": cards again, then questions. */
+    data object Relearn : SessionKind
 }
 
 /** What the panel under an answered exercise shows. */
@@ -70,7 +88,9 @@ data class LessonSummary(
     val answered: Int,
     val bestCombo: Int,
     /** This session was the first study of the day: the streak went up. */
-    val streakExtended: Boolean
+    val streakExtended: Boolean,
+    /** Missed, came back and answered right in the same session. */
+    val relearned: List<VocabWord> = emptyList()
 )
 
 data class LessonSession(
@@ -88,8 +108,12 @@ data class LessonSession(
     val bestCombo: Int = 0,
     /** Hearts ran out mid-lesson (or before it): the lesson stops and offers practice. */
     val outOfHearts: Boolean = false,
-    val studiedBefore: Boolean = true
+    val studiedBefore: Boolean = true,
+    /** Indices of exercises that are another try of a missed word. */
+    val retries: Set<Int> = emptySet(),
+    val relearned: List<VocabWord> = emptyList()
 ) {
+    val isRetry: Boolean get() = index in retries
     val current: Exercise? get() = exercises.getOrNull(index)
     val progress: Float get() = if (exercises.isEmpty()) 0f else index / exercises.size.toFloat()
 }
@@ -99,7 +123,8 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = LearnRepository(db)
     private val random = Random(System.nanoTime())
     private var scheduler = SessionScheduler()
-    private val retried = mutableSetOf<Long>()
+    /** Tries per missed word in this session (see Relearn). */
+    private val tries = mutableMapOf<Long, Int>()
     private var allWords: List<VocabWord> = emptyList()
 
     private val _session = MutableStateFlow<LessonSession?>(null)
@@ -152,6 +177,8 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             newToday = c.newToday,
             hardest = c.missed.mapNotNull { byId[it.wordId] },
             decks = decks,
+            unknown = com.onikki.app.domain.vocab.Relearn.unknown(words),
+            unsorted = units.flatMap { u -> u.lessons.flatMap { it.words } }.filter { it.status == com.onikki.app.data.db.entity.WordStatus.NEW && it.unknownSince == null },
             isLoaded = true
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LearnHomeState())
@@ -220,9 +247,51 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         begin(SessionKind.Review, LessonPlanner.review(due, allWords, random))
     }
 
+    /** "Bilmaganlarim": the oldest unknown words, card first. */
+    fun startRelearn() {
+        val words = home.value.unknown.map { w -> allWords.firstOrNull { it.id == w.id } ?: w }
+        if (words.isEmpty()) return
+        begin(SessionKind.Relearn, com.onikki.app.domain.vocab.Relearn.session(words, allWords, random))
+    }
+
+    private val _sort = MutableStateFlow<SortSession?>(null)
+    val sort: StateFlow<SortSession?> = _sort
+
+    fun startSort() {
+        val words = home.value.unsorted.take(SORT_SIZE)
+        if (words.isNotEmpty()) _sort.value = SortSession(words)
+    }
+
+    fun revealSort() = _sort.update { it?.copy(revealed = true) }
+
+    fun sortAnswer(known: Boolean) {
+        val s = _sort.value ?: return
+        val word = s.current ?: return
+        _sort.value = s.copy(
+            index = s.index + 1,
+            revealed = false,
+            known = s.known + if (known) 1 else 0,
+            unknown = if (known) s.unknown else s.unknown + word
+        )
+        viewModelScope.launch { repository.sortWord(word.id, known) }
+    }
+
+    fun closeSort() { _sort.value = null }
+
+    /** From the sort result: learn the "Bilmayman" words right away. */
+    fun relearnSorted() {
+        val words = _sort.value?.unknown.orEmpty().map { w -> allWords.firstOrNull { it.id == w.id } ?: w }
+        _sort.value = null
+        if (words.isNotEmpty()) begin(SessionKind.Relearn, com.onikki.app.domain.vocab.Relearn.session(words, allWords, random))
+    }
+
+    fun removeUnknown(word: VocabWord) {
+        viewModelScope.launch { repository.forgetUnknown(word.id) }
+    }
+
     private fun begin(kind: SessionKind, exercises: List<Exercise>) {
         scheduler = SessionScheduler()
-        retried.clear()
+        tries.clear()
         _session.value = LessonSession(kind, exercises, studiedBefore = home.value.studiedToday)
     }
 
@@ -234,7 +303,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             advance()
             return
         }
-        val source = if (s.kind is SessionKind.Review) ReviewSource.REVIEW else ReviewSource.LESSON
+        val source = if (s.kind is SessionKind.Review || s.kind is SessionKind.Relearn) ReviewSource.REVIEW else ReviewSource.LESSON
         val worst = answers.maxOf { it.verdict.ordinal }.let { Verdict.entries[it] }
         val byId = allWords.associateBy { it.id }
         var gainedXp = 0
@@ -246,17 +315,29 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         // Hearts: lessons cost one per miss; the heal practice gives one per right answer.
         val now = System.currentTimeMillis()
         when (s.kind) {
-            is SessionKind.Path -> repeat(missed.size) { setHearts(com.onikki.app.domain.vocab.Hearts.lose(_hearts.value, now)) }
+            // Another try of a missed word is part of learning it: no heart for that.
+            is SessionKind.Path -> if (!s.isRetry) repeat(missed.size) { setHearts(com.onikki.app.domain.vocab.Hearts.lose(_hearts.value, now)) }
             SessionKind.Heal -> repeat(answers.count { it.verdict != Verdict.WRONG }) { setHearts(com.onikki.app.domain.vocab.Hearts.gain(_hearts.value, now)) }
-            SessionKind.Review -> Unit
+            SessionKind.Review, SessionKind.Relearn -> Unit
         }
         var combo = s.combo
         answers.forEach { combo = com.onikki.app.domain.vocab.Combo.next(combo, it.verdict) }
-        // A missed word comes back once at the end of the session as a plain question.
-        val retries = missed.filter { retried.add(it.id) }.map { LessonPlanner.retry(it, allWords, random) }
+        // Englify-style: a missed word comes back a couple of exercises later, in a new shape, until it's right.
+        var queue = com.onikki.app.domain.vocab.ExerciseQueue(s.exercises, s.retries)
+        missed.forEachIndexed { i, w ->
+            val attempt = (tries[w.id] ?: 0) + 1
+            if (attempt <= com.onikki.app.domain.vocab.Relearn.MAX_TRIES) {
+                tries[w.id] = attempt
+                val at = com.onikki.app.domain.vocab.Relearn.position(s.index, queue.items.size, offset = i)
+                queue = queue.insertRetry(at, com.onikki.app.domain.vocab.Relearn.retryExercise(w, attempt, allWords, random))
+            }
+        }
+        val fixed = if (s.isRetry) answers.filter { it.verdict != Verdict.WRONG }.mapNotNull { byId[it.wordId] } else emptyList()
         _session.update {
             it?.copy(
-                exercises = it.exercises + retries,
+                exercises = queue.items,
+                retries = queue.retries,
+                relearned = (it.relearned + fixed).distinctBy { w -> w.id },
                 graded = it.graded + answers.size,
                 correct = it.correct + answers.count { a -> a.verdict != Verdict.WRONG },
                 xp = it.xp + gainedXp,
@@ -296,7 +377,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         }
         val seconds = ((System.currentTimeMillis() - s.startedAt) / 1000).toInt()
         val accuracy = if (s.graded == 0) 100 else s.correct * 100 / s.graded
-        val summary = LessonSummary(accuracy, seconds, s.xp, s.mistakes, s.graded, s.bestCombo, streakExtended = !s.studiedBefore && s.graded > 0)
+        val summary = LessonSummary(accuracy, seconds, s.xp, s.mistakes, s.graded, s.bestCombo, streakExtended = !s.studiedBefore && s.graded > 0, relearned = s.relearned)
         _session.value = s.copy(index = s.exercises.size, feedback = null, summary = summary)
         val kind = s.kind
         if (kind is SessionKind.Path) {
@@ -317,5 +398,9 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
 
     fun close() {
         _session.value = null
+    }
+
+    private companion object {
+        const val SORT_SIZE = 20
     }
 }

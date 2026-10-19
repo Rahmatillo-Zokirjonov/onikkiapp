@@ -66,7 +66,7 @@ import com.onikki.app.data.db.entity.Transaction
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
         BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class, VocabDeck::class, VocabReview::class, VocabLessonResult::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -103,7 +103,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -329,6 +329,18 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
             "CREATE TABLE IF NOT EXISTS `vocab_lessons` (`deckId` INTEGER NOT NULL, `lessonIndex` INTEGER NOT NULL, " +
                 "`completedAt` INTEGER NOT NULL, `accuracy` INTEGER NOT NULL, `xp` INTEGER NOT NULL, `seconds` INTEGER NOT NULL, " +
                 "PRIMARY KEY(`deckId`, `lessonIndex`))"
+        )
+    }
+}
+
+/** "Bilmaganlarim": words still being learned after a miss start on the list. */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE vocab_words ADD COLUMN unknownSince INTEGER")
+        db.execSQL("ALTER TABLE vocab_words ADD COLUMN relearnHits INTEGER NOT NULL DEFAULT 0")
+        db.execSQL(
+            "UPDATE vocab_words SET unknownSince = CASE WHEN lastReviewedAt > 0 THEN lastReviewedAt ELSE lastAskedAt END " +
+                "WHERE status = 'LEARNING' AND wrongCount > 0 AND (lastReviewedAt > 0 OR lastAskedAt > 0)"
         )
     }
 }

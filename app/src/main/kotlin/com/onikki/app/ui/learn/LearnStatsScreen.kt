@@ -127,7 +127,13 @@ fun LearnStatsScreen(state: LearnStatsState, onBack: () -> Unit) {
             state.hardest.forEach { h ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = h.word.english, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily)
+                        Text(
+                            text = h.word.english + if (com.onikki.app.domain.vocab.Relearn.isLeech(h.word)) "  · qiyin" else "",
+                            color = colors.text,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            fontFamily = OnIkkiFontFamily
+                        )
                         Text(text = Exercises.primary(h.word.uzbek), color = colors.text.muted(0.6f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     Text(text = "✗ ${h.wrong}/${h.total}", color = colors.warmAccent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily, modifier = Modifier.padding(horizontal = 10.dp))

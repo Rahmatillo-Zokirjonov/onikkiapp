@@ -48,5 +48,9 @@ data class VocabWord(
     @ColumnInfo(defaultValue = "0") val stage: Int = 0,
     /** Times it was forgotten after being known. */
     @ColumnInfo(defaultValue = "0") val lapses: Int = 0,
-    @ColumnInfo(defaultValue = "0") val lastReviewedAt: Long = 0
+    @ColumnInfo(defaultValue = "0") val lastReviewedAt: Long = 0,
+    /** On the "Bilmaganlarim" list since (epoch millis); null = not on it. See Relearn. */
+    val unknownSince: Long? = null,
+    /** Right answers in separate sessions since it went on the list. */
+    @ColumnInfo(defaultValue = "0") val relearnHits: Int = 0
 )

@@ -66,8 +66,13 @@ fun LearnRoute(onBack: () -> Unit) {
     val settings by viewModel.settings.collectAsState()
     LaunchedEffect(Unit) { viewModel.refreshHearts() }
     var statsOpen by rememberSaveable { mutableStateOf(false) }
+    val sort by viewModel.sort.collectAsState()
     val s = session
-    if (s == null && statsOpen) {
+    val so = sort
+    if (s == null && so != null) {
+        BackHandler(onBack = viewModel::closeSort)
+        SortScreen(so, onReveal = viewModel::revealSort, onAnswer = viewModel::sortAnswer, onRelearn = viewModel::relearnSorted, onClose = viewModel::closeSort)
+    } else if (s == null && statsOpen) {
         BackHandler { statsOpen = false }
         val stats by viewModel.stats.collectAsState()
         LearnStatsScreen(stats, onBack = { statsOpen = false })
@@ -98,6 +103,7 @@ private fun LearnHome(
     val colors = LocalOnIkkiColors.current
     var settingsOpen by remember { mutableStateOf(false) }
     var addOpen by remember { mutableStateOf(false) }
+    var unknownOpen by remember { mutableStateOf(false) }
     var overLimitFor by remember { mutableStateOf<Pair<PathLesson, String>?>(null) }
     val onStart: (PathLesson, String) -> Unit = { lesson, unit ->
         val introducesNew = lesson.words.any { it.status == com.onikki.app.data.db.entity.WordStatus.NEW }
@@ -161,6 +167,23 @@ private fun LearnHome(
                 onClick = onReview
             )
         }
+        item {
+            BigAction(
+                kicker = "BILMAGANLARIM",
+                title = if (state.unknown.isEmpty()) "Bilmagan so'z yo'q 👏" else "Bilmaganlarim · ${state.unknown.size} ta so'z",
+                subtitle = if (state.unknown.isEmpty()) "Xato qilgan so'zlaringiz shu yerga tushadi va qayta o'rgatiladi"
+                else state.unknown.take(5).joinToString(", ") { it.english },
+                enabled = state.unknown.isNotEmpty(),
+                primary = false,
+                onClick = viewModel::startRelearn
+            )
+            if (state.unknown.isNotEmpty() || state.unsorted.isNotEmpty()) {
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (state.unknown.isNotEmpty()) SmallLink("📋 Ro'yxat", Modifier.weight(1f)) { unknownOpen = true }
+                    if (state.unsorted.isNotEmpty()) SmallLink("🗂 Bilaman / Bilmayman (${state.unsorted.size})", Modifier.weight(2f), onClick = viewModel::startSort)
+                }
+            }
+        }
         state.units.forEach { unit ->
             item(key = "u-${unit.deck.id}") { UnitHeader(unit) }
             items(unit.lessons, key = { "l-${it.deckId}-${it.index}" }) { lesson ->
@@ -173,6 +196,7 @@ private fun LearnHome(
     }
 
     if (settingsOpen) LearnSettingsSheet(settings, onChange = viewModel::updateSettings, onDismiss = { settingsOpen = false })
+    if (unknownOpen) UnknownListSheet(state.unknown, onRemove = viewModel::removeUnknown, onStudy = viewModel::startRelearn, onDismiss = { unknownOpen = false })
     if (addOpen) AddWordsSheet(state.decks, onDismiss = { addOpen = false }, onSubmit = { target, items, level, done -> viewModel.addWords(target, items, level, done) })
     overLimitFor?.let { (lesson, unit) ->
         com.onikki.app.ui.components.OnIkkiSheet(title = "Bugungi limit", onDismiss = { overLimitFor = null }) {
@@ -242,6 +266,17 @@ private fun OutOfHearts(hearts: com.onikki.app.domain.vocab.HeartState, canHeal:
         )
         if (canHeal) BigButton("❤️ Xatolarni takrorlab tiklash", primary = true, onClick = onHeal)
         BigButton("Keyinroq", primary = !canHeal, onClick = onClose)
+    }
+}
+
+@Composable
+private fun SmallLink(text: String, modifier: Modifier, onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    Box(
+        modifier = modifier.clip(RoundedCornerShape(14.dp)).background(colors.surface).border(BorderStroke(1.dp, colors.cardBorder), RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(vertical = 11.dp, horizontal = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = text, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFamily = OnIkkiFontFamily, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -375,12 +410,22 @@ private fun LessonRunner(s: LessonSession, hearts: Int, settings: com.onikki.app
             when (s.kind) {
                 is SessionKind.Path -> Text(text = "❤️ $hearts", color = colors.warmAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
                 SessionKind.Heal -> Text(text = "❤️ $hearts/${com.onikki.app.domain.vocab.Hearts.MAX}", color = colors.warmAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
-                SessionKind.Review -> Text(text = "⭐ ${s.xp}", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+                SessionKind.Review, SessionKind.Relearn -> Text(text = "⭐ ${s.xp}", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
             }
         }
         Column(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 6.dp)
         ) {
+            if (s.isRetry) {
+                Text(
+                    text = "🔁 Xato qilgan so'zingiz — yana bir bor",
+                    color = colors.warmAccent,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.padding(bottom = 8.dp).clip(RoundedCornerShape(10.dp)).background(colors.warmAccent.copy(alpha = 0.12f)).padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+            }
             // Each exercise gets fresh state.
             key(s.index, exercise) {
                 ExerciseView(exercise, speaker) { answers -> viewModel.answer(answers) }
@@ -400,6 +445,7 @@ private fun LessonResult(s: LessonSession, streak: Int, onDone: () -> Unit, onPr
         is SessionKind.Path -> "${k.lesson.title} tugadi!"
         SessionKind.Review -> "Takrorlash tugadi!"
         SessionKind.Heal -> "Jonlar tiklandi!"
+        SessionKind.Relearn -> "Bilmaganlar takrorlandi!"
     }
     // A small celebration: the trophy pops in and the XP counts up.
     var shown by remember { mutableStateOf(false) }
@@ -461,12 +507,21 @@ private fun LessonResult(s: LessonSession, streak: Int, onDone: () -> Unit, onPr
                 Text(text = "eng uzun seriya: ${summary.bestCombo}", color = colors.text.muted(0.6f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
             }
         }
+        if (summary.relearned.isNotEmpty()) {
+            Text(
+                text = "🔁 ${summary.relearned.size} ta so'zni xatodan keyin to'g'ri topdingiz: " + summary.relearned.joinToString(", ") { it.english },
+                color = colors.accent,
+                fontSize = 13.sp,
+                fontFamily = OnIkkiFontFamily,
+                textAlign = TextAlign.Center
+            )
+        }
         if (summary.mistakes.isNotEmpty()) {
             Column(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(text = "Xato qilingan so'zlar", color = colors.warmAccent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
+                Text(text = "Xato qilingan so'zlar — Bilmaganlarimga qo'shildi", color = colors.warmAccent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
                 summary.mistakes.forEach { w ->
                     Text(text = "${w.english} — ${Exercises.primary(w.uzbek)}", color = colors.text, fontSize = 15.sp, fontFamily = OnIkkiFontFamily)
                 }

@@ -185,7 +185,7 @@ fun CardExercise(word: VocabWord, speaker: Speaker, onDone: () -> Unit) {
     val colors = LocalOnIkkiColors.current
     LaunchedEffect(word.id, speaker.ready) { if (speaker.ready) speaker.speak(word.english) }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        ExerciseTitle("Yangi so'z")
+        ExerciseTitle(if (word.status == com.onikki.app.data.db.entity.WordStatus.NEW) "Yangi so'z" else "Eslab qoling")
         Column(
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(colors.surface).border(BorderStroke(1.dp, colors.heroBorder), RoundedCornerShape(24.dp)).padding(22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
