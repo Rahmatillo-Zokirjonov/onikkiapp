@@ -8,6 +8,7 @@ import com.onikki.app.data.db.entity.VocabDeck
 import com.onikki.app.data.db.entity.VocabReview
 import com.onikki.app.data.db.entity.VocabWord
 import com.onikki.app.domain.vocab.AnswerCheck
+import com.onikki.app.domain.vocab.IrregularVerbs
 import com.onikki.app.domain.vocab.Srs
 import com.onikki.app.domain.vocab.VocabImport
 import java.time.Instant
@@ -52,11 +53,11 @@ class LearnRepository(private val db: AppDatabase) {
             val known = existing[key]
             if (known != null) {
                 skipped++
-                if ((known.example == null && item.example != null) || (known.pastForm == null && item.pastForm != null)) {
-                    words.update(known.copy(example = known.example ?: item.example, pastForm = known.pastForm ?: item.pastForm))
+                if ((known.example == null && item.example != null) || (known.pastForm == null && item.pastForm != null) || (known.participle == null && item.participle != null)) {
+                    words.update(known.copy(example = known.example ?: item.example, pastForm = known.pastForm ?: item.pastForm, participle = known.participle ?: item.participle))
                 }
             } else {
-                val w = VocabWord(english = item.english.trim(), uzbek = item.uzbek.trim(), example = item.example, pastForm = item.pastForm, level = level, deckId = deckId)
+                val w = VocabWord(english = item.english.trim(), uzbek = item.uzbek.trim(), example = item.example, pastForm = item.pastForm, participle = item.participle, level = level, deckId = deckId)
                 existing[key] = w.copy(id = words.insert(w))
                 added++
             }
@@ -108,6 +109,7 @@ class LearnRepository(private val db: AppDatabase) {
 object VocabSeeder {
     private const val PREFS = "vocab_seed"
     private const val KEY_LESSON_1 = "lesson1_v1"
+    private const val KEY_IRREGULAR = "irregular_v1"
     const val MY_WORDS = "Mening so'zlarim"
 
     suspend fun ensure(context: Context, db: AppDatabase) {
@@ -118,18 +120,48 @@ object VocabSeeder {
         wordDao.adoptOrphans(myDeck)
 
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (prefs.getBoolean(KEY_LESSON_1, false)) return
-        val lessonDeck = all.firstOrNull { it.name == "Lesson 1" }?.id ?: decks.insert(VocabDeck(name = "Lesson 1", sortOrder = 0))
+        if (!prefs.getBoolean(KEY_LESSON_1, false)) {
+            val lessonDeck = all.firstOrNull { it.name == "Lesson 1" }?.id ?: decks.insert(VocabDeck(name = "Lesson 1", sortOrder = 0))
+            val existing = wordDao.getAll().associateBy { AnswerCheck.normalize(it.english) }
+            VocabImport.parse(VocabImport.LESSON_1).forEach { w ->
+                val known = existing[AnswerCheck.normalize(w.english)]
+                if (known == null) {
+                    wordDao.insert(VocabWord(english = w.english, uzbek = w.uzbek, example = w.example, pastForm = w.pastForm, level = "A2", deckId = lessonDeck))
+                } else if (known.example == null || known.pastForm == null) {
+                    // Already in the user's list: just give it the example / past form.
+                    wordDao.update(known.copy(example = known.example ?: w.example, pastForm = known.pastForm ?: w.pastForm))
+                }
+            }
+            prefs.edit().putBoolean(KEY_LESSON_1, true).apply()
+        }
+        if (!prefs.getBoolean(KEY_IRREGULAR, false)) {
+            seedIrregular(db)
+            prefs.edit().putBoolean(KEY_IRREGULAR, true).apply()
+        }
+    }
+
+    /**
+     * "Noto'g'ri fe'llar": 100 verbs with V2/V3, at the end of the path. A verb the user already has
+     * (say "forget" in Lesson 1) stays where it is and just gets its forms.
+     */
+    private suspend fun seedIrregular(db: AppDatabase) {
+        val decks = db.vocabDeckDao()
+        val wordDao = db.vocabWordDao()
+        val all = decks.getAll()
+        val deckId = all.firstOrNull { it.name == IrregularVerbs.DECK }?.id
+            ?: decks.insert(VocabDeck(name = IrregularVerbs.DECK, sortOrder = (all.maxOfOrNull { it.sortOrder } ?: 0) + 1))
         val existing = wordDao.getAll().associateBy { AnswerCheck.normalize(it.english) }
-        VocabImport.parse(VocabImport.LESSON_1).forEach { w ->
-            val known = existing[AnswerCheck.normalize(w.english)]
-            if (known == null) {
-                wordDao.insert(VocabWord(english = w.english, uzbek = w.uzbek, example = w.example, pastForm = w.pastForm, level = "A2", deckId = lessonDeck))
-            } else if (known.example == null || known.pastForm == null) {
-                // Already in the user's list: just give it the example / past form.
-                wordDao.update(known.copy(example = known.example ?: w.example, pastForm = known.pastForm ?: w.pastForm))
+        IrregularVerbs.ALL.forEach { (level, text) ->
+            VocabImport.parse(text).forEach { v ->
+                val known = existing[AnswerCheck.normalize(v.english)]
+                if (known == null) {
+                    wordDao.insert(
+                        VocabWord(english = v.english, uzbek = v.uzbek, example = v.example, pastForm = v.pastForm, participle = v.participle, partOfSpeech = "verb", level = level, deckId = deckId)
+                    )
+                } else {
+                    wordDao.update(known.copy(pastForm = known.pastForm ?: v.pastForm, participle = known.participle ?: v.participle, example = known.example ?: v.example))
+                }
             }
         }
-        prefs.edit().putBoolean(KEY_LESSON_1, true).apply()
     }
 }

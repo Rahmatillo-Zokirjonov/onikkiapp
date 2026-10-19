@@ -1,11 +1,11 @@
 package com.onikki.app.domain.vocab
 
 /** One parsed import line. */
-data class ImportedWord(val english: String, val uzbek: String, val example: String?, val pastForm: String?)
+data class ImportedWord(val english: String, val uzbek: String, val example: String?, val pastForm: String?, val participle: String? = null)
 
 /**
  * Bulk text import: one word per line, "english | uzbek | misol gap" (the example is optional).
- * "decide (decided)" puts the irregular past form aside. Lines without "|" fall back to
+ * "decide (decided)" puts the irregular past form aside; "go (went, gone)" also the participle (V3). Lines without "|" fall back to
  * "apple - olma", "apple: olma" or a tab. Blank lines and "#" comments are skipped.
  */
 object VocabImport {
@@ -19,12 +19,13 @@ object VocabImport {
         if (parts.size < 2 || parts[0].isEmpty() || parts[1].isEmpty()) return null
         val m = PAST.find(parts[0])
         val english = m?.groupValues?.get(1)?.trim() ?: parts[0]
-        val past = m?.groupValues?.get(2)?.trim()?.ifEmpty { null }
+        val forms = m?.groupValues?.get(2)?.split(',', ';')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
         return ImportedWord(
             english = english,
             uzbek = parts[1],
             example = parts.getOrNull(2)?.trim()?.ifEmpty { null },
-            pastForm = past
+            pastForm = forms.getOrNull(0),
+            participle = forms.getOrNull(1)
         )
     }
 

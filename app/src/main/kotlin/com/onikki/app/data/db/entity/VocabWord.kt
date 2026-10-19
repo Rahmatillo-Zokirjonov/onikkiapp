@@ -33,7 +33,7 @@ data class VocabWord(
     val lastAskedAt: Long = 0,
     /** noun / verb / adjective …; free text. */
     val partOfSpeech: String? = null,
-    /** Irregular verbs: "decided", "forgot". */
+    /** Irregular verbs: "decided", "forgot" (V2). */
     val pastForm: String? = null,
     val example: String? = null,
     /** CEFR level "A1" / "A2" / "B1"; null = unknown. */
@@ -52,5 +52,7 @@ data class VocabWord(
     /** On the "Bilmaganlarim" list since (epoch millis); null = not on it. See Relearn. */
     val unknownSince: Long? = null,
     /** Right answers in separate sessions since it went on the list. */
-    @ColumnInfo(defaultValue = "0") val relearnHits: Int = 0
+    @ColumnInfo(defaultValue = "0") val relearnHits: Int = 0,
+    /** Irregular verbs: the past participle (V3), "gone", "forgotten". */
+    val participle: String? = null
 )

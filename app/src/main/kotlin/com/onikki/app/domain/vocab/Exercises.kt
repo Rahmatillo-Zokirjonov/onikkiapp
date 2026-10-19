@@ -12,7 +12,16 @@ enum class ExerciseType(val label: String, val hard: Boolean = false) {
     TYPE("Yozish", hard = true),
     CLOZE_CHOICE("Bo'sh joy"),
     CLOZE_TYPE("Bo'sh joyni yozish", hard = true),
-    BUILD("Gap yig'ish", hard = true)
+    BUILD("Gap yig'ish", hard = true),
+    FORM_CHOICE("Fe'l shaklini tanlash"),
+    FORMS("V2 va V3 ni yozish", hard = true),
+    DICTATE("Eshitib yozish", hard = true)
+}
+
+/** Which verb form an exercise asks for. */
+enum class VerbForm(val label: String, val hint: String) {
+    PAST("V2", "Past Simple — o'tgan zamon"),
+    PARTICIPLE("V3", "Past Participle — 3-shakl")
 }
 
 /** One screen of a lesson. [wordIds] are the words it practises (Match covers five). */
@@ -62,12 +71,33 @@ sealed interface Exercise {
         override val wordIds get() = listOf(word.id)
     }
 
+    /** An irregular verb: base form + meaning → pick its V2 or V3 among look-alikes ("goed", "gone"…). */
+    data class FormChoice(val word: VocabWord, val form: VerbForm, val options: List<String>, val answer: Int) : Exercise {
+        override val type get() = ExerciseType.FORM_CHOICE
+        override val wordIds get() = listOf(word.id)
+    }
+
+    /** The English word is spoken → type what you heard (letter boxes). */
+    data class Dictate(val word: VocabWord, val answers: List<String>) : Exercise {
+        override val type get() = ExerciseType.DICTATE
+        override val wordIds get() = listOf(word.id)
+    }
+
+    /** An irregular verb: type both V2 and V3. */
+    data class Forms(val word: VocabWord, val past: List<String>, val participle: List<String>) : Exercise {
+        override val type get() = ExerciseType.FORMS
+        override val wordIds get() = listOf(word.id)
+    }
+
     /** Put the example sentence back together from shuffled blocks (plus a couple of extra words). */
     data class Build(val word: VocabWord, val sentence: String, val tokens: List<String>, val bank: List<String>) : Exercise {
         override val type get() = ExerciseType.BUILD
         override val wordIds get() = listOf(word.id)
     }
 }
+
+/** An irregular verb shown in its base form → pick its V2 or V3. */
+data class FormChoiceData(val form: VerbForm, val options: List<String>, val answer: Int)
 
 /** A blanked sentence: text before and after the gap, and the word form that fills it. */
 data class Blank(val before: String, val after: String, val answer: String)
@@ -83,12 +113,21 @@ object Exercises {
      * Which exercise fits how far a word has got: 0 → card, 1 → recognise (choose / listen),
      * 2 → recall (type), 3 → use it in its sentence (blank / build). Falls back when the example is missing.
      */
-    fun forWord(word: VocabWord, stage: Int, pool: List<VocabWord>, random: Random, canListen: Boolean = true): Exercise = when (stage.coerceIn(0, Srs.MAX_STAGE)) {
+    fun forWord(word: VocabWord, stage: Int, pool: List<VocabWord>, random: Random, canListen: Boolean = true): Exercise {
+        // Irregular verbs: about half of their questions are about the forms.
+        val s = stage.coerceIn(0, Srs.MAX_STAGE)
+        if (isIrregular(word) && s >= 1 && random.nextInt(2) == 0) {
+            return if (s == 1) formChoice(word, pool, random) else forms(word)
+        }
+        return plainForWord(word, s, pool, random, canListen)
+    }
+
+    private fun plainForWord(word: VocabWord, stage: Int, pool: List<VocabWord>, random: Random, canListen: Boolean): Exercise = when (stage) {
         0 -> Exercise.Card(word)
         1 -> if (canListen && random.nextInt(3) == 0) listen(word, pool, random) else choose(word, pool, random)
-        2 -> typeIn(word)
+        2 -> if (canListen && random.nextInt(3) == 0) dictate(word) else typeIn(word)
         else -> {
-            val blank = word.example?.let { blank(it, word.english, word.pastForm) }
+            val blank = word.example?.let { blank(it, word.english, word.pastForm, word.participle) }
             val tokens = word.example?.let(::tokens).orEmpty()
             when {
                 blank != null && (tokens.size !in 3..10 || random.nextBoolean()) -> cloze(word, blank, pool, random, typed = random.nextBoolean())
@@ -97,6 +136,51 @@ object Exercises {
             }
         }
     }
+
+    /** Has both irregular forms (V2 and V3). */
+    fun isIrregular(word: VocabWord): Boolean = !word.pastForm.isNullOrBlank() && !word.participle.isNullOrBlank()
+
+    /** The wrong "regular" form learners make up: go → goed, make → maked, try → tried. */
+    fun regularized(base: String): String {
+        val b = base.trim().lowercase()
+        return when {
+            b.endsWith("e") -> b + "d"
+            b.endsWith("y") && b.length > 2 && b[b.length - 2] !in "aeiou" -> b.dropLast(1) + "ied"
+            else -> b + "ed"
+        }
+    }
+
+    fun formChoice(word: VocabWord, pool: List<VocabWord>, random: Random, form: VerbForm? = null): Exercise.FormChoice {
+        val f = form ?: if (random.nextBoolean()) VerbForm.PAST else VerbForm.PARTICIPLE
+        val past = primary(word.pastForm.orEmpty())
+        val participle = primary(word.participle.orEmpty())
+        val right = if (f == VerbForm.PAST) past else participle
+        val other = if (f == VerbForm.PAST) participle else past
+        // Look-alikes first (the other form, the made-up regular one, the base), then other verbs' forms.
+        val near = listOf(other, regularized(word.english), word.english.trim().lowercase(), past + "ed")
+            .filter { AnswerCheck.letters(it) != AnswerCheck.letters(right) }
+            .distinctBy { AnswerCheck.letters(it) }
+        val far = pool.filter { it.id != word.id && isIrregular(it) }.map { primary(if (f == VerbForm.PAST) it.pastForm!! else it.participle!!) }
+        val wrong = (near.take(2) + (near.drop(2) + far).shuffled(random))
+            .filter { AnswerCheck.letters(it) != AnswerCheck.letters(right) }
+            .distinctBy { AnswerCheck.letters(it) }
+            .take(OPTIONS - 1)
+        val options = (wrong + right).shuffled(random)
+        return Exercise.FormChoice(word, f, options, options.indexOf(right))
+    }
+
+    fun forms(word: VocabWord): Exercise.Forms =
+        Exercise.Forms(word, VocabChallenge.splitAnswers(word.pastForm.orEmpty()), VocabChallenge.splitAnswers(word.participle.orEmpty()))
+
+    /** Both forms right = right; one "deyarli" = deyarli; any wrong = wrong. */
+    fun checkForms(past: String, participle: String, ex: Exercise.Forms): Pair<Verdict, Verdict> =
+        checkTyped(past, ex.past) to checkTyped(participle, ex.participle)
+
+    fun combine(a: Verdict, b: Verdict): Verdict = if (a.ordinal >= b.ordinal) a else b
+
+    /** A verb drill: each verb's forms, as a choice while it's new, typed once it's known. */
+    fun verbDrill(verbs: List<VocabWord>, pool: List<VocabWord>, random: Random): List<Exercise> =
+        verbs.filter(::isIrregular).map { w -> if (w.stage >= 2) forms(w) else formChoice(w, pool, random) }
 
     fun choose(word: VocabWord, pool: List<VocabWord>, random: Random): Exercise.Choose {
         val right = word.english.trim()
@@ -115,6 +199,8 @@ object Exercises {
         if (picked.size < 3) return null
         return Exercise.Match(picked, picked.map { it.id }.shuffled(random), picked.map { it.id }.shuffled(random))
     }
+
+    fun dictate(word: VocabWord): Exercise.Dictate = Exercise.Dictate(word, VocabChallenge.splitAnswers(word.english))
 
     fun typeIn(word: VocabWord): Exercise.TypeIn =
         Exercise.TypeIn(word, primary(word.uzbek), VocabChallenge.splitAnswers(word.english))
@@ -155,12 +241,13 @@ object Exercises {
      * Finds [english] (or its past form, or a regular -s / -ed / -ing form) in the sentence and blanks it.
      * Null when the word isn't there or is a phrase.
      */
-    fun blank(sentence: String, english: String, pastForm: String?): Blank? {
+    fun blank(sentence: String, english: String, pastForm: String?, participle: String? = null): Blank? {
         val base = english.trim().lowercase()
         if (base.contains(' ')) return null
         val forms = buildSet {
             add(base)
             pastForm?.split(',', '/')?.forEach { add(it.trim().lowercase()) }
+            participle?.split(',', '/')?.forEach { add(it.trim().lowercase()) }
             add(base + "s"); add(base + "es"); add(base + "ed"); add(base + "d"); add(base + "ing")
             if (base.endsWith("e")) add(base.dropLast(1) + "ing")
             if (base.endsWith("y")) { add(base.dropLast(1) + "ies"); add(base.dropLast(1) + "ied") }

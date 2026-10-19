@@ -67,10 +67,14 @@ fun LearnRoute(onBack: () -> Unit) {
     LaunchedEffect(Unit) { viewModel.refreshHearts() }
     var statsOpen by rememberSaveable { mutableStateOf(false) }
     var listeningOpen by rememberSaveable { mutableStateOf(false) }
+    var verbsOpen by rememberSaveable { mutableStateOf(false) }
     val sort by viewModel.sort.collectAsState()
     val s = session
     val so = sort
-    if (s == null && listeningOpen) {
+    if (s == null && verbsOpen) {
+        BackHandler { verbsOpen = false }
+        IrregularVerbsScreen(home.verbs, onBack = { verbsOpen = false }, onDrill = viewModel::startVerbDrill)
+    } else if (s == null && listeningOpen) {
         ListeningRoute(onBack = { listeningOpen = false })
     } else if (s == null && so != null) {
         BackHandler(onBack = viewModel::closeSort)
@@ -81,7 +85,7 @@ fun LearnRoute(onBack: () -> Unit) {
         LearnStatsScreen(stats, onBack = { statsOpen = false })
     } else if (s == null) {
         BackHandler(onBack = onBack)
-        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true })
+        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true })
     } else {
         BackHandler(onBack = viewModel::close)
         when {
@@ -102,7 +106,8 @@ private fun LearnHome(
     viewModel: LearnViewModel,
     onBack: () -> Unit,
     onStats: () -> Unit,
-    onListening: () -> Unit
+    onListening: () -> Unit,
+    onVerbs: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     var settingsOpen by remember { mutableStateOf(false) }
@@ -196,6 +201,18 @@ private fun LearnHome(
                     if (state.unknown.isNotEmpty()) SmallLink("📋 Ro'yxat", Modifier.weight(1f)) { unknownOpen = true }
                     if (state.unsorted.isNotEmpty()) SmallLink("🗂 Bilaman / Bilmayman (${state.unsorted.size})", Modifier.weight(2f), onClick = viewModel::startSort)
                 }
+            }
+        }
+        if (state.verbs.isNotEmpty()) {
+            item {
+                BigAction(
+                    kicker = "📘 NOTO'G'RI FE'LLAR",
+                    title = "V1 · V2 · V3 jadvali va mashq",
+                    subtitle = "${state.verbs.size} ta fe'l: " + state.verbs.take(4).joinToString(", ") { "${it.english}–${it.pastForm}–${it.participle}" },
+                    enabled = true,
+                    primary = false,
+                    onClick = onVerbs
+                )
             }
         }
         state.units.forEach { unit ->
@@ -424,7 +441,7 @@ private fun LessonRunner(s: LessonSession, hearts: Int, settings: com.onikki.app
             when (s.kind) {
                 is SessionKind.Path -> Text(text = "❤️ $hearts", color = colors.warmAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
                 SessionKind.Heal -> Text(text = "❤️ $hearts/${com.onikki.app.domain.vocab.Hearts.MAX}", color = colors.warmAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
-                SessionKind.Review, SessionKind.Relearn -> Text(text = "⭐ ${s.xp}", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+                SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs -> Text(text = "⭐ ${s.xp}", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
             }
         }
         Column(
@@ -460,6 +477,7 @@ private fun LessonResult(s: LessonSession, streak: Int, onDone: () -> Unit, onPr
         SessionKind.Review -> "Takrorlash tugadi!"
         SessionKind.Heal -> "Jonlar tiklandi!"
         SessionKind.Relearn -> "Bilmaganlar takrorlandi!"
+        SessionKind.Verbs -> "Fe'llar mashqi tugadi!"
     }
     // A small celebration: the trophy pops in and the XP counts up.
     var shown by remember { mutableStateOf(false) }

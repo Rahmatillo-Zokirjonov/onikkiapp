@@ -46,7 +46,7 @@ fun BulkImportBody(text: String, onText: (String) -> Unit) {
     val parsed = remember(text) { VocabImport.parse(text) }
     val lines = remember(text) { text.lines().count { it.isNotBlank() && !it.trim().startsWith("#") } }
     Text(
-        text = "Har qatorga bitta so'z:\nenglish | o'zbekcha | misol gap\n\nMasalan:\ndecide (decided) | qaror qilmoq | I decided to study.\napple | olma",
+        text = "Har qatorga bitta so'z:\nenglish | o'zbekcha | misol gap\n\nMasalan:\ngo (went, gone) | bormoq | She went home.\ndecide (decided) | qaror qilmoq\napple | olma",
         color = colors.text.muted(0.6f),
         fontSize = 12.sp,
         fontFamily = OnIkkiFontFamily
@@ -60,7 +60,7 @@ fun BulkImportBody(text: String, onText: (String) -> Unit) {
     )
     parsed.take(3).forEach { w ->
         Text(
-            text = "• ${w.english}${w.pastForm?.let { " ($it)" }.orEmpty()} — ${w.uzbek}${w.example?.let { "  ·  $it" }.orEmpty()}",
+            text = "• ${w.english}${listOfNotNull(w.pastForm, w.participle).takeIf { it.isNotEmpty() }?.let { " (${it.joinToString(", ")})" }.orEmpty()} — ${w.uzbek}${w.example?.let { "  ·  $it" }.orEmpty()}",
             color = colors.text.muted(0.7f),
             fontSize = 12.sp,
             fontFamily = OnIkkiFontFamily,

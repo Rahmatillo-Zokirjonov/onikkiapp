@@ -44,6 +44,8 @@ data class LearnHomeState(
     val unknown: List<VocabWord> = emptyList(),
     /** New words not sorted yet, for "Bilaman / Bilmayman". */
     val unsorted: List<VocabWord> = emptyList(),
+    /** Irregular verbs (with V2 and V3), for the table and the drill. */
+    val verbs: List<VocabWord> = emptyList(),
     val isLoaded: Boolean = false
 )
 
@@ -75,6 +77,8 @@ sealed interface SessionKind {
     data object Heal : SessionKind
     /** "Bilmaganlarim": cards again, then questions. */
     data object Relearn : SessionKind
+    /** Irregular verb forms (V2 / V3). */
+    data object Verbs : SessionKind
 }
 
 /** What the panel under an answered exercise shows. */
@@ -185,6 +189,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             hardest = c.missed.mapNotNull { byId[it.wordId] },
             decks = decks,
             unknown = com.onikki.app.domain.vocab.Relearn.unknown(words),
+            verbs = words.filter(com.onikki.app.domain.vocab.Exercises::isIrregular),
             unsorted = units.flatMap { u -> u.lessons.flatMap { it.words } }.filter { it.status == com.onikki.app.data.db.entity.WordStatus.NEW && it.unknownSince == null },
             isLoaded = true
         )
@@ -261,6 +266,33 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         begin(SessionKind.Relearn, com.onikki.app.domain.vocab.Relearn.session(words, allWords, random))
     }
 
+    /**
+     * A verb-forms drill over [among] (the table's current filter): unknown and due verbs first, then those
+     * being learned, then new ones; a verb first met as a choice gets typed at the end too.
+     */
+    fun startVerbDrill(among: List<VocabWord>) {
+        val fresh = among.map { w -> allWords.firstOrNull { it.id == w.id } ?: w }.filter(com.onikki.app.domain.vocab.Exercises::isIrregular)
+        val picked = fresh.sortedWith(
+            compareBy<VocabWord>(
+                { if (it.unknownSince != null) 0 else 1 },
+                { if (Srs.isDue(it, today)) 0 else 1 },
+                {
+                    when (it.status) {
+                        com.onikki.app.data.db.entity.WordStatus.LEARNING -> 0
+                        com.onikki.app.data.db.entity.WordStatus.NEW -> 1
+                        com.onikki.app.data.db.entity.WordStatus.REVIEW -> 2
+                        com.onikki.app.data.db.entity.WordStatus.MASTERED -> 3
+                    }
+                },
+                { listOf("A1", "A2", "B1", "B2").indexOf(it.level).let { i -> if (i < 0) 9 else i } }
+            )
+        ).take(VERB_DRILL)
+        if (picked.isEmpty()) return
+        val first = com.onikki.app.domain.vocab.Exercises.verbDrill(picked.shuffled(random), allWords, random)
+        val typedLater = first.filterIsInstance<com.onikki.app.domain.vocab.Exercise.FormChoice>().map { com.onikki.app.domain.vocab.Exercises.forms(it.word) }.shuffled(random)
+        begin(SessionKind.Verbs, (first + typedLater).take(LessonPlanner.MAX_EXERCISES))
+    }
+
     private val _sort = MutableStateFlow<SortSession?>(null)
     val sort: StateFlow<SortSession?> = _sort
 
@@ -310,7 +342,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             advance()
             return
         }
-        val source = if (s.kind is SessionKind.Review || s.kind is SessionKind.Relearn) ReviewSource.REVIEW else ReviewSource.LESSON
+        val source = if (s.kind is SessionKind.Path || s.kind is SessionKind.Heal) ReviewSource.LESSON else ReviewSource.REVIEW
         val worst = answers.maxOf { it.verdict.ordinal }.let { Verdict.entries[it] }
         val byId = allWords.associateBy { it.id }
         var gainedXp = 0
@@ -325,7 +357,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             // Another try of a missed word is part of learning it: no heart for that.
             is SessionKind.Path -> if (!s.isRetry) repeat(missed.size) { setHearts(com.onikki.app.domain.vocab.Hearts.lose(_hearts.value, now)) }
             SessionKind.Heal -> repeat(answers.count { it.verdict != Verdict.WRONG }) { setHearts(com.onikki.app.domain.vocab.Hearts.gain(_hearts.value, now)) }
-            SessionKind.Review, SessionKind.Relearn -> Unit
+            SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs -> Unit
         }
         var combo = s.combo
         answers.forEach { combo = com.onikki.app.domain.vocab.Combo.next(combo, it.verdict) }
@@ -409,5 +441,6 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
 
     private companion object {
         const val SORT_SIZE = 20
+        const val VERB_DRILL = 10
     }
 }

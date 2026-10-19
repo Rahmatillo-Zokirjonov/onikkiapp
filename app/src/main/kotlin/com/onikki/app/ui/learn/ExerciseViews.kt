@@ -86,6 +86,100 @@ fun ExerciseView(exercise: Exercise, speaker: Speaker, onAnswer: (List<WordAnswe
         is Exercise.TypeIn -> TypeExercise(exercise, speaker, onAnswer)
         is Exercise.Cloze -> ClozeExercise(exercise, speaker, onAnswer)
         is Exercise.Build -> BuildExercise(exercise, speaker, onAnswer)
+        is Exercise.FormChoice -> OptionsExercise(
+            title = "${exercise.form.label} shaklini tanlang · ${exercise.form.hint}",
+            prompt = { VerbPrompt(exercise.word, speaker) },
+            options = exercise.options,
+            answer = exercise.answer,
+            onPicked = { verdict -> onAnswer(listOf(WordAnswer(exercise.word.id, verdict))) },
+            onRevealed = { speaker.speak(verbLine(exercise.word)) }
+        )
+        is Exercise.Forms -> FormsExercise(exercise, speaker, onAnswer)
+        is Exercise.Dictate -> TypedAnswer(
+            title = "Eshiting va yozing",
+            prompt = { ListenPrompt(exercise.word.english, speaker) },
+            answer = exercise.answers.first(),
+            answers = exercise.answers,
+            wordId = exercise.word.id,
+            onAfter = {},
+            onAnswer = onAnswer
+        )
+    }
+}
+
+/** "go, went, gone" — read aloud after a verb exercise. */
+fun verbLine(word: VocabWord): String =
+    listOfNotNull(word.english.trim(), word.pastForm?.let(Exercises::primary), word.participle?.let(Exercises::primary)).joinToString(", ")
+
+@Composable
+private fun VerbPrompt(word: VocabWord, speaker: Speaker) {
+    val colors = LocalOnIkkiColors.current
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.surface).padding(vertical = 18.dp, horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(text = word.english, color = colors.text, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+            SpeakerButton(speaker, word.english, size = 38)
+        }
+        Text(text = Exercises.primary(word.uzbek), color = colors.text.muted(0.65f), fontSize = 15.sp, fontFamily = OnIkkiFontFamily)
+    }
+}
+
+/** An irregular verb: V2 and V3 into letter boxes, checked together. */
+@Composable
+private fun FormsExercise(ex: Exercise.Forms, speaker: Speaker, onAnswer: (List<WordAnswer>) -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val focusPast = remember(ex) { FocusRequester() }
+    val focusPart = remember(ex) { FocusRequester() }
+    var past by remember(ex) { mutableStateOf("") }
+    var part by remember(ex) { mutableStateOf("") }
+    var verdicts by remember(ex) { mutableStateOf<Pair<Verdict, Verdict>?>(null) }
+    val pastAnswer = ex.past.first()
+    val partAnswer = ex.participle.first()
+    val pastSlots = remember(ex) { AnswerCheck.slots(pastAnswer) }
+    val partSlots = remember(ex) { AnswerCheck.slots(partAnswer) }
+    LaunchedEffect(ex) { runCatching { focusPast.requestFocus() } }
+
+    fun check() {
+        if (verdicts != null || (past.isEmpty() && part.isEmpty())) return
+        val v = Exercises.checkForms(AnswerCheck.assemble(pastSlots, past), AnswerCheck.assemble(partSlots, part), ex)
+        verdicts = v
+        speaker.speak(verbLine(ex.word))
+        onAnswer(listOf(WordAnswer(ex.word.id, Exercises.combine(v.first, v.second))))
+    }
+
+    fun stateOf(v: Verdict?) = when (v) {
+        null -> BoxState.TYPING
+        Verdict.WRONG -> BoxState.WRONG
+        else -> BoxState.RIGHT
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ExerciseTitle("Fe'lning 2- va 3-shaklini yozing")
+        VerbPrompt(ex.word, speaker)
+        Text(text = "V2 · Past Simple", color = colors.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
+        LetterBoxInput(
+            answer = pastAnswer,
+            typed = past,
+            onTyped = { if (verdicts == null) past = it },
+            onDone = { runCatching { focusPart.requestFocus() } },
+            focusRequester = focusPast,
+            state = stateOf(verdicts?.first)
+        )
+        Text(text = "V3 · Past Participle", color = colors.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
+        LetterBoxInput(
+            answer = partAnswer,
+            typed = part,
+            onTyped = { if (verdicts == null) part = it },
+            onDone = ::check,
+            focusRequester = focusPart,
+            state = stateOf(verdicts?.second)
+        )
+        if (verdicts == null) {
+            OnIkkiButton(text = "Tekshirish", onClick = ::check, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp))
+        }
     }
 }
 
@@ -195,7 +289,15 @@ fun CardExercise(word: VocabWord, speaker: Speaker, onDone: () -> Unit) {
                 Text(text = word.english, color = colors.text, fontSize = 34.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
                 SpeakerButton(speaker, word.english)
             }
-            val chips = listOfNotNull(word.partOfSpeech, word.pastForm?.let { "o'tgan zamon: $it" }, word.level)
+            val chips = listOfNotNull(
+                word.partOfSpeech,
+                when {
+                    Exercises.isIrregular(word) -> "${word.english} · ${word.pastForm} · ${word.participle}"
+                    word.pastForm != null -> "o'tgan zamon: ${word.pastForm}"
+                    else -> null
+                },
+                word.level
+            )
             if (chips.isNotEmpty()) {
                 Text(text = chips.joinToString("  ·  "), color = colors.accent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
             }
@@ -218,7 +320,7 @@ private fun Modifier.height1(): Modifier = this.then(Modifier.heightIn(min = 1.d
 @Composable
 private fun highlighted(sentence: String, word: VocabWord) = buildAnnotatedString {
     val colors = LocalOnIkkiColors.current
-    val blank = Exercises.blank(sentence, word.english, word.pastForm)
+    val blank = Exercises.blank(sentence, word.english, word.pastForm, word.participle)
     if (blank == null) append(sentence) else {
         append(blank.before)
         withStyle(SpanStyle(color = colors.accent, fontWeight = FontWeight.Bold)) { append(blank.answer) }
@@ -601,6 +703,9 @@ fun rightAnswerOf(exercise: Exercise): String? = when (exercise) {
     is Exercise.TypeIn -> exercise.answers.joinToString(" / ")
     is Exercise.Cloze -> exercise.before + exercise.answer + exercise.after
     is Exercise.Build -> exercise.sentence
+    is Exercise.FormChoice -> verbLine(exercise.word).replace(", ", " — ")
+    is Exercise.Forms -> verbLine(exercise.word).replace(", ", " — ")
+    is Exercise.Dictate -> "${exercise.word.english} — ${Exercises.primary(exercise.word.uzbek)}"
 }
 
 /** Kicker style re-export for screens in this package. */
