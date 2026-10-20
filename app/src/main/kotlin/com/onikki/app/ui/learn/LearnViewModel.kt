@@ -173,8 +173,8 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         db.vocabWordDao().observeInPathOrder(),
         db.vocabLessonDao().observeAll(),
         counters,
-        combine(db.listeningDao().observeAttempts(), db.grammarDao().observeXpByDay()) { l, g ->
-            l.map { com.onikki.app.data.db.dao.DayXp(it.day, it.xp) } + g
+        combine(db.listeningDao().observeAttempts(), db.grammarDao().observeXpByDay(), db.podcastDao().observeXpByDay()) { l, g, p ->
+            l.map { com.onikki.app.data.db.dao.DayXp(it.day, it.xp) } + g + p
         }
     ) { decks, words, results, c0, extra ->
         // Listening and grammar count towards XP and the streak too.

@@ -64,9 +64,9 @@ import com.onikki.app.data.db.entity.Transaction
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
-        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class, VocabDeck::class, VocabReview::class, VocabLessonResult::class, com.onikki.app.data.db.entity.ListeningCustomText::class, com.onikki.app.data.db.entity.ListeningAttempt::class, com.onikki.app.data.db.entity.GrammarAttempt::class, com.onikki.app.data.db.entity.GrammarCached::class
+        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class, VocabDeck::class, VocabReview::class, VocabLessonResult::class, com.onikki.app.data.db.entity.ListeningCustomText::class, com.onikki.app.data.db.entity.ListeningAttempt::class, com.onikki.app.data.db.entity.GrammarAttempt::class, com.onikki.app.data.db.entity.GrammarCached::class, com.onikki.app.data.db.entity.PodcastAttempt::class, com.onikki.app.data.db.entity.PodcastCustom::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -98,6 +98,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun vocabLessonDao(): VocabLessonDao
     abstract fun listeningDao(): com.onikki.app.data.db.dao.ListeningDao
     abstract fun grammarDao(): com.onikki.app.data.db.dao.GrammarDao
+    abstract fun podcastDao(): com.onikki.app.data.db.dao.PodcastDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -105,7 +106,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -374,5 +375,22 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
                 "`payload` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_grammar_cache_topicId` ON `grammar_cache` (`topicId`)")
+    }
+}
+
+/** Podcasts: results ("qancha tushundim") and AI-written podcasts. */
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `podcast_attempts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `podcastId` TEXT NOT NULL, " +
+                "`level` TEXT NOT NULL, `at` INTEGER NOT NULL, `day` TEXT NOT NULL, `percent` INTEGER NOT NULL, `xp` INTEGER NOT NULL)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_podcast_attempts_podcastId` ON `podcast_attempts` (`podcastId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_podcast_attempts_day` ON `podcast_attempts` (`day`)")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `podcast_texts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `level` TEXT NOT NULL, " +
+                "`minutes` INTEGER NOT NULL, `title` TEXT NOT NULL, `topic` TEXT NOT NULL, `transcript` TEXT NOT NULL, " +
+                "`questions` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+        )
     }
 }

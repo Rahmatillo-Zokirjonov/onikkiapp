@@ -69,10 +69,13 @@ fun LearnRoute(onBack: () -> Unit) {
     var listeningOpen by rememberSaveable { mutableStateOf(false) }
     var verbsOpen by rememberSaveable { mutableStateOf(false) }
     var grammarOpen by rememberSaveable { mutableStateOf(false) }
+    var podcastsOpen by rememberSaveable { mutableStateOf(false) }
     val sort by viewModel.sort.collectAsState()
     val s = session
     val so = sort
-    if (s == null && grammarOpen) {
+    if (s == null && podcastsOpen) {
+        PodcastRoute(home.suggestedLevel, onBack = { podcastsOpen = false })
+    } else if (s == null && grammarOpen) {
         GrammarRoute(home.suggestedLevel, onBack = { grammarOpen = false })
     } else if (s == null && verbsOpen) {
         BackHandler { verbsOpen = false }
@@ -88,7 +91,7 @@ fun LearnRoute(onBack: () -> Unit) {
         LearnStatsScreen(stats, onBack = { statsOpen = false })
     } else if (s == null) {
         BackHandler(onBack = onBack)
-        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true })
+        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true }, onPodcasts = { podcastsOpen = true })
     } else {
         BackHandler(onBack = viewModel::close)
         when {
@@ -111,7 +114,8 @@ private fun LearnHome(
     onStats: () -> Unit,
     onListening: () -> Unit,
     onVerbs: () -> Unit,
-    onGrammar: () -> Unit
+    onGrammar: () -> Unit,
+    onPodcasts: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     var settingsOpen by remember { mutableStateOf(false) }
@@ -200,6 +204,16 @@ private fun LearnHome(
                 enabled = true,
                 primary = false,
                 onClick = onGrammar
+            )
+        }
+        item {
+            BigAction(
+                kicker = "🎙 PODKASTLAR",
+                title = "1–3 daqiqa tinglang · qancha tushundingiz?",
+                subtitle = "Savollar, foizdagi natija va to'liq matn",
+                enabled = true,
+                primary = false,
+                onClick = onPodcasts
             )
         }
         item {
