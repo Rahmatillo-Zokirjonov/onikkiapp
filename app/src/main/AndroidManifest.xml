@@ -42,6 +42,10 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.HOME" />
         </intent>
+        <!-- O'rganish → Speaking: the phone's speech recognizer must be visible to check it exists. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
     </queries>
     <!-- Voice recordings in Qaydlar (asked only when the user taps record). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />

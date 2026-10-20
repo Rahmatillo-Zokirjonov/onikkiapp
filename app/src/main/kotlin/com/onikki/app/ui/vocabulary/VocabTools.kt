@@ -80,6 +80,11 @@ class Speaker(context: Context) {
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "onikki-word-slow")
     }
 
+    /** Stops talking (before the microphone listens, so it doesn't hear itself). */
+    fun stop() {
+        tts?.stop()
+    }
+
     fun shutdown() {
         tts?.stop()
         tts?.shutdown()

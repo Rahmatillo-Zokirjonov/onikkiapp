@@ -70,10 +70,13 @@ fun LearnRoute(onBack: () -> Unit) {
     var verbsOpen by rememberSaveable { mutableStateOf(false) }
     var grammarOpen by rememberSaveable { mutableStateOf(false) }
     var podcastsOpen by rememberSaveable { mutableStateOf(false) }
+    var speakingOpen by rememberSaveable { mutableStateOf(false) }
     val sort by viewModel.sort.collectAsState()
     val s = session
     val so = sort
-    if (s == null && podcastsOpen) {
+    if (s == null && speakingOpen) {
+        SpeakingRoute(home.suggestedLevel, onBack = { speakingOpen = false })
+    } else if (s == null && podcastsOpen) {
         PodcastRoute(home.suggestedLevel, onBack = { podcastsOpen = false })
     } else if (s == null && grammarOpen) {
         GrammarRoute(home.suggestedLevel, onBack = { grammarOpen = false })
@@ -91,7 +94,7 @@ fun LearnRoute(onBack: () -> Unit) {
         LearnStatsScreen(stats, onBack = { statsOpen = false })
     } else if (s == null) {
         BackHandler(onBack = onBack)
-        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true }, onPodcasts = { podcastsOpen = true })
+        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true }, onPodcasts = { podcastsOpen = true }, onSpeaking = { speakingOpen = true })
     } else {
         BackHandler(onBack = viewModel::close)
         when {
@@ -115,7 +118,8 @@ private fun LearnHome(
     onListening: () -> Unit,
     onVerbs: () -> Unit,
     onGrammar: () -> Unit,
-    onPodcasts: () -> Unit
+    onPodcasts: () -> Unit,
+    onSpeaking: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     var settingsOpen by remember { mutableStateOf(false) }
@@ -204,6 +208,16 @@ private fun LearnHome(
                 enabled = true,
                 primary = false,
                 onClick = onGrammar
+            )
+        }
+        item {
+            BigAction(
+                kicker = "🗣 SPEAKING",
+                title = "Ovoz chiqarib o'qing · talaffuz bahosi",
+                subtitle = "Telefon tushungan so'zlar yashil, tushunmaganlari qizil",
+                enabled = true,
+                primary = false,
+                onClick = onSpeaking
             )
         }
         item {
