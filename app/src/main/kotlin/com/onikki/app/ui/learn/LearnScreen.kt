@@ -68,10 +68,13 @@ fun LearnRoute(onBack: () -> Unit) {
     var statsOpen by rememberSaveable { mutableStateOf(false) }
     var listeningOpen by rememberSaveable { mutableStateOf(false) }
     var verbsOpen by rememberSaveable { mutableStateOf(false) }
+    var grammarOpen by rememberSaveable { mutableStateOf(false) }
     val sort by viewModel.sort.collectAsState()
     val s = session
     val so = sort
-    if (s == null && verbsOpen) {
+    if (s == null && grammarOpen) {
+        GrammarRoute(home.suggestedLevel, onBack = { grammarOpen = false })
+    } else if (s == null && verbsOpen) {
         BackHandler { verbsOpen = false }
         IrregularVerbsScreen(home.verbs, onBack = { verbsOpen = false }, onDrill = viewModel::startVerbDrill)
     } else if (s == null && listeningOpen) {
@@ -85,7 +88,7 @@ fun LearnRoute(onBack: () -> Unit) {
         LearnStatsScreen(stats, onBack = { statsOpen = false })
     } else if (s == null) {
         BackHandler(onBack = onBack)
-        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true })
+        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true })
     } else {
         BackHandler(onBack = viewModel::close)
         when {
@@ -107,7 +110,8 @@ private fun LearnHome(
     onBack: () -> Unit,
     onStats: () -> Unit,
     onListening: () -> Unit,
-    onVerbs: () -> Unit
+    onVerbs: () -> Unit,
+    onGrammar: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     var settingsOpen by remember { mutableStateOf(false) }
@@ -186,6 +190,16 @@ private fun LearnHome(
                 enabled = state.due.isNotEmpty(),
                 primary = false,
                 onClick = onReview
+            )
+        }
+        item {
+            BigAction(
+                kicker = "📗 GRAMMATIKA",
+                title = "48 ta mavzu · o'zbekcha tushuntirish",
+                subtitle = "A1 · A2 · B1 · B2 — qoida, misollar va mashqlar",
+                enabled = true,
+                primary = false,
+                onClick = onGrammar
             )
         }
         item {

@@ -42,6 +42,8 @@ data class LearnHomeState(
     val decks: List<com.onikki.app.data.db.entity.VocabDeck> = emptyList(),
     /** "Bilmaganlarim", oldest first. */
     val unknown: List<VocabWord> = emptyList(),
+    /** A starting level for listening and grammar, from how many words are learned. */
+    val suggestedLevel: String = "A1",
     /** Every never-studied word, in path order. */
     val newWords: List<VocabWord> = emptyList(),
     /** New words not sorted yet, for "Bilaman / Bilmayman". */
@@ -197,6 +199,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             unknown = com.onikki.app.domain.vocab.Relearn.unknown(words),
             verbs = words.filter(com.onikki.app.domain.vocab.Exercises::isIrregular),
             newWords = LearningPath.untouched(units),
+            suggestedLevel = com.onikki.app.domain.vocab.Listening.suggestLevel(words),
             unsorted = LearningPath.untouched(units).filter { it.unknownSince == null },
             isLoaded = true
         )

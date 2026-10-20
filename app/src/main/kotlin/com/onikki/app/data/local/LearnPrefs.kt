@@ -49,6 +49,12 @@ class LearnPrefs(context: Context) {
         prefs.edit().putString("listen_level", level).apply()
     }
 
+    fun grammarLevel(): String? = prefs.getString("grammar_level", null)
+
+    fun setGrammarLevel(level: String) {
+        prefs.edit().putString("grammar_level", level).apply()
+    }
+
     private fun readSettings() = LearnSettings(
         newPerDay = prefs.getInt("new_per_day", 15),
         sound = prefs.getBoolean("sound", true),
