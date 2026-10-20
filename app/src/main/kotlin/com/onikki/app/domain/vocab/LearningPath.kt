@@ -27,8 +27,10 @@ data class PathUnit(val deck: VocabDeck, val lessons: List<PathLesson>) {
 
 /**
  * The learning path: decks in their order become Units, each deck's words (A1 → A2 → B1, then the
- * order they were added) are cut into lessons of [LESSON_SIZE]. Lessons unlock one after another
- * across the whole path; finished ones stay open for replay. New words simply add lessons at the end.
+ * order they were added) are cut into lessons of [LESSON_SIZE]. Inside a deck lessons unlock one after
+ * another; every deck has its own next lesson, so own words and verbs never wait behind another deck.
+ * Finished ones stay open for replay. A finished lesson that has a never-studied word again (words were
+ * added and the chunks moved) counts as not finished, so no new word is skipped.
  */
 object LearningPath {
     const val LESSON_SIZE = 8
@@ -49,14 +51,17 @@ object LearningPath {
     fun build(decks: List<VocabDeck>, words: List<VocabWord>, results: List<VocabLessonResult>): List<PathUnit> {
         val byDeck = words.groupBy { it.deckId }
         val done = results.associateBy { it.deckId to it.lessonIndex }
-        var unlockedNext = true
         return decks.sortedWith(compareBy({ it.sortOrder }, { it.id })).mapNotNull { deck ->
             val chunks = lessonsOf(byDeck[deck.id].orEmpty())
             if (chunks.isEmpty()) return@mapNotNull null
+            var unlockedNext = true
             val lessons = chunks.mapIndexed { i, chunk ->
                 val result = done[deck.id to i]
+                val hasNew = chunk.any { it.status == WordStatus.NEW }
                 val state = when {
-                    result != null -> LessonState.DONE
+                    result != null && !hasNew -> LessonState.DONE
+                    // Done before, but a new word moved in: open again (keeps its old result for the score).
+                    result != null -> LessonState.AVAILABLE
                     unlockedNext -> LessonState.AVAILABLE.also { unlockedNext = false }
                     else -> LessonState.LOCKED
                 }
@@ -68,6 +73,10 @@ object LearningPath {
 
     fun nextLesson(units: List<PathUnit>): PathLesson? =
         units.asSequence().flatMap { it.lessons.asSequence() }.firstOrNull { it.state == LessonState.AVAILABLE }
+
+    /** Words never studied yet, in path order (deck, then lesson) — for "Yangi so'zlar". */
+    fun untouched(units: List<PathUnit>): List<VocabWord> =
+        units.flatMap { u -> u.lessons.flatMap { it.words } }.filter { it.status == WordStatus.NEW }
 }
 
 /** Builds the exercise list for a lesson or a review session (pure). */

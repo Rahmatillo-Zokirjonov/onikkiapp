@@ -35,13 +35,28 @@ class LearningPathTest {
         val start = LearningPath.build(listOf(mine, lesson1), starter + own, emptyList())
         assertEquals(listOf("Lesson 1", "Mening so'zlarim"), start.map { it.deck.name })
         assertEquals(listOf(LessonState.AVAILABLE, LessonState.LOCKED, LessonState.LOCKED), start[0].lessons.map { it.state })
-        assertEquals(LessonState.LOCKED, start[1].lessons[0].state)
+        // Each deck has its own next lesson: own words don't wait for Lesson 1.
+        assertEquals(LessonState.AVAILABLE, start[1].lessons[0].state)
 
-        val later = LearningPath.build(listOf(mine, lesson1), starter + own, listOf(result(2, 0), result(2, 1), result(2, 2)))
+        // After its lessons the starter words are studied.
+        val studied = starter.map { it.copy(status = WordStatus.REVIEW, stage = 2) }
+        val later = LearningPath.build(listOf(mine, lesson1), studied + own, listOf(result(2, 0), result(2, 1), result(2, 2)))
         assertEquals(3, later[0].done)
         assertEquals(LessonState.AVAILABLE, later[1].lessons[0].state)
         assertEquals(1L, LearningPath.nextLesson(later)!!.deckId)
         assertNull(LearningPath.nextLesson(LearningPath.build(listOf(mine), own, listOf(result(1, 0)))))
+    }
+
+    @Test
+    fun aDoneLessonWithANewWordInItOpensAgain_andNewWordsAreListed() {
+        val studied = starter.take(8).map { it.copy(status = WordStatus.REVIEW, stage = 2) }
+        val done = LearningPath.build(listOf(lesson1), studied, listOf(result(2, 0)))
+        assertEquals(LessonState.DONE, done[0].lessons[0].state)
+        // A new word lands in that lesson (a small tail merges into it).
+        val withNew = studied + starter[8]
+        val reopened = LearningPath.build(listOf(lesson1), withNew, listOf(result(2, 0)))
+        assertEquals(LessonState.AVAILABLE, reopened[0].lessons[0].state)
+        assertEquals(listOf(starter[8].id), LearningPath.untouched(reopened).map { it.id })
     }
 
     @Test

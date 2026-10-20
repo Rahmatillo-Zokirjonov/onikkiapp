@@ -42,6 +42,8 @@ data class LearnHomeState(
     val decks: List<com.onikki.app.data.db.entity.VocabDeck> = emptyList(),
     /** "Bilmaganlarim", oldest first. */
     val unknown: List<VocabWord> = emptyList(),
+    /** Every never-studied word, in path order. */
+    val newWords: List<VocabWord> = emptyList(),
     /** New words not sorted yet, for "Bilaman / Bilmayman". */
     val unsorted: List<VocabWord> = emptyList(),
     /** Irregular verbs (with V2 and V3), for the table and the drill. */
@@ -81,6 +83,8 @@ sealed interface SessionKind {
     data object Verbs : SessionKind
     /** "Gap tuzish": sentences from Uzbek and own sentences. */
     data object Sentences : SessionKind
+    /** The next never-studied words, wherever they are on the path. */
+    data object NewWords : SessionKind
 }
 
 /** What the panel under an answered exercise shows. */
@@ -192,7 +196,8 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             decks = decks,
             unknown = com.onikki.app.domain.vocab.Relearn.unknown(words),
             verbs = words.filter(com.onikki.app.domain.vocab.Exercises::isIrregular),
-            unsorted = units.flatMap { u -> u.lessons.flatMap { it.words } }.filter { it.status == com.onikki.app.data.db.entity.WordStatus.NEW && it.unknownSince == null },
+            newWords = LearningPath.untouched(units),
+            unsorted = LearningPath.untouched(units).filter { it.unknownSince == null },
             isLoaded = true
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LearnHomeState())
@@ -302,6 +307,13 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         (ai.checkSentence(word.english, com.onikki.app.domain.vocab.Exercises.primary(word.uzbek), sentence) as? com.onikki.app.data.repository.AiOutcome.Ok)?.value
     }
 
+    /** "Yangi so'zlar": the next lesson-size batch of never-studied words, from any deck. */
+    fun startNewWords() {
+        val words = home.value.newWords.take(com.onikki.app.domain.vocab.LearningPath.LESSON_SIZE).map { w -> allWords.firstOrNull { it.id == w.id } ?: w }
+        if (words.isEmpty()) return
+        begin(SessionKind.NewWords, LessonPlanner.lesson(words, allWords, random))
+    }
+
     /** Words for "Gap tuzish": studied ones, unknown and young first, those with a translated example preferred. */
     fun startSentences() {
         val studied = allWords.filter { it.status != com.onikki.app.data.db.entity.WordStatus.NEW }
@@ -376,7 +388,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             // Another try of a missed word is part of learning it: no heart for that.
             is SessionKind.Path -> if (!s.isRetry) repeat(missed.size) { setHearts(com.onikki.app.domain.vocab.Hearts.lose(_hearts.value, now)) }
             SessionKind.Heal -> repeat(answers.count { it.verdict != Verdict.WRONG }) { setHearts(com.onikki.app.domain.vocab.Hearts.gain(_hearts.value, now)) }
-            SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs, SessionKind.Sentences -> Unit
+            SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs, SessionKind.Sentences, SessionKind.NewWords -> Unit
         }
         var combo = s.combo
         answers.forEach { combo = com.onikki.app.domain.vocab.Combo.next(combo, it.verdict) }

@@ -114,6 +114,7 @@ private fun LearnHome(
     var addOpen by remember { mutableStateOf(false) }
     var unknownOpen by remember { mutableStateOf(false) }
     var overLimitFor by remember { mutableStateOf<Pair<PathLesson, String>?>(null) }
+    var newOverLimit by remember { mutableStateOf(false) }
     val onStart: (PathLesson, String) -> Unit = { lesson, unit ->
         val introducesNew = lesson.words.any { it.status == com.onikki.app.data.db.entity.WordStatus.NEW }
         if (introducesNew && state.newToday >= settings.newPerDay) overLimitFor = lesson to unit else viewModel.startLesson(lesson, unit)
@@ -165,6 +166,17 @@ private fun LearnHome(
                 enabled = next != null,
                 primary = true
             ) { next?.let { onStart(it, unitName) } }
+        }
+        if (state.newWords.isNotEmpty()) {
+            item {
+                BigAction(
+                    kicker = "🆕 YANGI SO'ZLAR",
+                    title = "Hali mashq qilinmagan · ${state.newWords.size} ta",
+                    subtitle = state.newWords.take(6).joinToString(", ") { it.english } + if (state.newWords.size > 6) "…" else "",
+                    enabled = true,
+                    primary = false
+                ) { if (state.newToday >= settings.newPerDay) newOverLimit = true else viewModel.startNewWords() }
+            }
         }
         item {
             BigAction(
@@ -239,6 +251,18 @@ private fun LearnHome(
     if (settingsOpen) LearnSettingsSheet(settings, onChange = viewModel::updateSettings, onDismiss = { settingsOpen = false })
     if (unknownOpen) UnknownListSheet(state.unknown, onRemove = viewModel::removeUnknown, onStudy = viewModel::startRelearn, onDismiss = { unknownOpen = false })
     if (addOpen) AddWordsSheet(state.decks, onDismiss = { addOpen = false }, onSubmit = { target, items, level, done -> viewModel.addWords(target, items, level, done) })
+    if (newOverLimit) {
+        com.onikki.app.ui.components.OnIkkiSheet(title = "Bugungi limit", onDismiss = { newOverLimit = false }) {
+            Text(
+                text = "Bugun ${state.newToday} ta yangi so'z o'rgandingiz (limit ${settings.newPerDay}). Limitni ⚙ sozlamalarda oshirish mumkin.",
+                color = colors.text.muted(0.75f),
+                fontSize = 14.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+            if (state.due.isNotEmpty()) BigButton("Takrorlash (${state.due.size})", primary = true) { newOverLimit = false; viewModel.startReview() }
+            BigButton("Baribir davom etish", primary = state.due.isEmpty()) { newOverLimit = false; viewModel.startNewWords() }
+        }
+    }
     overLimitFor?.let { (lesson, unit) ->
         com.onikki.app.ui.components.OnIkkiSheet(title = "Bugungi limit", onDismiss = { overLimitFor = null }) {
             Text(
@@ -451,7 +475,7 @@ private fun LessonRunner(s: LessonSession, hearts: Int, settings: com.onikki.app
             when (s.kind) {
                 is SessionKind.Path -> Text(text = "❤️ $hearts", color = colors.warmAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
                 SessionKind.Heal -> Text(text = "❤️ $hearts/${com.onikki.app.domain.vocab.Hearts.MAX}", color = colors.warmAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
-                SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs, SessionKind.Sentences -> Text(text = "⭐ ${s.xp}", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+                SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs, SessionKind.Sentences, SessionKind.NewWords -> Text(text = "⭐ ${s.xp}", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
             }
         }
         Column(
@@ -489,6 +513,7 @@ private fun LessonResult(s: LessonSession, streak: Int, onDone: () -> Unit, onPr
         SessionKind.Relearn -> "Bilmaganlar takrorlandi!"
         SessionKind.Verbs -> "Fe'llar mashqi tugadi!"
         SessionKind.Sentences -> "Gap tuzish tugadi!"
+        SessionKind.NewWords -> "Yangi so'zlar o'rganildi!"
     }
     // A small celebration: the trophy pops in and the XP counts up.
     var shown by remember { mutableStateOf(false) }
