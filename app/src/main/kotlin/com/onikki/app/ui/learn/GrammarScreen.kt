@@ -58,6 +58,8 @@ fun GrammarRoute(suggested: String, onBack: () -> Unit) {
     val viewModel: GrammarViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val progress by viewModel.progress.collectAsState()
     val session by viewModel.session.collectAsState()
+    val aiState by viewModel.aiState.collectAsState()
+    val cacheCounts by viewModel.cacheCounts.collectAsState()
     val context = LocalContext.current
     val prefs = remember { LearnPrefs(context) }
     var level by rememberSaveable { mutableStateOf(prefs.grammarLevel() ?: suggested) }
@@ -67,13 +69,57 @@ fun GrammarRoute(suggested: String, onBack: () -> Unit) {
     val s = session
     if (s != null) {
         BackHandler(onBack = viewModel::close)
-        GrammarPractice(s, Grammar.byId(s.topicId), progress[s.topicId], viewModel)
+        GrammarPractice(s, Grammar.byId(s.topicId), progress[s.topicId], viewModel, aiState, cacheCounts[s.topicId] ?: 0)
     } else if (open != null) {
         BackHandler { openId = null }
-        TopicScreen(open, progress[open.id], speaker, onPractice = { viewModel.start(open.id) }, onBack = { openId = null })
+        TopicScreen(open, progress[open.id], speaker, onPractice = { viewModel.start(open.id) }, onBack = { openId = null }) {
+            AiExercisesCard(aiState, cacheCounts[open.id] ?: 0, GrammarBank.builtIn(open.id).size, onWrite = { viewModel.writeWithAi(open.id) })
+        }
     } else {
         BackHandler(onBack = onBack)
         TopicList(level, suggested, progress, onLevel = { level = it; prefs.setGrammarLevel(it) }, onOpen = { openId = it.id }, onBack = onBack)
+    }
+    val aiTopic = session?.topicId ?: openId
+    when (val a = aiState) {
+        GrammarAiState.NeedsKey -> com.onikki.app.ui.dayreview.ApiKeySheet(onDismiss = viewModel::dismissAi, onSave = { key -> aiTopic?.let { viewModel.saveKey(key, it) } })
+        is GrammarAiState.Failed -> com.onikki.app.ui.components.OnIkkiSheet(title = "AI mashqlar", onDismiss = viewModel::dismissAi) {
+            Text(text = a.message, color = LocalOnIkkiColors.current.text.muted(0.75f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+            com.onikki.app.ui.components.OnIkkiButton(text = "Yopish", onClick = viewModel::dismissAi, modifier = Modifier.fillMaxWidth())
+        }
+        else -> Unit
+    }
+}
+
+/** "AI yangi mashqlar yozsin": one call, ten checked exercises kept for every later round. */
+@Composable
+private fun AiExercisesCard(state: GrammarAiState, cached: Int, builtIn: Int, onWrite: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .border(BorderStroke(1.dp, colors.accent.copy(alpha = 0.5f)), RoundedCornerShape(18.dp))
+            .clickable(enabled = state != GrammarAiState.Loading, onClick = onWrite)
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        if (state == GrammarAiState.Loading) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = colors.accent)
+                Text(text = "AI mashq yozmoqda…", color = colors.text, fontSize = 15.sp, fontFamily = OnIkkiFontFamily)
+            }
+        } else {
+            Text(text = "✨ AI 10 ta yangi mashq yozsin", color = colors.accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
+            Text(
+                text = (if (state is GrammarAiState.Done) "${state.added} ta yangi mashq qo'shildi · " else "") +
+                    "$builtIn tayyor + $cached ta AI mashq saqlangan · saqlanganlari tekin qayta ishlatiladi",
+                color = colors.text.muted(0.5f),
+                fontSize = 11.sp,
+                fontFamily = OnIkkiFontFamily,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
     }
 }
 
@@ -144,7 +190,7 @@ private fun TopicList(level: String, suggested: String, progress: Map<String, To
 }
 
 @Composable
-private fun TopicScreen(t: GrammarTopic, progress: TopicProgress?, speaker: Speaker, onPractice: () -> Unit, onBack: () -> Unit) {
+private fun TopicScreen(t: GrammarTopic, progress: TopicProgress?, speaker: Speaker, onPractice: () -> Unit, onBack: () -> Unit, extra: @Composable () -> Unit = {}) {
     val colors = LocalOnIkkiColors.current
     Column(
         modifier = Modifier.fillMaxSize().background(colors.background).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp),
@@ -206,6 +252,7 @@ private fun TopicScreen(t: GrammarTopic, progress: TopicProgress?, speaker: Spea
             fontSize = 12.sp,
             fontFamily = OnIkkiFontFamily
         )
+        extra()
     }
 }
 
@@ -251,10 +298,21 @@ private fun ProgressCard(p: TopicProgress?) {
 // ---------------------------------------------------------------- practice
 
 @Composable
-private fun GrammarPractice(s: GrammarSession, topic: GrammarTopic?, progress: TopicProgress?, viewModel: GrammarViewModel) {
+private fun GrammarPractice(s: GrammarSession, topic: GrammarTopic?, progress: TopicProgress?, viewModel: GrammarViewModel, aiState: GrammarAiState, cached: Int) {
     val colors = LocalOnIkkiColors.current
     if (s.done) {
-        GrammarResult(s, topic, progress, onAgain = { viewModel.start(s.topicId) }, onClose = viewModel::close)
+        GrammarResult(s, topic, progress, onAgain = { viewModel.start(s.topicId) }, onClose = viewModel::close) {
+            if (s.repeats > 0) {
+                Text(
+                    text = "Bu raundda ${s.repeats} ta mashq takrorlandi — yangi mashqlar o'zlashtirishni tezlashtiradi.",
+                    color = colors.text.muted(0.6f),
+                    fontSize = 13.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+            AiExercisesCard(aiState, cached, GrammarBank.builtIn(s.topicId).size, onWrite = { viewModel.writeWithAi(s.topicId) })
+        }
         return
     }
     val ex = s.current ?: return
@@ -355,7 +413,7 @@ private fun SentenceCard(text: String, title: String) {
 }
 
 @Composable
-private fun GrammarResult(s: GrammarSession, topic: GrammarTopic?, progress: TopicProgress?, onAgain: () -> Unit, onClose: () -> Unit) {
+private fun GrammarResult(s: GrammarSession, topic: GrammarTopic?, progress: TopicProgress?, onAgain: () -> Unit, onClose: () -> Unit, extra: @Composable () -> Unit = {}) {
     val colors = LocalOnIkkiColors.current
     Column(
         modifier = Modifier.fillMaxSize().background(colors.background).verticalScroll(rememberScrollState()).padding(22.dp),
@@ -371,6 +429,7 @@ private fun GrammarResult(s: GrammarSession, topic: GrammarTopic?, progress: Top
             fontFamily = OnIkkiFontFamily
         )
         ProgressCard(progress)
+        extra()
         com.onikki.app.ui.components.OnIkkiButton(text = "Yana mashq qilish", onClick = onAgain, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp))
         com.onikki.app.ui.components.OnIkkiButton(
             text = "Mavzuga qaytish",

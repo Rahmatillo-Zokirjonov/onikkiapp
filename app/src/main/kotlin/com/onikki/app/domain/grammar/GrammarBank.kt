@@ -120,6 +120,48 @@ object GrammarBank {
         return TopicProgress(scores.size, avg, recent.size >= WINDOW && avg >= MASTERY)
     }
 
+    /**
+     * Is an exercise usable: the right shape for its kind, and its own answers pass its own check
+     * (a FIX sentence must also fail as written)? AI-written ones are kept only when this holds.
+     */
+    fun valid(ex: GrammarExercise): Boolean {
+        if (ex.prompt.isBlank() || ex.prompt.length > 220) return false
+        return when (ex.kind) {
+            GrammarKind.CHOICE -> "___" in ex.prompt && ex.options.size == 4 && ex.answer in ex.options.indices &&
+                ex.options.map { it.trim().lowercase() }.toSet().size == 4
+            GrammarKind.GAP -> "___" in ex.prompt && ex.answers.isNotEmpty() && ex.answers.all { check(ex, it) == Verdict.CORRECT }
+            GrammarKind.FIX -> ex.answers.isNotEmpty() && check(ex, ex.prompt) == Verdict.WRONG && ex.answers.all { check(ex, it) == Verdict.CORRECT }
+            GrammarKind.TRANSFORM -> !ex.hint.isNullOrBlank() && ex.answers.isNotEmpty() && ex.answers.all { check(ex, it) == Verdict.CORRECT }
+        }
+    }
+
+    fun encode(ex: GrammarExercise): String = org.json.JSONObject()
+        .put("kind", ex.kind.name)
+        .put("prompt", ex.prompt)
+        .put("hint", ex.hint ?: "")
+        .put("options", org.json.JSONArray(ex.options))
+        .put("answer", ex.answer)
+        .put("answers", org.json.JSONArray(ex.answers))
+        .put("why", ex.why)
+        .toString()
+
+    fun decode(topicId: String, json: String): GrammarExercise? = try {
+        val o = org.json.JSONObject(json)
+        fun list(name: String) = o.optJSONArray(name)?.let { a -> (0 until a.length()).map { a.optString(it).trim() }.filter { it.isNotEmpty() } }.orEmpty()
+        GrammarExercise(
+            topicId = topicId,
+            kind = GrammarKind.valueOf(o.getString("kind")),
+            prompt = o.optString("prompt").trim(),
+            hint = o.optString("hint").trim().ifBlank { null },
+            options = list("options"),
+            answer = o.optInt("answer", -1),
+            answers = list("answers"),
+            why = o.optString("why").trim()
+        )
+    } catch (e: Exception) {
+        null
+    }
+
     /** XP for a grammar answer. */
     fun xp(v: Verdict): Int = when (v) {
         Verdict.CORRECT -> 6

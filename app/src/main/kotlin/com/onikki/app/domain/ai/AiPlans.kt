@@ -152,6 +152,48 @@ object AiPlans {
         null
     }
 
+    val grammarSchema: JSONObject = obj(
+        "exercises" to arrayOf(
+            obj(
+                "kind" to JSONObject().put("type", "string").put("enum", JSONArray(listOf("test", "gap", "fix", "transform"))),
+                "prompt" to type("string"),
+                "instruction" to type("string"),
+                "options" to arrayOf(type("string")),
+                "answer_index" to type("integer"),
+                "answers" to arrayOf(type("string")),
+                "why" to type("string")
+            )
+        )
+    )
+
+    /** AI grammar exercises → domain ones; shape and self-consistency are checked by GrammarBank.valid. */
+    fun parseGrammar(json: String, topicId: String): List<com.onikki.app.domain.grammar.GrammarExercise> = try {
+        val arr = JSONObject(extractJson(json)).optJSONArray("exercises") ?: JSONArray()
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            fun list(name: String) = o.optJSONArray(name)?.let { a -> (0 until a.length()).map { a.optString(it).trim().replace('\u2019', '\'') }.filter { it.isNotEmpty() } }.orEmpty()
+            val kind = when (o.optString("kind")) {
+                "test" -> com.onikki.app.domain.grammar.GrammarKind.CHOICE
+                "gap" -> com.onikki.app.domain.grammar.GrammarKind.GAP
+                "fix" -> com.onikki.app.domain.grammar.GrammarKind.FIX
+                "transform" -> com.onikki.app.domain.grammar.GrammarKind.TRANSFORM
+                else -> return@mapNotNull null
+            }
+            com.onikki.app.domain.grammar.GrammarExercise(
+                topicId = topicId,
+                kind = kind,
+                prompt = o.optString("prompt").trim().replace('\u2019', '\'').replace(Regex("_{2,}"), "___"),
+                hint = o.optString("instruction").trim().ifBlank { null },
+                options = list("options"),
+                answer = o.optInt("answer_index", -1),
+                answers = list("answers"),
+                why = o.optString("why").trim().take(160)
+            )
+        }
+    } catch (e: JSONException) {
+        emptyList()
+    }
+
     val sentenceSchema: JSONObject = obj(
         "uses_word" to type("boolean"),
         "correct" to type("boolean"),

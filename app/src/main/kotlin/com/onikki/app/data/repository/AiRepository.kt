@@ -80,6 +80,15 @@ private const val TRANSLATE_SYSTEM = """Sen ingliz–o'zbek lug'atisan. Foydalan
 Faqat uning o'zbekcha (lotin alifbosida) 1–3 ta eng asosiy ma'nosini vergul bilan ajratib yoz, boshqa hech narsa yozma.
 Fe'llarni "-moq" shaklida yoz (masalan: o'qimoq). Misol: "run" → yugurmoq, chopmoq"""
 
+private const val GRAMMAR_SYSTEM = """Sen ingliz tili o'qituvchisisan. O'zbek o'quvchi uchun berilgan grammatika mavzusi bo'yicha aynan 10 ta mashq yoz:
+3 ta "test", 3 ta "gap", 2 ta "fix", 2 ta "transform". Faqat shu mavzuni tekshirsin, so'zlar darajaga mos, gaplar qisqa va tabiiy, har biri boshqacha.
+- test: prompt — bitta bo'sh joyi "___" bo'lgan gap; options — aynan 4 ta har xil variant (bittasi to'g'ri, qolganlari shu mavzudagi odatiy xatolar); answer_index — to'g'risining raqami (0 dan); answers — [].
+- gap: prompt — "___" li gap; instruction — qavsdagi yordamchi so'z (masalan fe'lning 1-shakli) yoki ""; answers — bo'sh joyga tushadigan so'z(lar), qabul qilinadigan barcha variantlar (masalan "have seen", "'ve seen").
+- fix: prompt — bitta grammatik xatosi bor gap; answers — to'g'rilangan to'liq gap(lar).
+- transform: instruction — o'zbekcha qisqa topshiriq (masalan "Inkor qiling", "Majhulga aylantiring"); prompt — asl gap; answers — to'liq natija gap(lar), qisqartmali va qisqartmasiz variantlari bilan.
+- why: o'zbekcha (lotin), 3–10 so'z, nega shunday.
+Oddiy apostrof (') ishlat. options va answers'da faqat inglizcha matn bo'lsin."""
+
 private const val SENTENCE_SYSTEM = """Sen ingliz tili o'qituvchisisan. O'zbek o'quvchi berilgan so'zni ishlatib inglizcha gap yozdi. Uni tekshir:
 - uses_word: so'z (yoki uning shakli: -s, -ed, -ing, V2, V3) gapda berilgan ma'noda ishlatilganmi;
 - correct: gap grammatik va ma'no jihatdan to'g'ri va tabiiymi (kichik tinish belgisi yoki bosh harf xatolari hisob emas);
@@ -182,6 +191,26 @@ class AiRepository(private val context: Context, private val db: AppDatabase) {
         client.sendMessage(TRANSLATE_SYSTEM, english.trim(), maxTokens = 2000).toOutcome { reply ->
             reply.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
                 .removeSurrounding("\"").trimEnd('.').take(80)
+        }
+    }
+
+    /** Ten new exercises on a grammar topic, avoiding [avoid] (prompts the user already has). */
+    suspend fun writeGrammar(topic: com.onikki.app.domain.grammar.GrammarTopic, avoid: List<String>): AiOutcome<List<com.onikki.app.domain.grammar.GrammarExercise>> = call { client ->
+        val message = buildString {
+            appendLine("Daraja: ${topic.level}")
+            appendLine("Mavzu: ${topic.title} (${topic.titleUz})")
+            appendLine("Qoida: ${topic.formula}")
+            appendLine("Tushuntirish:")
+            appendLine(topic.explanation)
+            if (avoid.isNotEmpty()) {
+                appendLine()
+                appendLine("Bu gaplar allaqachon bor, takrorlama:")
+                avoid.take(40).forEach { appendLine("- $it") }
+            }
+        }
+        when (val r = client.send(GRAMMAR_SYSTEM, listOf(ChatTurn(true, message)), maxTokens = 10000, jsonSchema = com.onikki.app.domain.ai.AiPlans.grammarSchema)) {
+            is ClaudeResult.Error -> AiOutcome.Failed(r.message)
+            is ClaudeResult.Success -> AiOutcome.Ok(com.onikki.app.domain.ai.AiPlans.parseGrammar(r.text, topic.id))
         }
     }
 
