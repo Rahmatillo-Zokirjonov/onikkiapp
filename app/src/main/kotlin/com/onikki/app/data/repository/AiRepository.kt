@@ -80,6 +80,14 @@ private const val TRANSLATE_SYSTEM = """Sen ingliz–o'zbek lug'atisan. Foydalan
 Faqat uning o'zbekcha (lotin alifbosida) 1–3 ta eng asosiy ma'nosini vergul bilan ajratib yoz, boshqa hech narsa yozma.
 Fe'llarni "-moq" shaklida yoz (masalan: o'qimoq). Misol: "run" → yugurmoq, chopmoq"""
 
+private const val ORAL_SYSTEM = """Sen ingliz tili speaking imtihoni baholovchisisan. O'zbek o'quvchining savolga og'zaki javobi berilgan.
+Matn ovozdan avtomatik aylantirilgan: tinish belgilari, bosh harflar va ovozni tanishdagi mayda xatolarni hisobga olma, faqat aytilgan so'zlar va gap tuzilishini bahola.
+O'quvchining darajasiga mos talab qo'y (A1 dan C1 darajasini kutma).
+- grammar, vocabulary, relevance (savolga javob bera oldimi), overall: 0–100;
+- feedback: o'zbekcha (lotin), 2–4 jumla — nima yaxshi, nimani yaxshilash kerak, aniq va iliq;
+- corrected: javobning to'g'rilangan, tabiiy inglizcha varianti (o'quvchining fikri saqlansin, darajaga mos);
+- mistakes: eng muhim 0–5 ta grammatik yoki so'z xatosi: wrong — aytilgan qism, right — to'g'risi, why — o'zbekcha qisqa sabab."""
+
 private const val PODCAST_SYSTEM = """Sen ingliz tili o'qituvchisi va podkast muallifisan. O'zbek o'quvchi uchun berilgan CEFR darajasida qisqa tinglash podkasti yoz.
 - Mavzu: kundalik hayot, sayohat, ish, o'qish, sog'liq, texnologiya, madaniyat — qiziqarli va real; ism va joylar O'zbekistonga yaqin bo'lsa yaxshi.
 - Ko'rinishi: yoki bitta hikoyachi (speaker = ""), yoki ikki kishi suhbati (speaker "A" va "B"). lines — har biri 1–2 gap.
@@ -199,6 +207,16 @@ class AiRepository(private val context: Context, private val db: AppDatabase) {
         client.sendMessage(TRANSLATE_SYSTEM, english.trim(), maxTokens = 2000).toOutcome { reply ->
             reply.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
                 .removeSurrounding("\"").trimEnd('.').take(80)
+        }
+    }
+
+    /** Rates a spoken (speech-recognised) answer to [prompt]. */
+    suspend fun rateOral(prompt: com.onikki.app.domain.speaking.OralPrompt, transcript: String, seconds: Int, length: Int): AiOutcome<com.onikki.app.domain.speaking.OralResult> = call { client ->
+        val message = "Daraja: ${prompt.level}\nSavol: ${prompt.question}\nGapirgan vaqti: $seconds soniya\nO'quvchining og'zaki javobi (ovozdan matnga aylantirilgan):\n$transcript"
+        when (val r = client.send(ORAL_SYSTEM, listOf(ChatTurn(true, message)), maxTokens = 6000, jsonSchema = com.onikki.app.domain.ai.AiPlans.oralSchema)) {
+            is ClaudeResult.Error -> AiOutcome.Failed(r.message)
+            is ClaudeResult.Success -> com.onikki.app.domain.ai.AiPlans.parseOral(r.text, length)?.let { AiOutcome.Ok(it) }
+                ?: AiOutcome.Failed("AI javobini o'qib bo'lmadi")
         }
     }
 

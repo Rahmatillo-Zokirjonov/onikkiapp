@@ -152,6 +152,44 @@ object AiPlans {
         null
     }
 
+    val oralSchema: JSONObject = obj(
+        "grammar" to type("integer"),
+        "vocabulary" to type("integer"),
+        "relevance" to type("integer"),
+        "overall" to type("integer"),
+        "feedback" to type("string"),
+        "corrected" to type("string"),
+        "mistakes" to arrayOf(obj("wrong" to type("string"), "right" to type("string"), "why" to type("string")))
+    )
+
+    /** The AI's rating of a spoken answer; the length score is ours (word count for the level). */
+    fun parseOral(json: String, length: Int): com.onikki.app.domain.speaking.OralResult? = try {
+        val r = JSONObject(extractJson(json))
+        fun pct(k: String) = r.optInt(k, -1).takeIf { it >= 0 }?.coerceIn(0, 100)
+        val mJson = r.optJSONArray("mistakes") ?: JSONArray()
+        val mistakes = (0 until mJson.length()).mapNotNull { i ->
+            val o = mJson.optJSONObject(i) ?: return@mapNotNull null
+            val wrong = o.optString("wrong").trim()
+            val right = o.optString("right").trim()
+            if (wrong.isEmpty() || right.isEmpty() || wrong.equals(right, ignoreCase = true)) null
+            else com.onikki.app.domain.speaking.OralMistake(wrong.take(120), right.take(120), o.optString("why").trim().take(160))
+        }.take(6)
+        val overall = pct("overall") ?: return null
+        com.onikki.app.domain.speaking.OralResult(
+            overall = overall,
+            grammar = pct("grammar"),
+            vocabulary = pct("vocabulary") ?: overall,
+            relevance = pct("relevance"),
+            length = length,
+            feedback = r.optString("feedback").trim().take(600),
+            corrected = r.optString("corrected").trim().take(1500).ifBlank { null },
+            mistakes = mistakes,
+            byAi = true
+        )
+    } catch (e: JSONException) {
+        null
+    }
+
     val podcastSchema: JSONObject = obj(
         "title" to type("string"),
         "topic_uz" to type("string"),
