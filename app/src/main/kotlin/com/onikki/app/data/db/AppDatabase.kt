@@ -64,9 +64,9 @@ import com.onikki.app.data.db.entity.Transaction
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
-        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class, VocabDeck::class, VocabReview::class, VocabLessonResult::class, com.onikki.app.data.db.entity.ListeningCustomText::class, com.onikki.app.data.db.entity.ListeningAttempt::class
+        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class, VocabDeck::class, VocabReview::class, VocabLessonResult::class, com.onikki.app.data.db.entity.ListeningCustomText::class, com.onikki.app.data.db.entity.ListeningAttempt::class, com.onikki.app.data.db.entity.GrammarAttempt::class, com.onikki.app.data.db.entity.GrammarCached::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -97,6 +97,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun vocabReviewDao(): VocabReviewDao
     abstract fun vocabLessonDao(): VocabLessonDao
     abstract fun listeningDao(): com.onikki.app.data.db.dao.ListeningDao
+    abstract fun grammarDao(): com.onikki.app.data.db.dao.GrammarDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -104,7 +105,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -356,5 +357,22 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_listening_attempts_textId` ON `listening_attempts` (`textId`)")
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_listening_attempts_day` ON `listening_attempts` (`day`)")
+    }
+}
+
+/** Grammatika: answers (mastery = last 20) and the AI exercise cache. */
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `grammar_attempts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `topicId` TEXT NOT NULL, " +
+                "`kind` TEXT NOT NULL, `exerciseKey` TEXT NOT NULL, `at` INTEGER NOT NULL, `day` TEXT NOT NULL, `score` INTEGER NOT NULL, `xp` INTEGER NOT NULL)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_grammar_attempts_topicId` ON `grammar_attempts` (`topicId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_grammar_attempts_day` ON `grammar_attempts` (`day`)")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `grammar_cache` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `topicId` TEXT NOT NULL, " +
+                "`payload` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_grammar_cache_topicId` ON `grammar_cache` (`topicId`)")
     }
 }

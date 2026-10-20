@@ -173,13 +173,15 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         db.vocabWordDao().observeInPathOrder(),
         db.vocabLessonDao().observeAll(),
         counters,
-        db.listeningDao().observeAttempts()
-    ) { decks, words, results, c0, listened ->
-        // Listening counts towards XP and the streak too.
+        combine(db.listeningDao().observeAttempts(), db.grammarDao().observeXpByDay()) { l, g ->
+            l.map { com.onikki.app.data.db.dao.DayXp(it.day, it.xp) } + g
+        }
+    ) { decks, words, results, c0, extra ->
+        // Listening and grammar count towards XP and the streak too.
         val c = c0.copy(
-            totalXp = c0.totalXp + listened.sumOf { it.xp },
-            todayXp = c0.todayXp + listened.filter { it.day == today }.sumOf { it.xp },
-            days = (c0.days + listened.map { it.day }).distinct()
+            totalXp = c0.totalXp + extra.sumOf { it.xp },
+            todayXp = c0.todayXp + extra.filter { it.day == today }.sumOf { it.xp },
+            days = (c0.days + extra.map { it.day }).distinct()
         )
         allWords = words
         val units = LearningPath.build(decks, words, results)
