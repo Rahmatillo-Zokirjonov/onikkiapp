@@ -80,6 +80,14 @@ private const val TRANSLATE_SYSTEM = """Sen ingliz–o'zbek lug'atisan. Foydalan
 Faqat uning o'zbekcha (lotin alifbosida) 1–3 ta eng asosiy ma'nosini vergul bilan ajratib yoz, boshqa hech narsa yozma.
 Fe'llarni "-moq" shaklida yoz (masalan: o'qimoq). Misol: "run" → yugurmoq, chopmoq"""
 
+private const val PODCAST_SYSTEM = """Sen ingliz tili o'qituvchisi va podkast muallifisan. O'zbek o'quvchi uchun berilgan CEFR darajasida qisqa tinglash podkasti yoz.
+- Mavzu: kundalik hayot, sayohat, ish, o'qish, sog'liq, texnologiya, madaniyat — qiziqarli va real; ism va joylar O'zbekistonga yaqin bo'lsa yaxshi.
+- Ko'rinishi: yoki bitta hikoyachi (speaker = ""), yoki ikki kishi suhbati (speaker "A" va "B"). lines — har biri 1–2 gap.
+- Uzunlik berilgan so'z soniga mos bo'lsin; grammatika va so'zlar darajaga mos.
+- questions: aynan 6 ta, matn tartibida: 2–3 ta "choice" (aynan 4 variant, answer_index 0 dan), 2 ta "true_false" (answer_index: 0 = True, 1 = False), 1–2 ta "short" (javobi matndagi 1–3 so'z; accepted — matnda yozilganidek va boshqa qabul qilinadigan variantlar, raqam bo'lsa ham so'z, ham raqam).
+- line — javob turgan lines elementining raqami (0 dan). Har bir javob aynan shu qatorda bo'lishi shart; "short" javobi o'sha qatorda so'zma-so'z bo'lsin.
+- Savollar inglizcha; title — inglizcha qisqa sarlavha; topic_uz — 1–3 so'zli o'zbekcha mavzu. Oddiy apostrof (') ishlat."""
+
 private const val GRAMMAR_SYSTEM = """Sen ingliz tili o'qituvchisisan. O'zbek o'quvchi uchun berilgan grammatika mavzusi bo'yicha aynan 10 ta mashq yoz:
 3 ta "test", 3 ta "gap", 2 ta "fix", 2 ta "transform". Faqat shu mavzuni tekshirsin, so'zlar darajaga mos, gaplar qisqa va tabiiy, har biri boshqacha.
 - test: prompt — bitta bo'sh joyi "___" bo'lgan gap; options — aynan 4 ta har xil variant (bittasi to'g'ri, qolganlari shu mavzudagi odatiy xatolar); answer_index — to'g'risining raqami (0 dan); answers — [].
@@ -191,6 +199,22 @@ class AiRepository(private val context: Context, private val db: AppDatabase) {
         client.sendMessage(TRANSLATE_SYSTEM, english.trim(), maxTokens = 2000).toOutcome { reply ->
             reply.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
                 .removeSurrounding("\"").trimEnd('.').take(80)
+        }
+    }
+
+    /** A [minutes]-long podcast at [level] with questions; [words] are ones the user is learning, [avoid] existing titles. */
+    suspend fun writePodcast(level: String, minutes: Int, words: List<String>, avoid: List<String>): AiOutcome<com.onikki.app.domain.podcast.Podcast> = call { client ->
+        val target = minutes * 125
+        val message = buildString {
+            appendLine("Daraja: $level")
+            appendLine("Uzunlik: $minutes daqiqa — taxminan $target so'z (${target - 30}…${target + 30})")
+            appendLine("O'quvchi o'rganayotgan so'zlar (2–5 tasini tabiiy ishlat): ${words.take(15).joinToString(", ").ifBlank { "-" }}")
+            if (avoid.isNotEmpty()) appendLine("Bu mavzular bor, boshqasini tanla: ${avoid.take(30).joinToString("; ")}")
+        }
+        when (val r = client.send(PODCAST_SYSTEM, listOf(ChatTurn(true, message)), maxTokens = 14000, jsonSchema = com.onikki.app.domain.ai.AiPlans.podcastSchema)) {
+            is ClaudeResult.Error -> AiOutcome.Failed(r.message)
+            is ClaudeResult.Success -> com.onikki.app.domain.ai.AiPlans.parsePodcast(r.text, level, minutes)?.let { AiOutcome.Ok(it) }
+                ?: AiOutcome.Failed("AI javobini o'qib bo'lmadi")
         }
     }
 

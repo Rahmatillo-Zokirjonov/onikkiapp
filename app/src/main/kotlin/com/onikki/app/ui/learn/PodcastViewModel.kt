@@ -28,6 +28,13 @@ data class PodcastHomeState(
 
 enum class PodcastPhase { LISTEN, QUESTIONS, RESULT }
 
+sealed interface PodcastAiState {
+    data object Idle : PodcastAiState
+    data class Loading(val minutes: Int) : PodcastAiState
+    data class Failed(val message: String) : PodcastAiState
+    data object NeedsKey : PodcastAiState
+}
+
 data class PodcastSession(
     val podcast: Podcast,
     val phase: PodcastPhase = PodcastPhase.LISTEN,
@@ -45,6 +52,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val db = (application as OnIkkiApplication).database
     private val dao = db.podcastDao()
     private val prefs = LearnPrefs(application)
+    private val ai = com.onikki.app.data.repository.AiRepository(application, db)
     private val level = MutableStateFlow<String?>(prefs.listenLevel())
     private val suggested = MutableStateFlow("A1")
 
@@ -101,6 +109,57 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun close() { _session.value = null }
+
+    private val _ai = MutableStateFlow<PodcastAiState>(PodcastAiState.Idle)
+    val aiState: StateFlow<PodcastAiState> = _ai
+
+    /**
+     * AI writes a podcast at the current level; it is vetted (length, question shape, every answer in its
+     * line) and kept, then opened. Up to two tries, since a too-short text is the usual miss.
+     */
+    fun writeWithAi(minutes: Int) {
+        if (_ai.value is PodcastAiState.Loading) return
+        val lvl = home.value.level
+        _ai.value = PodcastAiState.Loading(minutes)
+        viewModelScope.launch {
+            val words = db.vocabWordDao().getAll()
+                .filter { it.status == com.onikki.app.data.db.entity.WordStatus.LEARNING || it.unknownSince != null }
+                .shuffled().map { it.english }
+            val avoid = home.value.podcasts.map { it.title }
+            var result: PodcastAiState = PodcastAiState.Failed("AI mos podkast yoza olmadi, qayta urinib ko'ring")
+            for (attempt in 1..2) {
+                when (val r = ai.writePodcast(lvl, minutes, words, avoid)) {
+                    is com.onikki.app.data.repository.AiOutcome.Ok -> {
+                        val vetted = Podcasts.vet(r.value, minutes) ?: continue
+                        val id = dao.insertCustom(
+                            PodcastCustom(
+                                level = lvl, minutes = minutes, title = vetted.title, topic = vetted.topic,
+                                transcript = Podcasts.transcriptText(vetted), questions = Podcasts.questionsText(vetted),
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
+                        _session.value = PodcastSession(vetted.copy(id = "pai-$id"))
+                        result = PodcastAiState.Idle
+                        break
+                    }
+                    is com.onikki.app.data.repository.AiOutcome.Failed -> { result = PodcastAiState.Failed(r.message); break }
+                    com.onikki.app.data.repository.AiOutcome.Offline -> { result = PodcastAiState.Failed("Internet yo'q"); break }
+                    com.onikki.app.data.repository.AiOutcome.NoKey -> { result = PodcastAiState.NeedsKey; break }
+                }
+            }
+            _ai.value = result
+        }
+    }
+
+    fun dismissAi() { _ai.value = PodcastAiState.Idle }
+
+    fun saveKey(key: String, minutes: Int) {
+        viewModelScope.launch {
+            ai.saveKey(key)
+            _ai.value = PodcastAiState.Idle
+            writeWithAi(minutes)
+        }
+    }
 
     private fun PodcastCustom.toPodcast(): Podcast? = runCatching {
         Podcasts.parse("pai-$id", level, minutes, title, topic, transcript, questions).copy(ai = true)

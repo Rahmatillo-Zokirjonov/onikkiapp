@@ -88,6 +88,46 @@ object Podcasts {
     fun xp(verdicts: List<Verdict>, minutes: Int): Int =
         verdicts.sumOf { when (it) { Verdict.CORRECT -> 5; Verdict.ALMOST -> 2; Verdict.WRONG -> 0 }.toInt() } + minutes * 5
 
+    /** Words a podcast of [minutes] should have at the reading speed. */
+    fun wordRange(minutes: Int): IntRange = (minutes * 85)..(minutes * 165)
+
+    /** Is the answer of a question actually in its line? (choice / true-false can't be checked this way.) */
+    fun answerInLine(p: Podcast, q: PodcastQuestion): Boolean {
+        if (q.line !in p.lines.indices) return false
+        if (q.kind != QuestionKind.SHORT) return true
+        val line = " " + AnswerCheck.normalize(p.lines[q.line].text) + " "
+        return q.accepted.any { a -> AnswerCheck.normalize(a).let { it.isNotEmpty() && line.contains(it) } }
+    }
+
+    /**
+     * An AI podcast cleaned up: only well-formed questions whose evidence line holds the answer are kept.
+     * Null when it isn't usable (wrong length, too few lines or questions).
+     */
+    fun vet(p: Podcast, minutes: Int): Podcast? {
+        if (p.lines.size < 4 || p.wordCount !in wordRange(minutes)) return null
+        val good = p.questions.filter { q ->
+            q.text.isNotBlank() && when (q.kind) {
+                QuestionKind.CHOICE -> q.options.size == 4 && q.answer in q.options.indices && q.options.map { it.lowercase() }.toSet().size == 4
+                QuestionKind.TRUE_FALSE -> q.answer in 0..1
+                QuestionKind.SHORT -> q.accepted.isNotEmpty()
+            } && answerInLine(p, q)
+        }.take(8)
+        return if (good.size >= 5) p.copy(questions = good) else null
+    }
+
+    private fun clean(s: String) = s.replace('|', '/').replace('\n', ' ').trim()
+
+    /** Back into the stored text format (the same one the built-in podcasts use). */
+    fun transcriptText(p: Podcast): String = p.lines.joinToString("\n") { l -> (l.speaker?.let { "$it: " } ?: "") + clean(l.text) }
+
+    fun questionsText(p: Podcast): String = p.questions.joinToString("\n") { q ->
+        when (q.kind) {
+            QuestionKind.CHOICE -> "C|${clean(q.text)}|${q.options.joinToString(";") { clean(it).replace(';', ',') }}|${q.answer}|${q.line}"
+            QuestionKind.TRUE_FALSE -> "TF|${clean(q.text)}|${if (q.answer == 0) "T" else "F"}|${q.line}"
+            QuestionKind.SHORT -> "S|${clean(q.text)}|${q.accepted.joinToString("~") { clean(it).replace('~', ' ') }}|${q.line}"
+        }
+    }
+
     fun forLevel(level: String, custom: List<Podcast> = emptyList()): List<Podcast> =
         (PodcastLibrary.ALL + custom).filter { it.level == level }.sortedWith(compareBy({ it.ai }, { it.minutes }))
 }

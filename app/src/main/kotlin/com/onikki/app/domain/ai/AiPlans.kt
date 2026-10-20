@@ -152,6 +152,57 @@ object AiPlans {
         null
     }
 
+    val podcastSchema: JSONObject = obj(
+        "title" to type("string"),
+        "topic_uz" to type("string"),
+        "lines" to arrayOf(obj("speaker" to type("string"), "text" to type("string"))),
+        "questions" to arrayOf(
+            obj(
+                "kind" to JSONObject().put("type", "string").put("enum", JSONArray(listOf("choice", "true_false", "short"))),
+                "text" to type("string"),
+                "options" to arrayOf(type("string")),
+                "answer_index" to type("integer"),
+                "accepted" to arrayOf(type("string")),
+                "line" to type("integer")
+            )
+        )
+    )
+
+    /** The AI's podcast as a domain one (not yet vetted — see Podcasts.vet). */
+    fun parsePodcast(json: String, level: String, minutes: Int): com.onikki.app.domain.podcast.Podcast? = try {
+        val r = JSONObject(extractJson(json))
+        fun str(o: JSONObject, k: String) = o.optString(k).trim().replace('\u2019', '\'')
+        val linesJson = r.optJSONArray("lines") ?: JSONArray()
+        val lines = (0 until linesJson.length()).mapNotNull { i ->
+            val o = linesJson.optJSONObject(i) ?: return@mapNotNull null
+            val text = str(o, "text")
+            val speaker = str(o, "speaker").uppercase().takeIf { it.length == 1 && it[0] in 'A'..'C' }
+            if (text.isEmpty()) null else com.onikki.app.domain.podcast.PodcastLine(speaker, text)
+        }
+        val qJson = r.optJSONArray("questions") ?: JSONArray()
+        val questions = (0 until qJson.length()).mapNotNull { i ->
+            val o = qJson.optJSONObject(i) ?: return@mapNotNull null
+            fun list(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.optString(it).trim().replace('\u2019', '\'') }.filter { it.isNotEmpty() } }.orEmpty()
+            val kind = when (o.optString("kind")) {
+                "choice" -> com.onikki.app.domain.podcast.QuestionKind.CHOICE
+                "true_false" -> com.onikki.app.domain.podcast.QuestionKind.TRUE_FALSE
+                "short" -> com.onikki.app.domain.podcast.QuestionKind.SHORT
+                else -> return@mapNotNull null
+            }
+            com.onikki.app.domain.podcast.PodcastQuestion(
+                kind = kind,
+                text = str(o, "text"),
+                options = if (kind == com.onikki.app.domain.podcast.QuestionKind.TRUE_FALSE) listOf("True", "False") else list("options"),
+                answer = o.optInt("answer_index", -1),
+                accepted = list("accepted"),
+                line = o.optInt("line", -1)
+            )
+        }
+        com.onikki.app.domain.podcast.Podcast("ai", level, minutes, str(r, "title").take(60).ifBlank { "Podcast" }, str(r, "topic_uz").take(40).ifBlank { "AI podkast" }, lines, questions, ai = true)
+    } catch (e: JSONException) {
+        null
+    }
+
     val grammarSchema: JSONObject = obj(
         "exercises" to arrayOf(
             obj(

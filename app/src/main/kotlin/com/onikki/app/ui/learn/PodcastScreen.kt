@@ -60,20 +60,61 @@ fun PodcastRoute(suggested: String, onBack: () -> Unit) {
     LaunchedEffect(suggested) { viewModel.setSuggested(suggested) }
     val home by viewModel.home.collectAsState()
     val session by viewModel.session.collectAsState()
+    val aiState by viewModel.aiState.collectAsState()
+    var aiMinutes by rememberSaveable { mutableStateOf(2) }
     val player = rememberPodcastPlayer()
     val s = session
     LaunchedEffect(s?.podcast?.id) { s?.let { player.load(it.podcast.lines) } ?: player.stop() }
     if (s == null) {
         BackHandler(onBack = onBack)
-        PodcastList(home, suggested, viewModel, onBack)
+        PodcastList(home, suggested, viewModel, onBack) {
+            AiPodcastCard(home.level, aiState, aiMinutes, onMinutes = { aiMinutes = it }, onWrite = { viewModel.writeWithAi(aiMinutes) })
+        }
     } else {
         BackHandler { player.stop(); viewModel.close() }
         PodcastSessionScreen(s, player, viewModel)
     }
+    when (val a = aiState) {
+        PodcastAiState.NeedsKey -> com.onikki.app.ui.dayreview.ApiKeySheet(onDismiss = viewModel::dismissAi, onSave = { viewModel.saveKey(it, aiMinutes) })
+        is PodcastAiState.Failed -> com.onikki.app.ui.components.OnIkkiSheet(title = "AI podkast", onDismiss = viewModel::dismissAi) {
+            Text(text = a.message, color = LocalOnIkkiColors.current.text.muted(0.75f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+            OnIkkiButton(text = "Yopish", onClick = viewModel::dismissAi, modifier = Modifier.fillMaxWidth())
+        }
+        else -> Unit
+    }
+}
+
+/** "AI yangi podkast yozsin": pick 1, 2 or 3 minutes; the result is vetted, kept and opened. */
+@Composable
+private fun AiPodcastCard(level: String, state: PodcastAiState, minutes: Int, onMinutes: (Int) -> Unit, onWrite: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).border(BorderStroke(1.dp, colors.accent.copy(alpha = 0.5f)), RoundedCornerShape(18.dp)).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(text = "✨ AI $level darajada yangi podkast yozsin", color = colors.accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(1, 2, 3).forEach { m -> FilterChip(selected = minutes == m, onClick = { onMinutes(m) }, label = { Text("$m daqiqa") }) }
+        }
+        if (state is PodcastAiState.Loading) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = colors.accent)
+                Text(text = "AI ${state.minutes} daqiqalik podkast yozmoqda…", color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+            }
+        } else {
+            OnIkkiButton(text = "Yozish", onClick = onWrite, modifier = Modifier.fillMaxWidth())
+        }
+        Text(
+            text = "O'rganayotgan so'zlaringiz qo'shiladi · savollar tekshiriladi · podkast saqlanib qoladi · API kalit kerak",
+            color = colors.text.muted(0.5f),
+            fontSize = 11.sp,
+            fontFamily = OnIkkiFontFamily
+        )
+    }
 }
 
 @Composable
-private fun PodcastList(state: PodcastHomeState, suggested: String, viewModel: PodcastViewModel, onBack: () -> Unit) {
+private fun PodcastList(state: PodcastHomeState, suggested: String, viewModel: PodcastViewModel, onBack: () -> Unit, extra: @Composable () -> Unit) {
     val colors = LocalOnIkkiColors.current
     Column(
         modifier = Modifier.fillMaxSize().background(colors.background).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp),
@@ -90,6 +131,7 @@ private fun PodcastList(state: PodcastHomeState, suggested: String, viewModel: P
             Podcasts.LEVELS.forEach { l -> FilterChip(selected = state.level == l, onClick = { viewModel.setLevel(l) }, label = { Text(if (l == suggested) "$l ★" else l) }) }
         }
         state.podcasts.forEach { p -> PodcastCard(p, state.best[p.id]) { viewModel.open(p) } }
+        extra()
     }
 }
 
