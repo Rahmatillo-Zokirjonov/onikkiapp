@@ -49,6 +49,19 @@ class LearnPrefs(context: Context) {
         prefs.edit().putString("listen_level", level).apply()
     }
 
+    /** So'z zanjiri: start day (epoch day), null = not started. */
+    fun chainStart(): java.time.LocalDate? = prefs.getLong("chain_start", Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let(java.time.LocalDate::ofEpochDay)
+
+    fun setChainStart(date: java.time.LocalDate) {
+        prefs.edit().putLong("chain_start", date.toEpochDay()).apply()
+    }
+
+    fun chainDone(): Set<Int> = prefs.getStringSet("chain_done", emptySet()).orEmpty().mapNotNull { it.toIntOrNull() }.toSet()
+
+    fun setChainDone(days: Set<Int>) {
+        prefs.edit().putStringSet("chain_done", days.map { it.toString() }.toSet()).apply()
+    }
+
     fun grammarLevel(): String? = prefs.getString("grammar_level", null)
 
     fun setGrammarLevel(level: String) {

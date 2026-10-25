@@ -71,10 +71,13 @@ fun LearnRoute(onBack: () -> Unit) {
     var grammarOpen by rememberSaveable { mutableStateOf(false) }
     var podcastsOpen by rememberSaveable { mutableStateOf(false) }
     var speakingOpen by rememberSaveable { mutableStateOf(false) }
+    var chainOpen by rememberSaveable { mutableStateOf(false) }
     val sort by viewModel.sort.collectAsState()
     val s = session
     val so = sort
-    if (s == null && speakingOpen) {
+    if (s == null && chainOpen) {
+        WordChainRoute(onBack = { chainOpen = false })
+    } else if (s == null && speakingOpen) {
         SpeakingRoute(home.suggestedLevel, onBack = { speakingOpen = false })
     } else if (s == null && podcastsOpen) {
         PodcastRoute(home.suggestedLevel, onBack = { podcastsOpen = false })
@@ -94,7 +97,7 @@ fun LearnRoute(onBack: () -> Unit) {
         LearnStatsScreen(stats, onBack = { statsOpen = false })
     } else if (s == null) {
         BackHandler(onBack = onBack)
-        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true }, onPodcasts = { podcastsOpen = true }, onSpeaking = { speakingOpen = true })
+        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true }, onPodcasts = { podcastsOpen = true }, onSpeaking = { speakingOpen = true }, onChain = { chainOpen = true })
     } else {
         BackHandler(onBack = viewModel::close)
         when {
@@ -119,7 +122,8 @@ private fun LearnHome(
     onVerbs: () -> Unit,
     onGrammar: () -> Unit,
     onPodcasts: () -> Unit,
-    onSpeaking: () -> Unit
+    onSpeaking: () -> Unit,
+    onChain: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     var settingsOpen by remember { mutableStateOf(false) }
@@ -165,6 +169,23 @@ private fun LearnHome(
                 color = colors.text.muted(0.5f),
                 fontSize = 12.sp,
                 fontFamily = OnIkkiFontFamily
+            )
+        }
+        item {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val prefs = remember { com.onikki.app.data.local.LearnPrefs(context) }
+            val start = prefs.chainStart() ?: java.time.LocalDate.now()
+            val today = java.time.LocalDate.now()
+            val n = com.onikki.app.domain.vocab.WordChain.dayNumber(start, today)
+            val doneToday = n in prefs.chainDone()
+            BigAction(
+                kicker = "🔗 STUDY SKILLS · SO'Z ZANJIRI",
+                title = if (n > 0) "$n-kun: bugun $n ta so'z" + if (doneToday) " ✓" else "" else "So'z zanjirini boshlash",
+                subtitle = com.onikki.app.domain.vocab.WordChain.WORDS.getOrNull(n - 1)?.let { "Yangi so'z: ${it.english} — ${com.onikki.app.domain.vocab.Exercises.primary(it.uzbek)}" }
+                    ?: "Har kuni +1 so'z, 15-yanvargacha",
+                enabled = true,
+                primary = false,
+                onClick = onChain
             )
         }
         item {
