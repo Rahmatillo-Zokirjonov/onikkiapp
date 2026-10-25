@@ -65,6 +65,10 @@ interface VocabReviewDao {
             "FROM vocab_reviews GROUP BY wordId HAVING wrong > 0 ORDER BY wrong DESC, total DESC LIMIT :limit"
     )
     fun observeMostMissed(limit: Int): Flow<List<VocabMissCount>>
+
+    /** Answers since [from], for "Qiyin so'zlar" and per-mode accuracy. */
+    @Query("SELECT wordId, exercise, grade, day FROM vocab_reviews WHERE day >= :from")
+    fun observeRowsSince(from: LocalDate): Flow<List<com.onikki.app.domain.vocab.ReviewRow>>
 }
 
 @Dao

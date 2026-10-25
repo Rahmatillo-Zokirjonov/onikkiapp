@@ -62,6 +62,7 @@ class Speaker(context: Context) {
             if (status == TextToSpeech.SUCCESS) {
                 val result = tts?.setLanguage(Locale.US)
                 ready = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+                tts?.let(::useBestEnglishVoice)
                 tts?.setSpeechRate(0.9f)
             }
         }
@@ -76,7 +77,7 @@ class Speaker(context: Context) {
     /** Slower, for listening exercises (🐢). */
     fun speakSlow(text: String) {
         if (!ready) return
-        tts?.setSpeechRate(0.55f)
+        tts?.setSpeechRate(0.6f)
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "onikki-word-slow")
     }
 
@@ -89,6 +90,22 @@ class Speaker(context: Context) {
         tts?.stop()
         tts?.shutdown()
         tts = null
+    }
+}
+
+/**
+ * Picks the most natural English voice that works offline: highest quality, then US/UK, then lowest
+ * latency. Phones differ a lot here, so anything that fails just keeps the engine's default.
+ */
+fun useBestEnglishVoice(tts: TextToSpeech) {
+    runCatching {
+        val best = tts.voices.orEmpty()
+            .filter { v ->
+                v.locale.language == "en" && !v.isNetworkConnectionRequired &&
+                    TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in v.features.orEmpty()
+            }
+            .maxWithOrNull(compareBy({ it.quality }, { if (it.locale.country == "US" || it.locale.country == "GB") 1 else 0 }, { -it.latency }))
+        if (best != null) tts.voice = best
     }
 }
 

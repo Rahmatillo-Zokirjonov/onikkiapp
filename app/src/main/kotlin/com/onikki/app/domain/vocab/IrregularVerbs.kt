@@ -69,6 +69,7 @@ win (won, won) | yutmoq | Our team won the game. | Bizning jamoa o'yinda g'alaba
 wake (woke, woken) | uyg'onmoq | I woke up at six. | Men soat oltida uyg'ondim.
 break (broke, broken) | sindirmoq | He broke the window. | U derazani sindirdi.
 hold (held, held) | ushlab turmoq | She held the baby. | U chaqaloqni ushlab turdi.
+cost (cost, cost) | narxi bo'lmoq, turmoq | The ticket cost ten dollars. | Chipta o'n dollar turdi.
 lend (lent, lent) | qarzga bermoq | I lent him some money. | Men unga biroz pul qarzga berdim.
 let (let, let) | ruxsat bermoq | My parents let me go. | Ota-onam menga borishga ruxsat berishdi.
 mean (meant, meant) | anglatmoq | I meant something different. | Men boshqa narsani nazarda tutgan edim.

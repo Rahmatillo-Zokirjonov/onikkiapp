@@ -17,8 +17,14 @@ enum class ExerciseType(val label: String, val hard: Boolean = false) {
     FORMS("V2 va V3 ni yozish", hard = true),
     DICTATE("Eshitib yozish", hard = true),
     TRANSLATE("Gapni tarjima qilish", hard = true),
-    COMPOSE("So'zni gapda ishlatish", hard = true)
+    COMPOSE("So'zni gapda ishlatish", hard = true),
+    SPELL("Yozilish", hard = true),
+    VERB_PAST("Fe'lning o'tgan shakli", hard = true),
+    DICTATION("Diktant", hard = true)
 }
+
+/** Dictation levels: (a) the word, (b) the word then its example, (c) only the example. */
+enum class DictationMode(val label: String) { WORD("Bitta so'z"), WORD_SENTENCE("So'z + misol gap"), SENTENCE("Faqat misol gap") }
 
 /** Which verb form an exercise asks for. */
 enum class VerbForm(val label: String, val hint: String) {
@@ -83,6 +89,28 @@ sealed interface Exercise {
     data class Translate(val word: VocabWord, val uzbek: String, val answer: String) : Exercise {
         override val type get() = ExerciseType.TRANSLATE
         override val wordIds get() = listOf(word.id)
+    }
+
+    /**
+     * Spelling: the Uzbek meaning (and the example with the word hidden) → write the English word,
+     * strictly letter by letter; a miss is rewritten three times.
+     */
+    data class Spell(val word: VocabWord, val prompt: String, val clue: String?, val answers: List<String>) : Exercise {
+        override val type get() = ExerciseType.SPELL
+        override val wordIds get() = listOf(word.id)
+    }
+
+    /** Irregular verb: base → past (V2), or with [reverse] past → base. */
+    data class VerbPast(val word: VocabWord, val reverse: Boolean, val prompt: String, val answers: List<String>) : Exercise {
+        override val type get() = ExerciseType.VERB_PAST
+        override val wordIds get() = listOf(word.id)
+    }
+
+    /** Dictation: the text is only heard; [sentence] is the example for the sentence levels. */
+    data class Dictation(val word: VocabWord, val mode: DictationMode, val sentence: String?) : Exercise {
+        override val type get() = ExerciseType.DICTATION
+        override val wordIds get() = listOf(word.id)
+        val answers: List<String> get() = VocabChallenge.splitAnswers(word.english)
     }
 
     /** Write an own sentence with the word; checked by the AI when there is a key, else offline. */
@@ -218,6 +246,26 @@ object Exercises {
         val picked = words.distinctBy { AnswerCheck.letters(it.english) }.distinctBy { AnswerCheck.letters(primary(it.uzbek)) }.take(MATCH_SIZE)
         if (picked.size < 3) return null
         return Exercise.Match(picked, picked.map { it.id }.shuffled(random), picked.map { it.id }.shuffled(random))
+    }
+
+    /** The example with the word replaced by a gap, so it hints at use without giving the spelling away. */
+    fun clueFor(word: VocabWord): String? {
+        val example = word.example ?: return null
+        val b = blank(example, word.english, word.pastForm, word.participle) ?: return null
+        return b.before + "_".repeat(4) + b.after
+    }
+
+    fun spell(word: VocabWord): Exercise.Spell =
+        Exercise.Spell(word, primary(word.uzbek), clueFor(word), VocabChallenge.splitAnswers(word.english))
+
+    fun verbPast(word: VocabWord, reverse: Boolean): Exercise.VerbPast =
+        if (reverse) Exercise.VerbPast(word, true, primary(word.pastForm.orEmpty()), VocabChallenge.splitAnswers(word.english))
+        else Exercise.VerbPast(word, false, word.english.trim(), VocabChallenge.splitAnswers(word.pastForm.orEmpty()))
+
+    /** Falls back to the word alone when there's no example (or it's too long to write down). */
+    fun dictation(word: VocabWord, mode: DictationMode): Exercise.Dictation {
+        val sentence = word.example?.trim()?.takeIf { it.split(' ').size in 2..14 }
+        return Exercise.Dictation(word, if (sentence == null) DictationMode.WORD else mode, sentence)
     }
 
     fun dictate(word: VocabWord): Exercise.Dictate = Exercise.Dictate(word, VocabChallenge.splitAnswers(word.english))

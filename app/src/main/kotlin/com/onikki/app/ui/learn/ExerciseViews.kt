@@ -105,6 +105,9 @@ fun ExerciseView(exercise: Exercise, speaker: Speaker, checkSentence: SentenceCh
             onRevealed = { speaker.speak(verbLine(exercise.word)) }
         )
         is Exercise.Forms -> FormsExercise(exercise, speaker, onAnswer)
+        is Exercise.Spell -> SpellExercise(exercise, speaker, onAnswer)
+        is Exercise.VerbPast -> VerbPastExercise(exercise, speaker, onAnswer)
+        is Exercise.Dictation -> DictationExercise(exercise, speaker, onAnswer)
         is Exercise.Translate -> TranslateExercise(exercise, speaker, onAnswer)
         is Exercise.Compose -> ComposeExercise(exercise, speaker, checkSentence, onAnswer)
         is Exercise.Dictate -> TypedAnswer(
@@ -841,6 +844,9 @@ fun rightAnswerOf(exercise: Exercise): String? = when (exercise) {
     is Exercise.FormChoice -> verbLine(exercise.word).replace(", ", " — ")
     is Exercise.Forms -> verbLine(exercise.word).replace(", ", " — ")
     is Exercise.Dictate -> "${exercise.word.english} — ${Exercises.primary(exercise.word.uzbek)}"
+    is Exercise.Spell -> exercise.answers.joinToString(" / ")
+    is Exercise.VerbPast -> "${if (exercise.reverse) exercise.prompt + " → " + exercise.answers.joinToString(" / ") else exercise.word.english + " → " + exercise.answers.joinToString(" / ")}"
+    is Exercise.Dictation -> if (exercise.mode == com.onikki.app.domain.vocab.DictationMode.WORD) exercise.word.english else listOfNotNull(exercise.word.english.takeIf { exercise.mode == com.onikki.app.domain.vocab.DictationMode.WORD_SENTENCE }, exercise.sentence).joinToString(" · ")
     is Exercise.Translate -> exercise.answer
     is Exercise.Compose -> exercise.word.example
 }

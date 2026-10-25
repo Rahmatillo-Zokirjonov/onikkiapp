@@ -62,6 +62,13 @@ class LearnPrefs(context: Context) {
         prefs.edit().putStringSet("chain_done", days.map { it.toString() }.toSet()).apply()
     }
 
+    /** Best score of the 60-second verb sprint. */
+    fun sprintBest(): Int = prefs.getInt("sprint_best", 0)
+
+    fun setSprintBest(score: Int) {
+        prefs.edit().putInt("sprint_best", score).apply()
+    }
+
     fun grammarLevel(): String? = prefs.getString("grammar_level", null)
 
     fun setGrammarLevel(level: String) {

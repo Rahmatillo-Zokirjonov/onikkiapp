@@ -85,7 +85,14 @@ fun LearnRoute(onBack: () -> Unit) {
         GrammarRoute(home.suggestedLevel, onBack = { grammarOpen = false })
     } else if (s == null && verbsOpen) {
         BackHandler { verbsOpen = false }
-        IrregularVerbsScreen(home.verbs, onBack = { verbsOpen = false }, onDrill = viewModel::startVerbDrill)
+        IrregularVerbsScreen(
+            home.verbs,
+            onBack = { verbsOpen = false },
+            onDrill = viewModel::startVerbDrill,
+            onPast = { among, reverse -> viewModel.startVerbPast(reverse, among) },
+            sprintBest = viewModel.sprintBest(),
+            onSprintDone = viewModel::recordSprint
+        )
     } else if (s == null && listeningOpen) {
         ListeningRoute(onBack = { listeningOpen = false })
     } else if (s == null && so != null) {
@@ -94,7 +101,8 @@ fun LearnRoute(onBack: () -> Unit) {
     } else if (s == null && statsOpen) {
         BackHandler { statsOpen = false }
         val stats by viewModel.stats.collectAsState()
-        LearnStatsScreen(stats, onBack = { statsOpen = false })
+        val modes by viewModel.modeStats.collectAsState()
+        LearnStatsScreen(stats, onBack = { statsOpen = false }, modes = modes)
     } else if (s == null) {
         BackHandler(onBack = onBack)
         LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true }, onPodcasts = { podcastsOpen = true }, onSpeaking = { speakingOpen = true }, onChain = { chainOpen = true })
@@ -131,6 +139,7 @@ private fun LearnHome(
     var unknownOpen by remember { mutableStateOf(false) }
     var overLimitFor by remember { mutableStateOf<Pair<PathLesson, String>?>(null) }
     var newOverLimit by remember { mutableStateOf(false) }
+    var dictationOpen by remember { mutableStateOf(false) }
     val onStart: (PathLesson, String) -> Unit = { lesson, unit ->
         val introducesNew = lesson.words.any { it.status == com.onikki.app.data.db.entity.WordStatus.NEW }
         if (introducesNew && state.newToday >= settings.newPerDay) overLimitFor = lesson to unit else viewModel.startLesson(lesson, unit)
@@ -199,6 +208,16 @@ private fun LearnHome(
                 enabled = next != null,
                 primary = true
             ) { next?.let { onStart(it, unitName) } }
+        }
+        item {
+            PracticeModes(
+                hard = state.hardSpelling.size,
+                hasVerbs = state.verbs.isNotEmpty(),
+                onSpelling = viewModel::startSpelling,
+                onHard = viewModel::startHardSpelling,
+                onDictation = { dictationOpen = true },
+                onVerbs = onVerbs
+            )
         }
         if (state.newWords.isNotEmpty()) {
             item {
@@ -314,6 +333,19 @@ private fun LearnHome(
     if (settingsOpen) LearnSettingsSheet(settings, onChange = viewModel::updateSettings, onDismiss = { settingsOpen = false })
     if (unknownOpen) UnknownListSheet(state.unknown, onRemove = viewModel::removeUnknown, onStudy = viewModel::startRelearn, onDismiss = { unknownOpen = false })
     if (addOpen) AddWordsSheet(state.decks, onDismiss = { addOpen = false }, onSubmit = { target, items, level, done -> viewModel.addWords(target, items, level, done) })
+    if (dictationOpen) {
+        com.onikki.app.ui.components.OnIkkiSheet(title = "Diktant", onDismiss = { dictationOpen = false }) {
+            Text(
+                text = "So'z yoki gap o'qiladi, matn ko'rinmaydi. Eshitganingizni yozasiz — harfma-harf (gapda so'zma-so'z) tekshiriladi.",
+                color = colors.text.muted(0.7f),
+                fontSize = 13.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+            com.onikki.app.domain.vocab.DictationMode.entries.forEachIndexed { i, m ->
+                BigButton("${'a' + i}) ${m.label}", primary = i == 0) { dictationOpen = false; viewModel.startDictation(m) }
+            }
+        }
+    }
     if (newOverLimit) {
         com.onikki.app.ui.components.OnIkkiSheet(title = "Bugungi limit", onDismiss = { newOverLimit = false }) {
             Text(
@@ -394,6 +426,32 @@ private fun OutOfHearts(hearts: com.onikki.app.domain.vocab.HeartState, canHeal:
         )
         if (canHeal) BigButton("❤️ Xatolarni takrorlab tiklash", primary = true, onClick = onHeal)
         BigButton("Keyinroq", primary = !canHeal, onClick = onClose)
+    }
+}
+
+/** The writing modes: spelling, hard words, dictation, irregular verbs. */
+@Composable
+private fun PracticeModes(hard: Int, hasVerbs: Boolean, onSpelling: () -> Unit, onHard: () -> Unit, onDictation: () -> Unit, onVerbs: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.surface).border(BorderStroke(1.dp, colors.cardBorder), RoundedCornerShape(20.dp)).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(text = "🎯 YOZISH VA ESHITISH MASHQLARI", color = colors.accent, style = OnIkkiType.kicker)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SmallLink("✍️ Yozilish", Modifier.weight(1f), onClick = onSpelling)
+            SmallLink("🎧 Diktant", Modifier.weight(1f), onClick = onDictation)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SmallLink(if (hard > 0) "🧩 Qiyin so'zlar · $hard" else "🧩 Qiyin so'zlar yo'q", Modifier.weight(1f).alpha(if (hard > 0) 1f else 0.5f), onClick = { if (hard > 0) onHard() })
+            if (hasVerbs) SmallLink("📘 Fe'llar: V1 → V2", Modifier.weight(1f), onClick = onVerbs)
+        }
+        Text(
+            text = "Qiyin so'zlar — oxirgi 7 kunda 2+ marta xato yozilganlar.",
+            color = colors.text.muted(0.45f),
+            fontSize = 11.sp,
+            fontFamily = OnIkkiFontFamily
+        )
     }
 }
 
@@ -538,7 +596,7 @@ private fun LessonRunner(s: LessonSession, hearts: Int, settings: com.onikki.app
             when (s.kind) {
                 is SessionKind.Path -> Text(text = "❤️ $hearts", color = colors.warmAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
                 SessionKind.Heal -> Text(text = "❤️ $hearts/${com.onikki.app.domain.vocab.Hearts.MAX}", color = colors.warmAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
-                SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs, SessionKind.Sentences, SessionKind.NewWords -> Text(text = "⭐ ${s.xp}", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+                SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs, SessionKind.Sentences, SessionKind.NewWords, is SessionKind.Practice -> Text(text = "⭐ ${s.xp}", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
             }
         }
         Column(
@@ -577,6 +635,7 @@ private fun LessonResult(s: LessonSession, streak: Int, onDone: () -> Unit, onPr
         SessionKind.Verbs -> "Fe'llar mashqi tugadi!"
         SessionKind.Sentences -> "Gap tuzish tugadi!"
         SessionKind.NewWords -> "Yangi so'zlar o'rganildi!"
+        is SessionKind.Practice -> "${k.title} tugadi!"
     }
     // A small celebration: the trophy pops in and the XP counts up.
     var shown by remember { mutableStateOf(false) }

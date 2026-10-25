@@ -27,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,9 +46,22 @@ import com.onikki.app.ui.vocabulary.rememberSpeaker
 
 /** V1 · V2 · V3 table of every irregular verb in the user's list, with a drill button. */
 @Composable
-fun IrregularVerbsScreen(words: List<VocabWord>, onBack: () -> Unit, onDrill: (List<VocabWord>) -> Unit) {
+fun IrregularVerbsScreen(
+    words: List<VocabWord>,
+    onBack: () -> Unit,
+    onDrill: (List<VocabWord>) -> Unit,
+    onPast: (List<VocabWord>, Boolean) -> Unit,
+    sprintBest: Int,
+    onSprintDone: (List<Pair<Long, Boolean>>, Int) -> Unit
+) {
     val colors = LocalOnIkkiColors.current
     val speaker = rememberSpeaker()
+    var sprint by rememberSaveable { mutableStateOf(false) }
+    if (sprint) {
+        androidx.activity.compose.BackHandler { sprint = false }
+        VerbSprint(words.filter(Exercises::isIrregular), sprintBest, speaker, onDone = { r, n -> onSprintDone(r, n) }, onClose = { sprint = false })
+        return
+    }
     var query by rememberSaveable { mutableStateOf("") }
     var level by rememberSaveable { mutableStateOf<String?>(null) }
     val verbs = remember(words) { words.filter(Exercises::isIrregular).sortedBy { it.english.lowercase() } }
@@ -79,6 +93,13 @@ fun IrregularVerbsScreen(words: List<VocabWord>, onBack: () -> Unit, onDrill: (L
                 onClick = { onDrill(shown.ifEmpty { verbs }) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
             )
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OnIkkiButton(text = "go → went", onClick = { onPast(shown.ifEmpty { verbs }, false) }, variant = com.onikki.app.ui.components.OnIkkiButtonVariant.SECONDARY, modifier = Modifier.weight(1f))
+                OnIkkiButton(text = "went → go", onClick = { onPast(shown.ifEmpty { verbs }, true) }, variant = com.onikki.app.ui.components.OnIkkiButtonVariant.SECONDARY, modifier = Modifier.weight(1f))
+                OnIkkiButton(text = "⏱ 60 s", onClick = { sprint = true }, variant = com.onikki.app.ui.components.OnIkkiButtonVariant.SECONDARY, modifier = Modifier.weight(0.8f))
+            }
         }
         item {
             OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Qidirish: go, went, bormoq…") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -130,6 +151,94 @@ fun IrregularVerbsScreen(words: List<VocabWord>, onBack: () -> Unit, onDrill: (L
         }
         if (verbs.isEmpty()) {
             item { Text(text = "Hali fe'l yo'q. So'z qo'shishda \"go (went, gone) | bormoq\" ko'rinishida yozing.", color = colors.text.muted(0.6f), fontFamily = OnIkkiFontFamily) }
+        }
+    }
+}
+
+/**
+ * "60 soniya": base forms one after another, type the past form, Enter — right or wrong, the next one
+ * comes at once. The best score is kept.
+ */
+@Composable
+private fun VerbSprint(verbs: List<VocabWord>, best: Int, speaker: com.onikki.app.ui.vocabulary.Speaker, onDone: (List<Pair<Long, Boolean>>, Int) -> Unit, onClose: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    var started by remember { mutableStateOf(false) }
+    var left by remember { androidx.compose.runtime.mutableIntStateOf(60) }
+    var order by remember { mutableStateOf(verbs.shuffled()) }
+    var index by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var text by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf(listOf<Pair<Long, Boolean>>()) }
+    var flash by remember { mutableStateOf<Boolean?>(null) }
+    var finished by remember { mutableStateOf(false) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val score = results.count { it.second }
+    androidx.compose.runtime.LaunchedEffect(started) {
+        if (!started) return@LaunchedEffect
+        while (left > 0) { kotlinx.coroutines.delay(1000); left-- }
+        finished = true
+        onDone(results, results.count { it.second })
+    }
+    androidx.compose.runtime.LaunchedEffect(flash) { if (flash != null) { kotlinx.coroutines.delay(350); flash = null } }
+    fun submit() {
+        if (!started || finished || order.isEmpty()) return
+        val v = order[index % order.size]
+        val ok = com.onikki.app.domain.vocab.Spelling.isRight(text, com.onikki.app.domain.screentime.VocabChallenge.splitAnswers(v.pastForm.orEmpty()))
+        results = results + (v.id to ok)
+        flash = ok
+        text = ""
+        index++
+        if (index % order.size == 0) order = order.shuffled()
+    }
+    Column(
+        modifier = Modifier.fillMaxSize().background(colors.background).padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        SubScreenHeader(title = "60 soniya: V1 → V2", onBack = onClose)
+        Text(text = "Rekord: ${maxOf(best, if (finished) score else 0)}", color = colors.text.muted(0.6f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+        Text(text = "0:%02d".format(left), color = if (left <= 10) colors.warmAccent else colors.text, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+        when {
+            finished -> {
+                Text(text = "$score ta to'g'ri", color = colors.accent, fontSize = 32.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+                Text(text = if (score > best) "🏆 Yangi rekord!" else "${results.size} ta urinish", color = colors.text.muted(0.7f), fontSize = 15.sp, fontFamily = OnIkkiFontFamily)
+                val missed = results.filter { !it.second }.mapNotNull { r -> verbs.firstOrNull { it.id == r.first } }.distinctBy { it.id }
+                if (missed.isNotEmpty()) {
+                    Text(text = "Xato qilinganlar:", color = colors.warmAccent, fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+                    missed.take(12).forEach { v -> Text(text = "${v.english} → ${v.pastForm}", color = colors.text, fontSize = 15.sp, fontFamily = OnIkkiFontFamily) }
+                }
+                OnIkkiButton(text = "Yana o'ynash", onClick = { left = 60; index = 0; results = emptyList(); order = verbs.shuffled(); finished = false; started = false }, modifier = Modifier.fillMaxWidth())
+            }
+            !started -> {
+                Text(text = "Asosiy shakl chiqadi — o'tgan shaklini yozib, Enter bosing. Iloji boricha ko'p!", color = colors.text.muted(0.7f), fontSize = 15.sp, fontFamily = OnIkkiFontFamily, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                OnIkkiButton(text = "Boshlash", onClick = { started = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp))
+            }
+            else -> {
+                val v = order[index % order.size]
+                Text(
+                    text = v.english,
+                    color = when (flash) { true -> colors.accent; false -> colors.warmAccent; null -> colors.text },
+                    fontSize = 40.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = OnIkkiFontFamily
+                )
+                Text(text = Exercises.primary(v.uzbek), color = colors.text.muted(0.6f), fontSize = 15.sp, fontFamily = OnIkkiFontFamily)
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.take(30) },
+                    label = { Text("V2") },
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
+                        autoCorrectEnabled = false,
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { submit() }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus)
+                )
+                androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+                OnIkkiButton(text = "Keyingi", onClick = ::submit, modifier = Modifier.fillMaxWidth())
+                Text(text = "To'g'ri: $score", color = colors.accent, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
+            }
         }
     }
 }

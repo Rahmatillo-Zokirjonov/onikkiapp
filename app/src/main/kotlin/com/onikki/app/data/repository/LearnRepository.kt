@@ -119,7 +119,8 @@ class LearnRepository(private val db: AppDatabase) {
 object VocabSeeder {
     private const val PREFS = "vocab_seed"
     private const val KEY_LESSON_1 = "lesson1_v1"
-    private const val KEY_IRREGULAR = "irregular_v1"
+    /** v2 adds "cost"; the seed only inserts what's missing, so running it again is safe. */
+    private const val KEY_IRREGULAR = "irregular_v2"
     private const val KEY_EXAMPLE_UZ = "example_uz_v1"
     const val MY_WORDS = "Mening so'zlarim"
 

@@ -56,5 +56,9 @@ data class VocabWord(
     /** Irregular verbs: the past participle (V3), "gone", "forgotten". */
     val participle: String? = null,
     /** The example sentence in Uzbek, for translating it back into English. */
-    val exampleUz: String? = null
+    val exampleUz: String? = null,
+    /** The user's own memory hook ("w + eat + her"), shown after a miss. */
+    val mnemonic: String? = null,
+    /** Word-family root ("danger" for "dangerous"), set by the user; built-in families are matched too. */
+    val familyRoot: String? = null
 )

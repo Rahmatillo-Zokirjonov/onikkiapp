@@ -15,7 +15,7 @@ class SentenceTest {
     @Test
     fun everyStarterExampleHasItsTranslation() {
         val all = VocabImport.parse(VocabImport.LESSON_1) + IrregularVerbs.ALL.flatMap { VocabImport.parse(it.second) }
-        assertEquals(120, all.size)
+        assertEquals(121, all.size)
         all.forEach { assertTrue(it.english, it.example != null && !it.exampleUz.isNullOrBlank()) }
         val line = VocabImport.parseLine("go (went, gone) | bormoq | She went home. | U uyga ketdi.")!!
         assertEquals("U uyga ketdi.", line.exampleUz)

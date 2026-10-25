@@ -16,9 +16,9 @@ class IrregularVerbsTest {
     }
 
     @Test
-    fun hundredVerbsAllWithBothForms() {
-        assertEquals(100, verbs.size)
-        assertEquals(100, verbs.map { it.english }.toSet().size)
+    fun allVerbsWithBothForms() {
+        assertEquals(101, verbs.size)
+        assertEquals(101, verbs.map { it.english }.toSet().size)
         assertTrue(verbs.all(Exercises::isIrregular))
         val be = verbs.first { it.english == "be" }
         assertEquals("was/were", be.pastForm)

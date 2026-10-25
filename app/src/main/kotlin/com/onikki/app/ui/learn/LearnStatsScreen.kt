@@ -35,7 +35,11 @@ import com.onikki.app.ui.util.weekdayAbbrUz
 import com.onikki.app.ui.vocabulary.rememberSpeaker
 
 @Composable
-fun LearnStatsScreen(state: LearnStatsState, onBack: () -> Unit) {
+fun LearnStatsScreen(
+    state: LearnStatsState,
+    onBack: () -> Unit,
+    modes: Pair<List<com.onikki.app.domain.vocab.ModeStat>, Pair<Int?, Int?>> = emptyList<com.onikki.app.domain.vocab.ModeStat>() to (null to null)
+) {
     val colors = LocalOnIkkiColors.current
     val s = state.stats
     val speaker = rememberSpeaker()
@@ -114,6 +118,50 @@ fun LearnStatsScreen(state: LearnStatsState, onBack: () -> Unit) {
             NumberTile("Ertaga", s.dueTomorrow, colors.text, Modifier.weight(1f))
         }
         Text(text = "Keyingi 7 kunda yana ${s.dueThisWeek} ta takrorlash kutilmoqda", color = colors.text.muted(0.55f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+
+        // Every mode in one place: accuracy this week, and against last week.
+        Column(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val (thisWeek, lastWeek) = modes.second
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = "Rejimlar bo'yicha aniqlik (7 kun)", color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(1f))
+                thisWeek?.let { now ->
+                    val delta = lastWeek?.let { now - it }
+                    Text(
+                        text = "$now%" + (delta?.let { if (it >= 0) "  ▲$it" else "  ▼${-it}" } ?: ""),
+                        color = if ((delta ?: 0) >= 0) colors.accent else colors.warmAccent,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = OnIkkiFontFamily
+                    )
+                }
+            }
+            if (modes.first.isEmpty()) {
+                Text(text = "Bu hafta hali mashq yo'q.", color = colors.text.muted(0.55f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+            }
+            modes.first.forEach { m ->
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row {
+                        Text(text = m.label, color = colors.text, fontSize = 13.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(1f))
+                        Text(
+                            text = "${m.accuracy}% · ${m.answers} ta" + (m.lastWeek?.let { lw -> val d = m.accuracy - lw; if (d >= 0) " ▲$d" else " ▼${-d}" } ?: ""),
+                            color = colors.text.muted(0.7f),
+                            fontSize = 12.sp,
+                            fontFamily = OnIkkiFontFamily
+                        )
+                    }
+                    com.onikki.app.ui.components.LinearProgressTrack(
+                        progress = m.accuracy / 100f,
+                        trackColor = colors.neutral800,
+                        progressColor = if (m.accuracy >= 80) colors.accent else if (m.accuracy >= 60) colors.habitAccent else colors.warmAccent,
+                        height = 6.dp
+                    )
+                }
+            }
+            Text(text = "▲/▼ — o'tgan haftaga nisbatan", color = colors.text.muted(0.4f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+        }
 
         // Hardest words
         Column(

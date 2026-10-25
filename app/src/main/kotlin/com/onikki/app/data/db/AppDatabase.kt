@@ -64,9 +64,9 @@ import com.onikki.app.data.db.entity.Transaction
         Task::class, Habit::class, HabitLog::class, Transaction::class,
         CategoryBudget::class, Debt::class, SavingsGoal::class, AppUsage::class,
         AppLimit::class, DailyReview::class, Note::class, Account::class, PlannedExpense::class,
-        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class, VocabDeck::class, VocabReview::class, VocabLessonResult::class, com.onikki.app.data.db.entity.ListeningCustomText::class, com.onikki.app.data.db.entity.ListeningAttempt::class, com.onikki.app.data.db.entity.GrammarAttempt::class, com.onikki.app.data.db.entity.GrammarCached::class, com.onikki.app.data.db.entity.PodcastAttempt::class, com.onikki.app.data.db.entity.PodcastCustom::class, com.onikki.app.data.db.entity.SpeakingAttempt::class
+        BlockZone::class, VocabWord::class, SmsImport::class, MerchantCategory::class, Goal::class, UsageHours::class, NoteFolder::class, NoteAttachment::class, TimetableEntry::class, Homework::class, VocabDeck::class, VocabReview::class, VocabLessonResult::class, com.onikki.app.data.db.entity.ListeningCustomText::class, com.onikki.app.data.db.entity.ListeningAttempt::class, com.onikki.app.data.db.entity.GrammarAttempt::class, com.onikki.app.data.db.entity.GrammarCached::class, com.onikki.app.data.db.entity.PodcastAttempt::class, com.onikki.app.data.db.entity.PodcastCustom::class, com.onikki.app.data.db.entity.SpeakingAttempt::class, com.onikki.app.data.db.entity.PracticeLog::class, com.onikki.app.data.db.entity.ConfusablePair::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -100,6 +100,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun grammarDao(): com.onikki.app.data.db.dao.GrammarDao
     abstract fun podcastDao(): com.onikki.app.data.db.dao.PodcastDao
     abstract fun speakingDao(): com.onikki.app.data.db.dao.SpeakingDao
+    abstract fun practiceDao(): com.onikki.app.data.db.dao.PracticeDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -107,7 +108,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "onikki.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                     .addCallback(SeedDefaultAccounts)
                     .build()
                     .also { INSTANCE = it }
@@ -404,5 +405,25 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
                 "`itemKey` TEXT NOT NULL, `level` TEXT NOT NULL, `at` INTEGER NOT NULL, `day` TEXT NOT NULL, `percent` INTEGER NOT NULL, `xp` INTEGER NOT NULL)"
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_speaking_attempts_day` ON `speaking_attempts` (`day`)")
+    }
+}
+
+
+/** Practice modes: memory hooks and word families on words, one log for non-word modes, user's confusing pairs. */
+val MIGRATION_16_17 = object : Migration(16, 17) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE vocab_words ADD COLUMN mnemonic TEXT")
+        db.execSQL("ALTER TABLE vocab_words ADD COLUMN familyRoot TEXT")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `practice_log` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `mode` TEXT NOT NULL, " +
+                "`itemKey` TEXT NOT NULL, `wordId` INTEGER, `score` INTEGER NOT NULL, `at` INTEGER NOT NULL, `day` TEXT NOT NULL)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_practice_log_mode` ON `practice_log` (`mode`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_practice_log_day` ON `practice_log` (`day`)")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `confusable_pairs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `first` TEXT NOT NULL, " +
+                "`second` TEXT NOT NULL, `firstUz` TEXT NOT NULL, `secondUz` TEXT NOT NULL, `sentence` TEXT NOT NULL, " +
+                "`answer` INTEGER NOT NULL, `why` TEXT NOT NULL)"
+        )
     }
 }

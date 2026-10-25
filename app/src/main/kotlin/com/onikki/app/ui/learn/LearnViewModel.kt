@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -44,6 +45,8 @@ data class LearnHomeState(
     val unknown: List<VocabWord> = emptyList(),
     /** A starting level for listening and grammar, from how many words are learned. */
     val suggestedLevel: String = "A1",
+    /** "Qiyin so'zlar": misspelt 2+ times in the last 7 days. */
+    val hardSpelling: List<VocabWord> = emptyList(),
     /** Every never-studied word, in path order. */
     val newWords: List<VocabWord> = emptyList(),
     /** New words not sorted yet, for "Bilaman / Bilmayman". */
@@ -87,6 +90,8 @@ sealed interface SessionKind {
     data object Sentences : SessionKind
     /** The next never-studied words, wherever they are on the path. */
     data object NewWords : SessionKind
+    /** A practice mode (spelling, verbs, dictation…), named for the result screen. */
+    data class Practice(val title: String) : SessionKind
 }
 
 /** What the panel under an answered exercise shows. */
@@ -160,6 +165,9 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
 
     private data class Counters(val totalXp: Int, val todayXp: Int, val days: List<LocalDate>, val newToday: Int, val missed: List<com.onikki.app.data.db.dao.VocabMissCount>)
 
+    /** The last two weeks of answers: hard spelling words and per-mode accuracy come from these. */
+    private val recentRows = db.vocabReviewDao().observeRowsSince(today.minusDays(13))
+
     private val counters = combine(
         db.vocabReviewDao().observeTotalXp(),
         db.vocabReviewDao().observeXpOn(today),
@@ -172,11 +180,12 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         db.vocabDeckDao().observeAll(),
         db.vocabWordDao().observeInPathOrder(),
         db.vocabLessonDao().observeAll(),
-        counters,
+        combine(counters, recentRows) { c, rows -> c to rows },
         combine(db.listeningDao().observeAttempts(), db.grammarDao().observeXpByDay(), db.podcastDao().observeXpByDay(), db.speakingDao().observeXpByDay()) { l, g, p, sp ->
             l.map { com.onikki.app.data.db.dao.DayXp(it.day, it.xp) } + g + p + sp
         }
-    ) { decks, words, results, c0, extra ->
+    ) { decks, words, results, cr, extra ->
+        val (c0, rows) = cr
         // Listening and grammar count towards XP and the streak too.
         val c = c0.copy(
             totalXp = c0.totalXp + extra.sumOf { it.xp },
@@ -201,6 +210,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             unknown = com.onikki.app.domain.vocab.Relearn.unknown(words),
             verbs = words.filter(com.onikki.app.domain.vocab.Exercises::isIrregular),
             newWords = LearningPath.untouched(units),
+            hardSpelling = com.onikki.app.domain.vocab.HardSpelling.pick(rows, today).mapNotNull { id -> words.firstOrNull { it.id == id } },
             suggestedLevel = com.onikki.app.domain.vocab.Listening.suggestLevel(words),
             unsorted = LearningPath.untouched(units).filter { it.unknownSince == null },
             isLoaded = true
@@ -312,6 +322,63 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         (ai.checkSentence(word.english, com.onikki.app.domain.vocab.Exercises.primary(word.uzbek), sentence) as? com.onikki.app.data.repository.AiOutcome.Ok)?.value
     }
 
+    /** Per-mode accuracy (this week vs last) and overall weekly growth, for the stats screen. */
+    val modeStats: StateFlow<Pair<List<com.onikki.app.domain.vocab.ModeStat>, Pair<Int?, Int?>>> = recentRows
+        .map { rows -> com.onikki.app.domain.vocab.ModeStats.build(rows, today) to com.onikki.app.domain.vocab.ModeStats.weekly(rows, today) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList<com.onikki.app.domain.vocab.ModeStat>() to (null to null))
+
+    /** Studied words for the writing modes: unknown and misspelt first, then young, then due; new words only if nothing else. */
+    private fun writingPool(): List<VocabWord> {
+        val studied = allWords.filter { it.status != com.onikki.app.data.db.entity.WordStatus.NEW }
+        val pool = studied.ifEmpty { allWords }
+        val hard = home.value.hardSpelling.map { it.id }.toSet()
+        return pool.shuffled(random).sortedWith(
+            compareBy<VocabWord>({ if (it.id in hard) 0 else 1 }, { if (it.unknownSince != null) 0 else 1 }, { it.stage }, { if (Srs.isDue(it, today)) 0 else 1 })
+        )
+    }
+
+    /** 1. Yozilish: ten words, strict spelling. */
+    fun startSpelling() {
+        val words = writingPool().take(PRACTICE_SIZE)
+        if (words.isNotEmpty()) begin(SessionKind.Practice("Yozilish mashqi"), words.map(com.onikki.app.domain.vocab.Exercises::spell))
+    }
+
+    /** "Qiyin so'zlar": only the words misspelt lately, each spelt and then heard. */
+    fun startHardSpelling() {
+        val words = home.value.hardSpelling.map { w -> allWords.firstOrNull { it.id == w.id } ?: w }
+        if (words.isEmpty()) return
+        val ex = words.map(com.onikki.app.domain.vocab.Exercises::spell) +
+            words.shuffled(random).map { com.onikki.app.domain.vocab.Exercises.dictation(it, com.onikki.app.domain.vocab.DictationMode.WORD) }
+        begin(SessionKind.Practice("Qiyin so'zlar"), ex.take(LessonPlanner.MAX_EXERCISES))
+    }
+
+    /** 2. Irregular verbs: base → past, or [reverse] past → base. */
+    fun startVerbPast(reverse: Boolean, among: List<VocabWord> = home.value.verbs) {
+        val verbs = among.map { w -> allWords.firstOrNull { it.id == w.id } ?: w }.filter(com.onikki.app.domain.vocab.Exercises::isIrregular)
+            .shuffled(random).sortedWith(compareBy<VocabWord>({ if (it.unknownSince != null) 0 else 1 }, { if (Srs.isDue(it, today)) 0 else 1 }, { it.stage }))
+            .take(PRACTICE_SIZE)
+        if (verbs.isNotEmpty()) begin(SessionKind.Practice(if (reverse) "V2 → V1" else "V1 → V2"), verbs.map { com.onikki.app.domain.vocab.Exercises.verbPast(it, reverse) })
+    }
+
+    /** 3. Dictation at a level; sentence levels prefer words that have an example. */
+    fun startDictation(mode: com.onikki.app.domain.vocab.DictationMode) {
+        val pool = writingPool()
+        val words = (if (mode == com.onikki.app.domain.vocab.DictationMode.WORD) pool else pool.sortedBy { if (it.example.isNullOrBlank()) 1 else 0 }).take(PRACTICE_SIZE)
+        if (words.isNotEmpty()) begin(SessionKind.Practice("Diktant · ${mode.label}"), words.map { com.onikki.app.domain.vocab.Exercises.dictation(it, mode) })
+    }
+
+    /** The 60-second verb sprint: answers are logged (no SRS move — it's a speed game), the best score kept. */
+    fun recordSprint(results: List<Pair<Long, Boolean>>, score: Int) {
+        if (score > prefs.sprintBest()) prefs.setSprintBest(score)
+        viewModelScope.launch {
+            results.forEach { (id, ok) ->
+                repository.recordAnswer(id, if (ok) com.onikki.app.data.db.entity.ReviewGrade.EASY else com.onikki.app.data.db.entity.ReviewGrade.AGAIN, ReviewSource.REVIEW, "VERB_SPRINT", hardExercise = true, schedule = false)
+            }
+        }
+    }
+
+    fun sprintBest(): Int = prefs.sprintBest()
+
     /** "Yangi so'zlar": the next lesson-size batch of never-studied words, from any deck. */
     fun startNewWords() {
         val words = home.value.newWords.take(com.onikki.app.domain.vocab.LearningPath.LESSON_SIZE).map { w -> allWords.firstOrNull { it.id == w.id } ?: w }
@@ -393,7 +460,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
             // Another try of a missed word is part of learning it: no heart for that.
             is SessionKind.Path -> if (!s.isRetry) repeat(missed.size) { setHearts(com.onikki.app.domain.vocab.Hearts.lose(_hearts.value, now)) }
             SessionKind.Heal -> repeat(answers.count { it.verdict != Verdict.WRONG }) { setHearts(com.onikki.app.domain.vocab.Hearts.gain(_hearts.value, now)) }
-            SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs, SessionKind.Sentences, SessionKind.NewWords -> Unit
+            SessionKind.Review, SessionKind.Relearn, SessionKind.Verbs, SessionKind.Sentences, SessionKind.NewWords, is SessionKind.Practice -> Unit
         }
         var combo = s.combo
         answers.forEach { combo = com.onikki.app.domain.vocab.Combo.next(combo, it.verdict) }
@@ -479,5 +546,6 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         const val SORT_SIZE = 20
         const val VERB_DRILL = 10
         const val SENTENCE_WORDS = 5
+        const val PRACTICE_SIZE = 10
     }
 }

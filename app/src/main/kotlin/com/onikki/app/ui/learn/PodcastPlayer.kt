@@ -43,6 +43,7 @@ class PodcastPlayer(context: Context) {
             if (status == TextToSpeech.SUCCESS) {
                 val r = tts?.setLanguage(Locale.US)
                 ready = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
+                tts?.let { com.onikki.app.ui.vocabulary.useBestEnglishVoice(it) }
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
                         val i = utteranceId?.removePrefix("pod-")?.toIntOrNull() ?: return

@@ -51,10 +51,21 @@ class BlockerChallenge(
             else -> type
         }
         return when (kind) {
-            QuestionType.TYPE -> Exercises.typeIn(word)
+            QuestionType.TYPE -> typed(word)
             QuestionType.LISTEN -> Exercises.listen(word, order, random)
             else -> if (order.size >= 4) Exercises.choose(word, order, random) else Exercises.typeIn(word)
         }
+    }
+
+    /** A typed question: plain typing, strict spelling, the verb's past form, or (with sound) dictation. */
+    private fun typed(word: VocabWord): Exercise {
+        val options = listOfNotNull<() -> Exercise>(
+            { Exercises.typeIn(word) },
+            { Exercises.spell(word) },
+            if (Exercises.isIrregular(word)) ({ Exercises.verbPast(word, reverse = false) }) else null,
+            if (canListen) ({ Exercises.dictation(word, DictationMode.WORD) }) else null
+        )
+        return options[random.nextInt(options.size)]()
     }
 
     /** Records how the current exercise went. */
