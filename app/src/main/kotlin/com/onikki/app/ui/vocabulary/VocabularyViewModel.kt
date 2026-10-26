@@ -97,13 +97,15 @@ class VocabularyViewModel(application: Application) : AndroidViewModel(applicati
 
     private val learn = com.onikki.app.data.repository.LearnRepository(db)
 
-    fun saveWord(existing: VocabWord?, english: String, uzbek: String) {
+    fun saveWord(existing: VocabWord?, english: String, uzbek: String, mnemonic: String = "", familyRoot: String = "") {
         if (english.isBlank() || uzbek.isBlank()) return
+        val hook = mnemonic.trim().ifBlank { null }
+        val root = familyRoot.trim().lowercase().ifBlank { null }
         viewModelScope.launch {
             if (existing == null) {
-                wordDao.insert(VocabWord(english = english.trim(), uzbek = uzbek.trim(), deckId = learn.myWordsDeckId()))
+                wordDao.insert(VocabWord(english = english.trim(), uzbek = uzbek.trim(), deckId = learn.myWordsDeckId(), mnemonic = hook, familyRoot = root))
             } else {
-                wordDao.update(existing.copy(english = english.trim(), uzbek = uzbek.trim()))
+                wordDao.update(existing.copy(english = english.trim(), uzbek = uzbek.trim(), mnemonic = hook, familyRoot = root))
             }
         }
     }

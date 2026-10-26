@@ -322,9 +322,16 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
         (ai.checkSentence(word.english, com.onikki.app.domain.vocab.Exercises.primary(word.uzbek), sentence) as? com.onikki.app.data.repository.AiOutcome.Ok)?.value
     }
 
-    /** Per-mode accuracy (this week vs last) and overall weekly growth, for the stats screen. */
-    val modeStats: StateFlow<Pair<List<com.onikki.app.domain.vocab.ModeStat>, Pair<Int?, Int?>>> = recentRows
-        .map { rows -> com.onikki.app.domain.vocab.ModeStats.build(rows, today) to com.onikki.app.domain.vocab.ModeStats.weekly(rows, today) }
+    /** Per-mode accuracy (this week vs last) and overall weekly growth — word modes and pairs/families together. */
+    val modeStats: StateFlow<Pair<List<com.onikki.app.domain.vocab.ModeStat>, Pair<Int?, Int?>>> = combine(
+        recentRows,
+        db.practiceDao().observeSince(today.minusDays(13))
+    ) { rows, logs ->
+        val all = rows + logs.map {
+            com.onikki.app.domain.vocab.ReviewRow(it.wordId ?: 0, it.mode, if (it.score >= 100) com.onikki.app.data.db.entity.ReviewGrade.EASY else if (it.score >= 50) com.onikki.app.data.db.entity.ReviewGrade.HARD else com.onikki.app.data.db.entity.ReviewGrade.AGAIN, it.day)
+        }
+        com.onikki.app.domain.vocab.ModeStats.build(all, today) to com.onikki.app.domain.vocab.ModeStats.weekly(all, today)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList<com.onikki.app.domain.vocab.ModeStat>() to (null to null))
 
     /** Studied words for the writing modes: unknown and misspelt first, then young, then due; new words only if nothing else. */
@@ -378,6 +385,22 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sprintBest(): Int = prefs.sprintBest()
+
+    fun wordOf(id: Long?): VocabWord? = id?.let { i -> allWords.firstOrNull { it.id == i } }
+
+    fun saveMnemonic(wordId: Long, text: String) {
+        viewModelScope.launch {
+            val w = db.vocabWordDao().findById(wordId) ?: return@launch
+            db.vocabWordDao().update(w.copy(mnemonic = text.ifBlank { null }))
+        }
+    }
+
+    /** A miss shows the missed words' memory hooks under the answer (unless the exercise already did). */
+    private fun withMnemonic(answer: String?, missed: List<VocabWord>): String? {
+        val hooks = missed.mapNotNull { w -> w.mnemonic?.takeIf { it.isNotBlank() }?.let { "💡 ${w.english}: $it" } }
+            .filter { h -> answer?.contains(h.substringAfter(": ")) != true }
+        return if (hooks.isEmpty()) answer else listOfNotNull(answer, hooks.joinToString("\n")).joinToString("\n")
+    }
 
     /** "Yangi so'zlar": the next lesson-size batch of never-studied words, from any deck. */
     fun startNewWords() {
@@ -486,7 +509,7 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
                 mistakes = (it.mistakes + missed).distinctBy { w -> w.id },
                 combo = combo,
                 bestCombo = maxOf(it.bestCombo, combo),
-                feedback = Feedback(worst, answers.firstNotNullOfOrNull { a -> a.note } ?: rightAnswerOf(exercise), gainedXp, combo)
+                feedback = Feedback(worst, withMnemonic(answers.firstNotNullOfOrNull { a -> a.note } ?: rightAnswerOf(exercise), missed), gainedXp, combo)
             )
         }
         viewModelScope.launch {

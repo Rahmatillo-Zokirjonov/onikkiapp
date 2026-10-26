@@ -166,8 +166,8 @@ private fun VocabularyScreen(state: VocabularyUiState, viewModel: VocabularyView
             viewModel = viewModel,
             word = editing,
             onDismiss = { adding = false; editing = null },
-            onSave = { en, uz ->
-                viewModel.saveWord(editing, en, uz)
+            onSave = { en, uz, hook, root ->
+                viewModel.saveWord(editing, en, uz, hook, root)
                 // Adding stays open for the next word; editing closes.
                 if (editing != null) editing = null
             },
@@ -326,12 +326,14 @@ private fun WordRow(word: VocabWord, onClick: () -> Unit) {
  * word) fills in the Uzbek meaning. Words the built-in list doesn't know can be translated by AI.
  */
 @Composable
-private fun WordSheet(viewModel: VocabularyViewModel, word: VocabWord?, onDismiss: () -> Unit, onSave: (String, String) -> Unit, onDelete: () -> Unit) {
+private fun WordSheet(viewModel: VocabularyViewModel, word: VocabWord?, onDismiss: () -> Unit, onSave: (String, String, String, String) -> Unit, onDelete: () -> Unit) {
     val colors = LocalOnIkkiColors.current
     val speaker = rememberSpeaker()
     val translate by viewModel.translate.collectAsState()
     var english by remember(word?.id) { mutableStateOf(word?.english ?: "") }
     var uzbek by remember(word?.id) { mutableStateOf(word?.uzbek ?: "") }
+    var mnemonic by remember(word?.id) { mutableStateOf(word?.mnemonic ?: "") }
+    var familyRoot by remember(word?.id) { mutableStateOf(word?.familyRoot ?: "") }
     // Uzbek filled by us (not typed) may be replaced when the English changes.
     var autoFilled by remember(word?.id) { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -437,6 +439,19 @@ private fun WordSheet(viewModel: VocabularyViewModel, word: VocabWord?, onDismis
                 fontFamily = OnIkkiFontFamily
             )
         }
+        OutlinedTextField(
+            value = mnemonic,
+            onValueChange = { mnemonic = it.take(160) },
+            label = { Text("Eslatma (ixtiyoriy): weather = w + eat + her") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = familyRoot,
+            onValueChange = { familyRoot = it.take(40) },
+            label = { Text("Ildiz so'z (oila, ixtiyoriy): dangerous → danger") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
         if (word == null && savedCount > 0) {
             Text(text = "$savedCount ta so'z qo'shildi — keyingisini yozing", color = colors.accent, fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
         }
@@ -447,11 +462,13 @@ private fun WordSheet(viewModel: VocabularyViewModel, word: VocabWord?, onDismis
                     english.isBlank() || uzbek.isBlank() -> error = "Ikkala ustunni ham to'ldiring"
                     duplicate -> error = "Bu so'z allaqachon bor"
                     else -> {
-                        onSave(english, uzbek)
+                        onSave(english, uzbek, mnemonic, familyRoot)
                         if (word == null) {
                             savedCount++
                             english = ""
                             uzbek = ""
+                            mnemonic = ""
+                            familyRoot = ""
                             autoFilled = false
                             viewModel.resetTranslate()
                         }

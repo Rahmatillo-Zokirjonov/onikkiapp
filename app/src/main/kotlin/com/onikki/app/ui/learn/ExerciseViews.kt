@@ -317,6 +317,16 @@ fun CardExercise(word: VocabWord, speaker: Speaker, onDone: () -> Unit) {
                 Text(text = chips.joinToString("  ·  "), color = colors.accent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
             }
             Text(text = word.uzbek, color = colors.text.muted(0.85f), fontSize = 20.sp, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center)
+            word.mnemonic?.takeIf { it.isNotBlank() }?.let {
+                Text(text = "💡 $it", color = colors.habitAccent, fontSize = 14.sp, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center)
+            }
+            val family = com.onikki.app.domain.vocab.WordFamilies.of(word.english, word.familyRoot)
+            if (family != null) {
+                FamilyChips(family, word.english, speaker)
+            } else word.familyRoot?.takeIf { it.isNotBlank() }?.let { root ->
+                Text(text = familyWord(root, word.english), fontSize = 18.sp, fontFamily = OnIkkiFontFamily)
+                Text(text = "ildiz: $root", color = colors.text.muted(0.5f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+            }
             word.example?.let { example ->
                 Box(modifier = Modifier.fillMaxWidth().padding(top = 6.dp).height1().background(colors.divider))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -793,7 +803,7 @@ private fun WordChip(text: String, enabled: Boolean, onClick: () -> Unit) {
  * or red "Noto'g'ri" with the right answer, and a big Davom etish.
  */
 @Composable
-fun AnswerPanel(verdict: Verdict, rightAnswer: String?, onContinue: () -> Unit, xp: Int = 0, combo: Int = 0) {
+fun AnswerPanel(verdict: Verdict, rightAnswer: String?, onContinue: () -> Unit, xp: Int = 0, combo: Int = 0, extra: (@Composable () -> Unit)? = null) {
     val colors = LocalOnIkkiColors.current
     val tint = when (verdict) {
         Verdict.CORRECT -> colors.habitAccent
@@ -825,6 +835,7 @@ fun AnswerPanel(verdict: Verdict, rightAnswer: String?, onContinue: () -> Unit, 
         if (verdict != Verdict.CORRECT && rightAnswer != null) {
             Text(text = "To'g'ri javob: $rightAnswer", color = colors.text, fontSize = 15.sp, fontFamily = OnIkkiFontFamily)
         }
+        extra?.invoke()
         Box(
             modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).clip(RoundedCornerShape(16.dp)).background(tint).clickable(onClick = onContinue),
             contentAlignment = Alignment.Center

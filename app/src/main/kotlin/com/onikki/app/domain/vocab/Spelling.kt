@@ -149,7 +149,9 @@ object ModeStats {
         "DICTATE" to "Eshitib yozish",
         "CLOZE_CHOICE" to "Bo'sh joy",
         "CLOZE_TYPE" to "Bo'sh joy yozish",
-        "BUILD" to "Gap yig'ish"
+        "BUILD" to "Gap yig'ish",
+        "PAIR" to "Chalkash juftlar",
+        "FAMILY" to "So'z oilalari"
     )
 
     private fun acc(rows: List<ReviewRow>): Int? =

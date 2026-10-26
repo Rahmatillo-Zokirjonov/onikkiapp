@@ -72,10 +72,16 @@ fun LearnRoute(onBack: () -> Unit) {
     var podcastsOpen by rememberSaveable { mutableStateOf(false) }
     var speakingOpen by rememberSaveable { mutableStateOf(false) }
     var chainOpen by rememberSaveable { mutableStateOf(false) }
+    var pairsOpen by rememberSaveable { mutableStateOf(false) }
+    var familiesOpen by rememberSaveable { mutableStateOf(false) }
     val sort by viewModel.sort.collectAsState()
     val s = session
     val so = sort
-    if (s == null && chainOpen) {
+    if (s == null && pairsOpen) {
+        ConfusingPairsRoute(onBack = { pairsOpen = false })
+    } else if (s == null && familiesOpen) {
+        WordFamiliesRoute(onBack = { familiesOpen = false })
+    } else if (s == null && chainOpen) {
         WordChainRoute(onBack = { chainOpen = false })
     } else if (s == null && speakingOpen) {
         SpeakingRoute(home.suggestedLevel, onBack = { speakingOpen = false })
@@ -105,7 +111,7 @@ fun LearnRoute(onBack: () -> Unit) {
         LearnStatsScreen(stats, onBack = { statsOpen = false }, modes = modes)
     } else if (s == null) {
         BackHandler(onBack = onBack)
-        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true }, onPodcasts = { podcastsOpen = true }, onSpeaking = { speakingOpen = true }, onChain = { chainOpen = true })
+        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true }, onPodcasts = { podcastsOpen = true }, onSpeaking = { speakingOpen = true }, onChain = { chainOpen = true }, onPairs = { pairsOpen = true }, onFamilies = { familiesOpen = true })
     } else {
         BackHandler(onBack = viewModel::close)
         when {
@@ -131,7 +137,9 @@ private fun LearnHome(
     onGrammar: () -> Unit,
     onPodcasts: () -> Unit,
     onSpeaking: () -> Unit,
-    onChain: () -> Unit
+    onChain: () -> Unit,
+    onPairs: () -> Unit,
+    onFamilies: () -> Unit
 ) {
     val colors = LocalOnIkkiColors.current
     var settingsOpen by remember { mutableStateOf(false) }
@@ -216,7 +224,9 @@ private fun LearnHome(
                 onSpelling = viewModel::startSpelling,
                 onHard = viewModel::startHardSpelling,
                 onDictation = { dictationOpen = true },
-                onVerbs = onVerbs
+                onVerbs = onVerbs,
+                onPairs = onPairs,
+                onFamilies = onFamilies
             )
         }
         if (state.newWords.isNotEmpty()) {
@@ -429,9 +439,26 @@ private fun OutOfHearts(hearts: com.onikki.app.domain.vocab.HeartState, canHeal:
     }
 }
 
+/** Writes or edits a word's memory hook. */
+@Composable
+fun MnemonicSheet(word: com.onikki.app.data.db.entity.VocabWord, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    var text by remember(word.id) { mutableStateOf(word.mnemonic.orEmpty()) }
+    com.onikki.app.ui.components.OnIkkiSheet(title = "Eslatma: ${word.english}", onDismiss = onDismiss) {
+        Text(
+            text = "O'zingizga eslab qolishga yordam beradigan narsa: so'zni bo'laklarga bo'ling, o'xshash so'z yoki rasm o'ylang. Keyingi safar xato qilsangiz, avtomatik ko'rsatiladi.",
+            color = colors.text.muted(0.65f),
+            fontSize = 13.sp,
+            fontFamily = OnIkkiFontFamily
+        )
+        androidx.compose.material3.OutlinedTextField(value = text, onValueChange = { text = it.take(160) }, label = { Text("Eslatma") }, modifier = Modifier.fillMaxWidth())
+        BigButton("Saqlash", primary = true) { onSave(text.trim()) }
+    }
+}
+
 /** The writing modes: spelling, hard words, dictation, irregular verbs. */
 @Composable
-private fun PracticeModes(hard: Int, hasVerbs: Boolean, onSpelling: () -> Unit, onHard: () -> Unit, onDictation: () -> Unit, onVerbs: () -> Unit) {
+private fun PracticeModes(hard: Int, hasVerbs: Boolean, onSpelling: () -> Unit, onHard: () -> Unit, onDictation: () -> Unit, onVerbs: () -> Unit, onPairs: () -> Unit, onFamilies: () -> Unit) {
     val colors = LocalOnIkkiColors.current
     Column(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.surface).border(BorderStroke(1.dp, colors.cardBorder), RoundedCornerShape(20.dp)).padding(16.dp),
@@ -445,6 +472,10 @@ private fun PracticeModes(hard: Int, hasVerbs: Boolean, onSpelling: () -> Unit, 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SmallLink(if (hard > 0) "🧩 Qiyin so'zlar · $hard" else "🧩 Qiyin so'zlar yo'q", Modifier.weight(1f).alpha(if (hard > 0) 1f else 0.5f), onClick = { if (hard > 0) onHard() })
             if (hasVerbs) SmallLink("📘 Fe'llar: V1 → V2", Modifier.weight(1f), onClick = onVerbs)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SmallLink("⚖️ Chalkash juftlar", Modifier.weight(1f), onClick = onPairs)
+            SmallLink("🌳 So'z oilalari", Modifier.weight(1f), onClick = onFamilies)
         }
         Text(
             text = "Qiyin so'zlar — oxirgi 7 kunda 2+ marta xato yozilganlar.",
@@ -618,7 +649,22 @@ private fun LessonRunner(s: LessonSession, hearts: Int, settings: com.onikki.app
             }
         }
         s.feedback?.let { fb ->
-            AnswerPanel(fb.verdict, fb.rightAnswer, onContinue = viewModel::advance, xp = fb.xp, combo = fb.combo)
+            var noteOpen by remember(s.index) { mutableStateOf(false) }
+            // After a miss on one word without a memory hook: offer to write one.
+            val missedWord = if (fb.verdict == com.onikki.app.domain.vocab.Verdict.WRONG) viewModel.wordOf(exercise.wordIds.singleOrNull()) else null
+            AnswerPanel(fb.verdict, fb.rightAnswer, onContinue = viewModel::advance, xp = fb.xp, combo = fb.combo) {
+                if (missedWord != null && missedWord.mnemonic.isNullOrBlank()) {
+                    Text(
+                        text = "＋ Eslatma qo'shish (masalan: weather = w + eat + her)",
+                        color = colors.accent,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = OnIkkiFontFamily,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { noteOpen = true }.padding(vertical = 4.dp)
+                    )
+                }
+            }
+            if (noteOpen && missedWord != null) MnemonicSheet(missedWord, onDismiss = { noteOpen = false }, onSave = { viewModel.saveMnemonic(missedWord.id, it); noteOpen = false })
         }
     }
 }
