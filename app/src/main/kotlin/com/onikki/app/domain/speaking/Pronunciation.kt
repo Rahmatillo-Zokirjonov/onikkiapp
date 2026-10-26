@@ -78,6 +78,9 @@ object Pronunciation {
         return PronunciationResult(words, percent, bestText)
     }
 
+    /** A single word (or short phrase) said right: every word of it heard in one of the alternatives. */
+    fun saidRight(target: String, candidates: List<String>): Boolean = candidates.isNotEmpty() && score(target, candidates).percent == 100
+
     /** XP for a read sentence by its best score. */
     fun xp(percent: Int): Int = when {
         percent >= 90 -> 8

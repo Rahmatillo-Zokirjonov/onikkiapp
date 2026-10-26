@@ -64,6 +64,12 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
         }
     }
 
+    // The word widget asked to practise a word → open O'rganish (it starts the practice and consumes it).
+    val requestedPractice by com.onikki.app.ui.widget.LearnDeepLink.requested.collectAsState()
+    LaunchedEffect(requestedPractice) {
+        if (requestedPractice != null && currentRoute != ROUTE_LEARN) navController.navigate(ROUTE_LEARN) { launchSingleTop = true }
+    }
+
     // The block screen / Home card asked for Jadval or the homework list → go to the Reja tab.
     val requestedTimetable by TimetableDeepLink.requested.collectAsState()
     LaunchedEffect(requestedTimetable) {

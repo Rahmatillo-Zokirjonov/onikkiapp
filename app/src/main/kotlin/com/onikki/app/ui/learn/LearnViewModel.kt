@@ -386,6 +386,13 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sprintBest(): Int = prefs.sprintBest()
 
+    /** The widget's word: recognise, spell, hear and write (and V2 for a verb). */
+    fun startWordPractice(id: Long) {
+        val word = allWords.firstOrNull { it.id == id } ?: return
+        _sort.value = null
+        begin(SessionKind.Practice("Soat so'zi: ${word.english}"), com.onikki.app.domain.vocab.WordOfHour.practice(word, allWords, random))
+    }
+
     fun wordOf(id: Long?): VocabWord? = id?.let { i -> allWords.firstOrNull { it.id == i } }
 
     fun saveMnemonic(wordId: Long, text: String) {

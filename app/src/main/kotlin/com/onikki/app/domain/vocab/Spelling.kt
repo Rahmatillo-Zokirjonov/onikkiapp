@@ -151,6 +151,7 @@ object ModeStats {
         "CLOZE_TYPE" to "Bo'sh joy yozish",
         "BUILD" to "Gap yig'ish",
         "PAIR" to "Chalkash juftlar",
+        "PRONOUNCE" to "Talaffuz",
         "FAMILY" to "So'z oilalari"
     )
 

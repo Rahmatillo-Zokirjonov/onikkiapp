@@ -91,6 +91,18 @@
             android:turnScreenOn="true"
             android:theme="@style/Theme.OnIkki" />
 
+        <!-- "Soat so'zi" home-screen widget. -->
+        <receiver
+            android:name=".ui.widget.WordWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/word_widget_info" />
+        </receiver>
+
         <receiver
             android:name=".receiver.ReminderReceiver"
             android:exported="false" />

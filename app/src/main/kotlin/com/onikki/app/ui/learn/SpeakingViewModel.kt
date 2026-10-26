@@ -49,6 +49,21 @@ data class ReadSession(
 
 enum class AnswerPhase { PREP, RECORDING, REVIEW, CHECKING, RESULT }
 
+/** "So'z talaffuzi": say each word; [ok] for the latest try, [results] whether each finished word was said right. */
+data class WordSpeakSession(
+    val words: List<com.onikki.app.data.db.entity.VocabWord>,
+    val index: Int = 0,
+    val heard: String? = null,
+    val ok: Boolean? = null,
+    val everOk: Boolean = false,
+    val tries: Int = 0,
+    val results: List<Boolean> = emptyList(),
+    val missed: List<com.onikki.app.data.db.entity.VocabWord> = emptyList(),
+    val done: Boolean = false
+) {
+    val current: com.onikki.app.data.db.entity.VocabWord? get() = words.getOrNull(index)
+}
+
 data class AnswerSession(
     val prompt: com.onikki.app.domain.speaking.OralPrompt,
     val phase: AnswerPhase = AnswerPhase.PREP,
@@ -171,6 +186,44 @@ class SpeakingViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun closeAnswer() { _answer.value = null }
+
+    // ------------------------------------------------------------ word pronunciation
+
+    private val learn = com.onikki.app.data.repository.LearnRepository(db)
+
+    private val _words = MutableStateFlow<WordSpeakSession?>(null)
+    val words: StateFlow<WordSpeakSession?> = _words
+
+    /** Ten words: studied ones, unknown and young first (new words if nothing is studied yet). */
+    fun startWords() {
+        viewModelScope.launch {
+            val all = db.vocabWordDao().getAll()
+            val studied = all.filter { it.status != com.onikki.app.data.db.entity.WordStatus.NEW }.ifEmpty { all }
+            val picked = studied.shuffled(random).sortedWith(compareBy({ if (it.unknownSince != null) 0 else 1 }, { it.stage })).take(10)
+            if (picked.isNotEmpty()) _words.value = WordSpeakSession(picked)
+        }
+    }
+
+    fun wordHeard(candidates: List<String>) = _words.update { s ->
+        val w = s?.current ?: return@update s
+        val ok = Pronunciation.saidRight(w.english, candidates)
+        s.copy(heard = candidates.firstOrNull().orEmpty(), ok = ok, everOk = s.everOk || ok, tries = s.tries + 1)
+    }
+
+    /** Next word; the result is logged for the stats (pronunciation doesn't move the SRS). */
+    fun nextWord() {
+        val s = _words.value ?: return
+        val w = s.current ?: return
+        if (s.tries > 0) viewModelScope.launch {
+            learn.recordAnswer(w.id, if (s.everOk) com.onikki.app.data.db.entity.ReviewGrade.EASY else com.onikki.app.data.db.entity.ReviewGrade.AGAIN, com.onikki.app.data.db.entity.ReviewSource.REVIEW, "PRONOUNCE", hardExercise = false, schedule = false)
+        }
+        val results = if (s.tries > 0) s.results + s.everOk else s.results
+        val missed = if (s.tries > 0 && !s.everOk) s.missed + w else s.missed
+        _words.value = if (s.index + 1 >= s.words.size) s.copy(results = results, missed = missed, done = true)
+        else s.copy(index = s.index + 1, heard = null, ok = null, everOk = false, tries = 0, results = results, missed = missed)
+    }
+
+    fun closeWords() { _words.value = null }
 
     companion object {
         const val KIND_READ = "READ"

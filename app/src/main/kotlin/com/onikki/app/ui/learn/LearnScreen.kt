@@ -65,6 +65,14 @@ fun LearnRoute(onBack: () -> Unit) {
     val hearts by viewModel.hearts.collectAsState()
     val settings by viewModel.settings.collectAsState()
     LaunchedEffect(Unit) { viewModel.refreshHearts() }
+    val widgetWord by com.onikki.app.ui.widget.LearnDeepLink.requested.collectAsState()
+    LaunchedEffect(widgetWord, home.isLoaded) {
+        val id = widgetWord ?: return@LaunchedEffect
+        if (home.isLoaded) {
+            viewModel.startWordPractice(id)
+            com.onikki.app.ui.widget.LearnDeepLink.consume()
+        }
+    }
     var statsOpen by rememberSaveable { mutableStateOf(false) }
     var listeningOpen by rememberSaveable { mutableStateOf(false) }
     var verbsOpen by rememberSaveable { mutableStateOf(false) }

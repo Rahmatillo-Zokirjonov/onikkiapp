@@ -39,6 +39,11 @@ class MainActivity : ComponentActivity() {
     private fun handleOpenNote(intent: Intent?) {
         val noteId = intent?.getLongExtra(EXTRA_OPEN_NOTE_ID, 0L) ?: 0L
         if (noteId > 0) NoteDeepLink.request(noteId)
+        val practiceId = intent?.getLongExtra(EXTRA_PRACTICE_WORD_ID, 0L) ?: 0L
+        if (practiceId > 0) {
+            com.onikki.app.ui.widget.LearnDeepLink.request(practiceId)
+            intent?.removeExtra(EXTRA_PRACTICE_WORD_ID)
+        }
         if (intent?.getBooleanExtra(EXTRA_OPEN_HOMEWORK, false) == true) {
             com.onikki.app.ui.timetable.TimetableDeepLink.request(com.onikki.app.ui.timetable.TimetableDeepLink.Target.HOMEWORK)
         }
@@ -47,5 +52,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_OPEN_NOTE_ID = "open_note_id"
         const val EXTRA_OPEN_HOMEWORK = "open_homework"
+        /** From the "Soat so'zi" widget: practise this word. */
+        const val EXTRA_PRACTICE_WORD_ID = "practice_word_id"
     }
 }

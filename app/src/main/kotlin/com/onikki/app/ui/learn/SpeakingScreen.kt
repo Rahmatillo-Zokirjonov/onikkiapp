@@ -66,16 +66,26 @@ fun SpeakingRoute(suggested: String, onBack: () -> Unit) {
     val home by viewModel.home.collectAsState()
     val read by viewModel.read.collectAsState()
     val answer by viewModel.answer.collectAsState()
+    val wordSession by viewModel.words.collectAsState()
     val speaker = rememberSpeaker()
     val mic = rememberSpeechInput()
+    val context = LocalContext.current
+    // Turned down once: the microphone modes stay off until the permission is given (in Settings).
+    var micDenied by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    val micGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    val denied = micDenied && !micGranted
     val r = read
     val a = answer
-    if (a != null) {
+    val ws = wordSession
+    if (ws != null) {
+        BackHandler { mic.cancel(); viewModel.closeWords() }
+        WordSpeakScreen(ws, speaker, mic, viewModel, onDenied = { micDenied = true; mic.cancel(); viewModel.closeWords() })
+    } else if (a != null) {
         BackHandler { mic.cancel(); viewModel.closeAnswer() }
         AnswerScreen(a, speaker, mic, viewModel)
     } else if (r == null) {
         BackHandler(onBack = onBack)
-        SpeakingHome(home, suggested, viewModel, mic.available, onBack)
+        SpeakingHome(home, suggested, viewModel, mic.available, onBack, denied)
     } else {
         BackHandler { mic.cancel(); viewModel.closeRead() }
         ReadRound(r, speaker, mic, viewModel)
@@ -83,8 +93,9 @@ fun SpeakingRoute(suggested: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun SpeakingHome(state: SpeakingHomeState, suggested: String, viewModel: SpeakingViewModel, available: Boolean, onBack: () -> Unit) {
+private fun SpeakingHome(state: SpeakingHomeState, suggested: String, viewModel: SpeakingViewModel, available: Boolean, onBack: () -> Unit, micDenied: Boolean = false) {
     val colors = LocalOnIkkiColors.current
+    val context = LocalContext.current
     Column(
         modifier = Modifier.fillMaxSize().background(colors.background).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -115,6 +126,42 @@ private fun SpeakingHome(state: SpeakingHomeState, suggested: String, viewModel:
                 fontFamily = OnIkkiFontFamily
             )
             OnIkkiButton(text = "Boshlash", onClick = viewModel::startRead, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp))
+        }
+        if (micDenied) {
+            Column(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.warmAccent.copy(alpha = 0.12f)).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(text = "🎤 Mikrofon ruxsati berilmagan — talaffuz rejimlari o'chirildi.", color = colors.warmAccent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
+                OnIkkiButton(
+                    text = "Sozlamalarda ruxsat berish",
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", context.packageName, null))
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    },
+                    variant = OnIkkiButtonVariant.SECONDARY,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+        // Word pronunciation.
+        Column(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.surface).border(BorderStroke(1.dp, colors.cardBorder), RoundedCornerShape(20.dp)).padding(18.dp).alpha(if (micDenied) 0.5f else 1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(text = "🔤 SO'Z TALAFFUZI", color = colors.accent, style = OnIkkiType.kicker)
+            Text(text = "10 ta so'zni ayting — ✅ yoki to'g'ri talaffuz", color = colors.text, fontSize = 19.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+            Text(
+                text = "So'z chiqadi, 🎤 bosib aytasiz. Telefon to'g'ri tushunsa ✅; tushunmasa — nima eshitgani ko'rsatiladi va to'g'ri talaffuz o'qib beriladi.",
+                color = colors.text.muted(0.65f),
+                fontSize = 13.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+            OnIkkiButton(text = "Boshlash", onClick = { if (!micDenied) viewModel.startWords() }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp))
         }
         // Oral answers.
         Column(
@@ -504,5 +551,98 @@ private fun ScoreBar(label: String, value: Int) {
             Text(text = "$value%", color = colors.text.muted(0.7f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily)
         }
         LinearProgressTrack(progress = value / 100f, trackColor = colors.neutral800, progressColor = if (value >= 75) colors.accent else if (value >= 50) colors.habitAccent else colors.warmAccent, height = 7.dp)
+    }
+}
+
+// ---------------------------------------------------------------- word pronunciation
+
+@Composable
+private fun WordSpeakScreen(s: WordSpeakSession, speaker: Speaker, mic: SpeechInput, viewModel: SpeakingViewModel, onDenied: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val context = LocalContext.current
+    if (s.done) {
+        val right = s.results.count { it }
+        Column(
+            modifier = Modifier.fillMaxSize().background(colors.background).verticalScroll(rememberScrollState()).padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(text = if (right == s.results.size) "🌟" else "🗣", fontSize = 64.sp, modifier = Modifier.padding(top = 30.dp))
+            Text(text = "$right/${s.results.size} so'z to'g'ri talaffuz qilindi", color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center)
+            s.missed.forEach { w ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).clickable(enabled = speaker.ready) { speaker.speakSlow(w.english) }.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "🔊 ${w.english}", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(1f))
+                    Text(text = com.onikki.app.domain.vocab.Exercises.primary(w.uzbek), color = colors.text.muted(0.6f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+                }
+            }
+            OnIkkiButton(text = "Yana 10 ta so'z", onClick = viewModel::startWords, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp))
+            OnIkkiButton(text = "Yopish", onClick = viewModel::closeWords, variant = OnIkkiButtonVariant.SECONDARY, modifier = Modifier.fillMaxWidth())
+        }
+        return
+    }
+    val w = s.current ?: return
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) mic.start { viewModel.wordHeard(it) } else onDenied()
+    }
+    fun listen() {
+        speaker.stop()
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) mic.start { viewModel.wordHeard(it) }
+        else permission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+    // A miss: say it right, slowly, a moment after.
+    LaunchedEffect(s.index, s.tries) {
+        if (s.ok == false) { kotlinx.coroutines.delay(400); speaker.speakSlow(w.english) }
+    }
+    Column(modifier = Modifier.fillMaxSize().background(colors.background)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "✕", color = colors.text.muted(0.7f), fontSize = 22.sp, modifier = Modifier.clip(CircleShape).clickable { mic.cancel(); viewModel.closeWords() }.padding(horizontal = 10.dp, vertical = 4.dp))
+            Box(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                LinearProgressTrack(progress = s.index / s.words.size.toFloat(), trackColor = colors.neutral800, progressColor = colors.habitAccent, height = 12.dp)
+            }
+            Text(text = "${s.index + 1}/${s.words.size}", color = colors.text.muted(0.6f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+        }
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(text = "Shu so'zni ayting", color = colors.text.muted(0.6f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+            Text(text = w.english, color = colors.text, fontSize = 40.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center)
+            Text(text = com.onikki.app.domain.vocab.Exercises.primary(w.uzbek), color = colors.text.muted(0.6f), fontSize = 16.sp, fontFamily = OnIkkiFontFamily)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SmallRound("🔊", enabled = speaker.ready) { speaker.speak(w.english) }
+                SmallRound("🐢", enabled = speaker.ready) { speaker.speakSlow(w.english) }
+            }
+            when (s.ok) {
+                true -> Text(text = "✅ To'g'ri talaffuz!", color = colors.accent, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+                false -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = "❌ Telefon boshqacha tushundi", color = colors.warmAccent, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
+                    Text(text = "Tushunildi: «${s.heard.orEmpty().ifBlank { "—" }}»", color = colors.text, fontSize = 16.sp, fontFamily = OnIkkiFontFamily)
+                    Text(text = "To'g'ri talaffuzini tinglang va yana ayting", color = colors.text.muted(0.6f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
+                }
+                null -> Unit
+            }
+            mic.error?.let { Text(text = it, color = colors.warmAccent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center) }
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth().background(colors.surface).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            MicButton(mic, onTap = { if (mic.listening) mic.stop() else listen() })
+            OnIkkiButton(
+                text = when {
+                    s.tries == 0 -> "O'tkazib yuborish"
+                    s.index + 1 >= s.words.size -> "Yakunlash"
+                    else -> "Keyingi so'z"
+                },
+                onClick = { mic.cancel(); viewModel.nextWord() },
+                variant = if (s.ok == true) OnIkkiButtonVariant.PRIMARY else OnIkkiButtonVariant.SECONDARY,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 }
