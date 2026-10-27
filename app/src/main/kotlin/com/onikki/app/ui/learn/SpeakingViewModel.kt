@@ -199,7 +199,7 @@ class SpeakingViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val all = db.vocabWordDao().getAll()
             val studied = all.filter { it.status != com.onikki.app.data.db.entity.WordStatus.NEW }.ifEmpty { all }
-            val picked = studied.shuffled(random).sortedWith(compareBy({ if (it.unknownSince != null) 0 else 1 }, { it.stage })).take(10)
+            val picked = com.onikki.app.domain.vocab.Rotation.pick(studied, 10, System.currentTimeMillis(), random) { it.unknownSince != null }
             if (picked.isNotEmpty()) _words.value = WordSpeakSession(picked)
         }
     }

@@ -17,12 +17,12 @@ object SpeakingDeck {
     const val OWN_WORDS = 3
 
     fun round(level: String, words: List<VocabWord>, bestByKey: Map<String, Int>, random: Random, size: Int = ROUND): List<SpeakItem> {
-        val own = words
-            .filter { it.status != WordStatus.NEW && !it.example.isNullOrBlank() && it.example.split(' ').size in 3..14 }
-            .sortedWith(compareBy<VocabWord>({ if (it.unknownSince != null) 0 else 1 }, { it.stage }, { random.nextInt() }))
+        val readable = words.filter { it.status != WordStatus.NEW && !it.example.isNullOrBlank() && it.example.split(' ').size in 3..14 }
+            // Sentences read well lately go to the back.
+            .filter { (bestByKey["w-${it.id}"] ?: 0) < 80 }
+            .ifEmpty { words.filter { it.status != WordStatus.NEW && !it.example.isNullOrBlank() && it.example.split(' ').size in 3..14 } }
+        val own = com.onikki.app.domain.vocab.Rotation.pick(readable, OWN_WORDS, System.currentTimeMillis(), random) { it.unknownSince != null }
             .map { SpeakItem("w-${it.id}", it.example!!.trim(), it.exampleUz, it.english) }
-            .sortedBy { (bestByKey[it.key] ?: 0) >= 80 }
-            .take(OWN_WORDS)
         val grammar = Grammar.forLevel(level).flatMap { t ->
             t.examples.mapIndexed { i, e -> SpeakItem("g-${t.id}-$i", e.english, e.uzbek) }
         }.shuffled(random).sortedBy { (bestByKey[it.key] ?: 0) >= 80 }

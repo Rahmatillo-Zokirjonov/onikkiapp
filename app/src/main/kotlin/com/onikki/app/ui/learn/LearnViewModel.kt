@@ -283,8 +283,9 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
 
     /** "Bilmaganlarim": the oldest unknown words, card first. */
     fun startRelearn() {
-        val words = home.value.unknown.map { w -> allWords.firstOrNull { it.id == w.id } ?: w }
-        if (words.isEmpty()) return
+        val unknown = home.value.unknown.map { w -> allWords.firstOrNull { it.id == w.id } ?: w }
+        if (unknown.isEmpty()) return
+        val words = com.onikki.app.domain.vocab.Rotation.pick(unknown, com.onikki.app.domain.vocab.Relearn.MAX_WORDS, System.currentTimeMillis(), random)
         begin(SessionKind.Relearn, com.onikki.app.domain.vocab.Relearn.session(words, allWords, random))
     }
 
@@ -334,19 +335,22 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList<com.onikki.app.domain.vocab.ModeStat>() to (null to null))
 
-    /** Studied words for the writing modes: unknown and misspelt first, then young, then due; new words only if nothing else. */
-    private fun writingPool(): List<VocabWord> {
-        val studied = allWords.filter { it.status != com.onikki.app.data.db.entity.WordStatus.NEW }
-        val pool = studied.ifEmpty { allWords }
+    /**
+     * Words for the writing modes: studied ones (new only if nothing is studied), rotated — misspelt, unknown
+     * and due words fill up to half, the rest are the least recently asked (see Rotation).
+     */
+    private fun writingPool(size: Int = PRACTICE_SIZE, filter: (VocabWord) -> Boolean = { true }): List<VocabWord> {
+        val studied = allWords.filter { it.status != com.onikki.app.data.db.entity.WordStatus.NEW && filter(it) }
+        val pool = studied.ifEmpty { allWords.filter(filter) }
         val hard = home.value.hardSpelling.map { it.id }.toSet()
-        return pool.shuffled(random).sortedWith(
-            compareBy<VocabWord>({ if (it.id in hard) 0 else 1 }, { if (it.unknownSince != null) 0 else 1 }, { it.stage }, { if (Srs.isDue(it, today)) 0 else 1 })
-        )
+        return com.onikki.app.domain.vocab.Rotation.pick(pool, size, System.currentTimeMillis(), random) {
+            it.id in hard || it.unknownSince != null || Srs.isDue(it, today)
+        }
     }
 
     /** 1. Yozilish: ten words, strict spelling. */
     fun startSpelling() {
-        val words = writingPool().take(PRACTICE_SIZE)
+        val words = writingPool()
         if (words.isNotEmpty()) begin(SessionKind.Practice("Yozilish mashqi"), words.map(com.onikki.app.domain.vocab.Exercises::spell))
     }
 
@@ -361,16 +365,17 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 2. Irregular verbs: base → past, or [reverse] past → base. */
     fun startVerbPast(reverse: Boolean, among: List<VocabWord> = home.value.verbs) {
-        val verbs = among.map { w -> allWords.firstOrNull { it.id == w.id } ?: w }.filter(com.onikki.app.domain.vocab.Exercises::isIrregular)
-            .shuffled(random).sortedWith(compareBy<VocabWord>({ if (it.unknownSince != null) 0 else 1 }, { if (Srs.isDue(it, today)) 0 else 1 }, { it.stage }))
-            .take(PRACTICE_SIZE)
+        val ids = among.map { it.id }.toSet()
+        val verbs = com.onikki.app.domain.vocab.Rotation.pick(
+            allWords.filter { it.id in ids && com.onikki.app.domain.vocab.Exercises.isIrregular(it) }, PRACTICE_SIZE, System.currentTimeMillis(), random
+        ) { it.unknownSince != null || Srs.isDue(it, today) }
         if (verbs.isNotEmpty()) begin(SessionKind.Practice(if (reverse) "V2 → V1" else "V1 → V2"), verbs.map { com.onikki.app.domain.vocab.Exercises.verbPast(it, reverse) })
     }
 
     /** 3. Dictation at a level; sentence levels prefer words that have an example. */
     fun startDictation(mode: com.onikki.app.domain.vocab.DictationMode) {
-        val pool = writingPool()
-        val words = (if (mode == com.onikki.app.domain.vocab.DictationMode.WORD) pool else pool.sortedBy { if (it.example.isNullOrBlank()) 1 else 0 }).take(PRACTICE_SIZE)
+        val withExample = writingPool { !it.example.isNullOrBlank() }
+        val words = if (mode == com.onikki.app.domain.vocab.DictationMode.WORD || withExample.size < 4) writingPool() else withExample
         if (words.isNotEmpty()) begin(SessionKind.Practice("Diktant · ${mode.label}"), words.map { com.onikki.app.domain.vocab.Exercises.dictation(it, mode) })
     }
 
@@ -420,9 +425,8 @@ class LearnViewModel(application: Application) : AndroidViewModel(application) {
     fun startSentences() {
         val studied = allWords.filter { it.status != com.onikki.app.data.db.entity.WordStatus.NEW }
         if (studied.isEmpty()) return
-        val picked = studied.shuffled(random).sortedWith(
-            compareBy<VocabWord>({ if (it.unknownSince != null) 0 else 1 }, { if (it.exampleUz != null) 0 else 1 }, { it.stage })
-        ).take(SENTENCE_WORDS)
+        val translated = studied.filter { it.exampleUz != null }
+        val picked = com.onikki.app.domain.vocab.Rotation.pick(translated.ifEmpty { studied }, SENTENCE_WORDS, System.currentTimeMillis(), random) { it.unknownSince != null }
         begin(SessionKind.Sentences, com.onikki.app.domain.vocab.Exercises.sentencePractice(picked.shuffled(random), allWords, random))
     }
 

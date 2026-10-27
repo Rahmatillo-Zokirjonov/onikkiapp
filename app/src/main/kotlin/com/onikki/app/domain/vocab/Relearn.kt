@@ -17,7 +17,8 @@ import kotlin.random.Random
  */
 object Relearn {
     const val GAP = 2
-    const val MAX_TRIES = 3
+    /** A missed word comes back at most twice in one session (more felt like the same word over and over). */
+    const val MAX_TRIES = 2
     const val CLEAR_AFTER = 2
     const val LEECH_LAPSES = 4
     const val MAX_WORDS = 8

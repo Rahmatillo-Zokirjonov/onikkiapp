@@ -67,11 +67,11 @@ interface VocabReviewDao {
     fun observeMostMissed(limit: Int): Flow<List<VocabMissCount>>
 
     /** The same rows, once (for the widget). */
-    @Query("SELECT wordId, exercise, grade, day FROM vocab_reviews WHERE day >= :from")
+    @Query("SELECT wordId, exercise, grade, day FROM vocab_reviews WHERE day >= :from ORDER BY id")
     suspend fun rowsSince(from: LocalDate): List<com.onikki.app.domain.vocab.ReviewRow>
 
     /** Answers since [from], for "Qiyin so'zlar" and per-mode accuracy. */
-    @Query("SELECT wordId, exercise, grade, day FROM vocab_reviews WHERE day >= :from")
+    @Query("SELECT wordId, exercise, grade, day FROM vocab_reviews WHERE day >= :from ORDER BY id")
     fun observeRowsSince(from: LocalDate): Flow<List<com.onikki.app.domain.vocab.ReviewRow>>
 }
 

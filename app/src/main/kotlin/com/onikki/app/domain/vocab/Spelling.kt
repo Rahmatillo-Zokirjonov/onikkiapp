@@ -111,19 +111,25 @@ object SentenceDiff {
 /** One logged answer, as the spelling and stats views read them. */
 data class ReviewRow(val wordId: Long, val exercise: String, val grade: ReviewGrade, val day: LocalDate)
 
-/** "Qiyin so'zlar": words misspelt 2+ times in the last 7 days, most misses first. */
+/**
+ * "Qiyin so'zlar": words misspelt 2+ times in the last 7 days, most misses first — until the word is
+ * written right [FIXED_AFTER] times after its last miss, then it leaves the list.
+ */
 object HardSpelling {
     const val DAYS = 7L
     const val MIN_MISSES = 2
+    const val FIXED_AFTER = 2
     val WRITING = setOf("SPELL", "VERB_PAST", "DICTATION", "TYPE", "DICTATE", "FORMS", "CLOZE_TYPE", "VERB_SPRINT")
 
     fun pick(rows: List<ReviewRow>, today: LocalDate): List<Long> {
         val from = today.minusDays(DAYS - 1)
-        return rows.filter { it.exercise in WRITING && it.grade == ReviewGrade.AGAIN && !it.day.isBefore(from) && !it.day.isAfter(today) }
-            .groupingBy { it.wordId }.eachCount()
-            .filter { it.value >= MIN_MISSES }
-            .entries.sortedByDescending { it.value }
-            .map { it.key }
+        val writing = rows.withIndex().filter { (_, r) -> r.exercise in WRITING && !r.day.isBefore(from) && !r.day.isAfter(today) }
+        return writing.groupBy { it.value.wordId }.mapNotNull { (id, list) ->
+            val misses = list.count { it.value.grade == ReviewGrade.AGAIN }
+            val lastMiss = list.lastOrNull { it.value.grade == ReviewGrade.AGAIN }?.index ?: return@mapNotNull null
+            val rightSince = list.count { it.index > lastMiss && it.value.grade != ReviewGrade.AGAIN }
+            if (misses >= MIN_MISSES && rightSince < FIXED_AFTER) id to misses else null
+        }.sortedByDescending { it.second }.map { it.first }
     }
 }
 
