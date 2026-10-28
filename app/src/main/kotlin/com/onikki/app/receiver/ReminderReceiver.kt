@@ -59,7 +59,7 @@ class ReminderReceiver : BroadcastReceiver() {
         val today = LocalDate.now()
 
         when (type) {
-            ReminderType.REFRESH -> Unit
+            ReminderType.REFRESH -> runCatching { com.onikki.app.data.repository.SheetSyncRepository(context, db).sync() }
 
             ReminderType.TASK -> {
                 val task = db.taskDao().findById(refId) ?: return

@@ -102,6 +102,7 @@ fun TimetableRoute() {
         Column(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 ViewToggle(state.view, viewModel::setView)
+                if (state.view != TimetableView.HOMEWORK) SheetSyncRow()
                 if (state.view != TimetableView.HOMEWORK) {
                     NavRow(
                         state, now.toLocalDate(),

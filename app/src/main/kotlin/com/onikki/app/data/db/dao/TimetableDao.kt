@@ -24,4 +24,17 @@ interface TimetableDao {
 
     @Delete
     suspend fun delete(entry: TimetableEntry)
+
+    @Query("SELECT * FROM timetable_entries WHERE source = :source")
+    suspend fun bySource(source: String): List<TimetableEntry>
+
+    @Query("DELETE FROM timetable_entries WHERE source = :source")
+    suspend fun deleteBySource(source: String)
+
+    /** Swaps every row from [source] for [entries] in one go (the screen never sees a half-synced week). */
+    @androidx.room.Transaction
+    suspend fun replaceSource(source: String, entries: List<TimetableEntry>) {
+        deleteBySource(source)
+        insertAll(entries)
+    }
 }

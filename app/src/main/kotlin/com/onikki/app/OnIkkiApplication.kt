@@ -30,6 +30,7 @@ class OnIkkiApplication : Application() {
         keepRemindersInSync()
         appScope.launch(Dispatchers.IO) {
             runCatching { com.onikki.app.data.repository.VocabSeeder.ensure(this@OnIkkiApplication, database) }
+            runCatching { com.onikki.app.data.repository.SheetSyncRepository(this@OnIkkiApplication, database).sync() }
             // The word widget picks from the words just seeded / learned.
             runCatching { com.onikki.app.ui.widget.WordWidget.refresh(this@OnIkkiApplication) }
         }
