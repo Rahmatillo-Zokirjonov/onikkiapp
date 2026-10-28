@@ -31,6 +31,7 @@ import com.onikki.app.ui.theme.OnIkkiFontFamily
 private const val ROUTE_DAY_REVIEW = "day_review"
 private const val ROUTE_ASSISTANT = "assistant"
 private const val ROUTE_LEARN = "learn"
+private const val ROUTE_WORD_CHAIN = "word_chain"
 
 private fun OnIkkiTab.route(): String = name.lowercase()
 
@@ -94,6 +95,7 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
                         onNavigateToDayReview = { navController.navigate(ROUTE_DAY_REVIEW) },
                         onNavigateToAssistant = { navController.navigate(ROUTE_ASSISTANT) },
                         onNavigateToLearn = { navController.navigate(ROUTE_LEARN) },
+                        onNavigateToWordChain = { navController.navigate(ROUTE_WORD_CHAIN) },
                         onNavigateToTab = navigateToTab
                     )
                 }
@@ -103,6 +105,7 @@ fun OnIkkiNavHost(navController: NavHostController = rememberNavController()) {
                 composable(OnIkkiTab.PROFILE.route()) { ProfileSectionRoute() }
                 composable(ROUTE_DAY_REVIEW) { DayReviewRoute(onBack = { navController.popBackStack() }) }
                 composable(ROUTE_ASSISTANT) { AssistantRoute(onBack = { navController.popBackStack() }) }
+                composable(ROUTE_WORD_CHAIN) { com.onikki.app.ui.learn.WordChainRoute(onBack = { navController.popBackStack() }) }
                 composable(ROUTE_LEARN) { com.onikki.app.ui.learn.LearnRoute(onBack = { navController.popBackStack() }) }
             }
         }

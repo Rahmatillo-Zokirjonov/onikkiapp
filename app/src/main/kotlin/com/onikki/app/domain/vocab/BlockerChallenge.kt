@@ -17,16 +17,20 @@ class BlockerChallenge(
     val needed: Int,
     private val type: QuestionType,
     private val random: Random,
-    private val canListen: Boolean = true
+    private val canListen: Boolean = true,
+    private val nowMillis: Long = System.currentTimeMillis()
 ) {
-    /** Due words first, then studied ones by how soon they're due, then new ones as a last resort. */
+    /**
+     * Rotated so every word gets its turn: due words fill up to half, the rest are the words asked
+     * longest ago (never-asked first, new words included); words asked in the last hours come last.
+     */
     private val order: List<VocabWord> = run {
-        val due = Srs.dueQueue(words, today)
+        val picked = Rotation.pick(words, words.size, nowMillis, random) { Srs.isDue(it, today) }
+        // Rotation shuffles its result; keep "needs work, then oldest" as the order for the screen.
+        val due = picked.filter { Srs.isDue(it, today) && nowMillis - it.lastAskedAt >= Rotation.RECENT_MS }
+            .sortedBy { it.lastAskedAt }.take((needed + 1) / 2)
         val dueIds = due.map { it.id }.toSet()
-        val studied = words.filter { it.id !in dueIds && it.status != WordStatus.NEW }
-            .sortedWith(compareBy<VocabWord> { it.dueDate ?: LocalDate.MAX }.thenByDescending { it.lapses + it.wrongCount })
-        val fresh = words.filter { it.status == WordStatus.NEW }.shuffled(random)
-        due + studied + fresh
+        due + picked.filter { it.id !in dueIds }.sortedWith(compareBy({ it.lastAskedAt > 0 && nowMillis - it.lastAskedAt < Rotation.RECENT_MS }, { it.lastAskedAt }))
     }
     private var cursor = 0
 
@@ -39,7 +43,7 @@ class BlockerChallenge(
     /** The next exercise; a different word each time (cycling only once every word was used). */
     fun next(): Exercise? {
         if (order.isEmpty() || passed) return null
-        val word = order[cursor % order.size]
+        var word = order[cursor % order.size]
         cursor++
         val remaining = needed - solved
         // The last open slot must be a typed one if none was typed yet.
@@ -49,6 +53,16 @@ class BlockerChallenge(
                 .let { it[random.nextInt(it.size)] }
             type == QuestionType.LISTEN && !canListen -> QuestionType.CHOICE
             else -> type
+        }
+        // A new word is only recognised (choice / listen), never typed from nothing; a slot that must be
+        // typed takes the next studied word instead.
+        if (word.status == WordStatus.NEW) {
+            if (kind == QuestionType.TYPE) {
+                (0 until order.size).map { order[(cursor + it) % order.size] }.firstOrNull { it.status != WordStatus.NEW }?.let { word = it }
+            }
+            if (word.status == WordStatus.NEW && order.size >= 4) {
+                return if (canListen && random.nextBoolean()) Exercises.listen(word, order, random) else Exercises.choose(word, order, random)
+            }
         }
         return when (kind) {
             QuestionType.TYPE -> typed(word)

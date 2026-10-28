@@ -84,6 +84,7 @@ fun HomeRoute(
     onNavigateToDayReview: () -> Unit = {},
     onNavigateToAssistant: () -> Unit = {},
     onNavigateToLearn: () -> Unit = {},
+    onNavigateToWordChain: () -> Unit = {},
     onNavigateToTab: (OnIkkiTab) -> Unit = {}
 ) {
     val app = LocalContext.current.applicationContext as OnIkkiApplication
@@ -104,6 +105,7 @@ fun HomeRoute(
         onOpenDayReview = onNavigateToDayReview,
         onOpenAssistant = onNavigateToAssistant,
         onOpenLearn = onNavigateToLearn,
+        onOpenWordChain = onNavigateToWordChain,
         onOpenGoal = { id ->
             GoalDeepLink.request(id)
             onNavigateToTab(OnIkkiTab.PLAN)
@@ -132,6 +134,7 @@ fun HomeScreen(
     onOpenDayReview: () -> Unit,
     onOpenAssistant: () -> Unit,
     onOpenLearn: () -> Unit,
+    onOpenWordChain: () -> Unit = {},
     onOpenGoal: (Long) -> Unit,
     onOpenTab: (OnIkkiTab) -> Unit,
     onEditName: () -> Unit
@@ -161,6 +164,7 @@ fun HomeScreen(
             HomeworkHomeCard(state.homework, state.now, onClick = { TimetableDeepLink.request(TimetableDeepLink.Target.HOMEWORK); onOpenTab(OnIkkiTab.PLAN) })
         }
         MainGoalCard(state, onOpen = onOpenGoal)
+        WordChainCard(onClick = onOpenWordChain)
         LearnEntryCard(onClick = onOpenLearn)
         TodayPlanSection(state, onToggleTask = onToggleTask, onOpenPlan = { onOpenTab(OnIkkiTab.PLAN) })
         HabitsSection(habits = state.habits, onTapHabit = onTapHabit, onOpenAll = { onOpenTab(OnIkkiTab.PLAN) })
@@ -709,6 +713,40 @@ private fun MainGoalCard(state: HomeUiState, onOpen: (Long) -> Unit) {
 }
 
 // ---------------------------------------------------------------- O'rganish
+
+/** Study Skills "so'z zanjiri" on Bosh sahifa: today's day and new word, one tap to recite. */
+@Composable
+private fun WordChainCard(onClick: () -> Unit) {
+    val colors = LocalOnIkkiColors.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { com.onikki.app.data.local.LearnPrefs(context) }
+    val today = java.time.LocalDate.now()
+    val start = prefs.chainStart() ?: today
+    val n = com.onikki.app.domain.vocab.WordChain.dayNumber(start, today)
+    val done = n in prefs.chainDone()
+    val word = com.onikki.app.domain.vocab.WordChain.WORDS.getOrNull(n - 1)
+    OnIkkiRowCard(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        borderColor = if (!done) colors.accent700 else colors.cardBorder
+    ) {
+        Text(text = if (done) "✅" else "🔗", fontSize = 20.sp)
+        Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+            Text(
+                text = if (n > 0) "So'z zanjiri · $n-kun" + if (done) " · bajarildi" else " · bugun $n ta so'z" else "So'z zanjiri · 15-yanvargacha",
+                color = colors.text,
+                fontSize = 14.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+            Text(
+                text = word?.let { "Yangi so'z: ${it.english} — ${com.onikki.app.domain.vocab.Exercises.primary(it.uzbek)}" } ?: "Har kuni +1 so'z, butun zanjirni tartib bilan aytasiz",
+                color = if (done) colors.text.muted(0.5f) else colors.accent,
+                fontSize = 11.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+        }
+        Text(text = "›", color = colors.text.muted(0.4f), fontSize = 20.sp)
+    }
+}
 
 /** Streak + words due today, read straight from the vocab tables. */
 @Composable
