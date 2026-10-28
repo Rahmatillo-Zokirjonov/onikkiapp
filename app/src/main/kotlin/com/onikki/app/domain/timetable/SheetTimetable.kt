@@ -15,6 +15,9 @@ data class SheetLesson(
     val key: String get() = "$dayOfWeek-$slot"
 }
 
+/** A student found in the group list by ID: course ("1-kurs"), English group, level, academic group. */
+data class StudentGroups(val course: String, val englishGroup: String, val level: String?, val academicGroup: String)
+
 /** A tab of a spreadsheet ("1-kurs ingliz tili jadvali"). */
 data class SheetTab(val gid: String, val name: String)
 
@@ -40,6 +43,51 @@ object SheetTimetable {
 
     /** A share link → its CSV export URL; null if it isn't a sheet link. */
     fun csvUrl(shareLink: String): String? = ids(shareLink)?.let { (id, gid) -> csvUrl(id, gid) }
+
+    /**
+     * Finds a student by ID in the "Ingliz tili guruhlari ro'yxati" tab (header row with "Talaba ID";
+     * course and English group are written only on a group's first row, so they carry down).
+     */
+    fun findStudent(rows: List<List<String>>, studentId: String): StudentGroups? {
+        val id = studentId.trim()
+        if (id.isEmpty()) return null
+        val h = rows.indexOfFirst { r -> r.any { it.trim().equals("Talaba ID", true) } }
+        if (h < 0) return null
+        val header = rows[h].map { it.trim().lowercase() }
+        fun col(vararg names: String) = header.indexOfFirst { c -> names.any { c == it || c.contains(it) } }
+        val cId = col("talaba id")
+        val cCourse = col("kurs")
+        val cEng = col("ingliz tili guruhi", "guruhi")
+        val cLevel = col("daraja")
+        val cAcad = col("akademik guruh")
+        if (cId < 0 || cEng < 0 || cAcad < 0) return null
+        var course = ""
+        var eng = ""
+        for (r in rows.drop(h + 1)) {
+            r.getOrNull(cCourse)?.trim()?.takeIf { it.isNotEmpty() }?.let { course = it }
+            r.getOrNull(cEng)?.trim()?.takeIf { it.isNotEmpty() }?.let { eng = it }
+            if (r.getOrNull(cId)?.trim() == id) {
+                val acad = r.getOrNull(cAcad)?.trim().orEmpty()
+                if (eng.isEmpty() || acad.isEmpty()) return null
+                return StudentGroups(course, eng, r.getOrNull(cLevel)?.trim()?.ifEmpty { null }, acad)
+            }
+        }
+        return null
+    }
+
+    /** The tab with the timetable for a course ("1-kurs" → "1-kurs 1-semestr"), or its English timetable. */
+    fun courseTab(tabs: List<SheetTab>, course: String, english: Boolean): SheetTab? {
+        val c = course.trim().lowercase()
+        return tabs.filter { it.name.lowercase().startsWith(c) || it.name.lowercase().contains(" $c") }
+            .firstOrNull { t ->
+                val n = t.name.lowercase()
+                if (english) "ingliz" in n && "jadval" in n else "ingliz" !in n && "ro'yxat" !in n
+            }
+    }
+
+    /** The tab listing students and their English groups. */
+    fun studentListTab(tabs: List<SheetTab>): SheetTab? =
+        tabs.firstOrNull { val n = it.name.lowercase(); "ro'yxat" in n || "royxat" in n || "list" in n }
 
     /** The tabs listed in the sheet's public "htmlview" page ({name: "…", pageUrl: "…gid=N"}). */
     fun tabs(html: String): List<SheetTab> =

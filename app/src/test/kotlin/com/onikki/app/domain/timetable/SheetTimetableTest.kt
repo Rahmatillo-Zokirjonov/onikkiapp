@@ -86,4 +86,27 @@ class SheetTimetableTest {
         assertEquals(listOf("Beginner 2"), SheetTimetable.groupsWith(english, "26-202 (UZ)"))
         assertEquals("231 Room", SheetTimetable.lessons(english, "Beginner 2").single().room)
     }
+
+    @Test
+    fun studentIdFindsCourseAndGroups() {
+        val list = SheetTimetable.parseCsv(listOf(
+            "Ingliz tili guruhlari ro'yxati,,,,,,",
+            "№,Kurs,Ingliz tili guruhi,Daraja,F.I.O,Talaba ID,Akademik guruh",
+            "1,1-kurs,Beginner 1,A1 (Beginner),Student A,260001,26-201",
+            "2,,,A1 (Beginner),Student B,260002,26-202",
+            "3,,Beginner 2,A1 (Beginner),Student C,260003,26-202",
+            "4,2-kurs,Pre-Int 1,A2,Student D,250004,25-101"
+        ).joinToString("\n"))
+        assertEquals(StudentGroups("1-kurs", "Beginner 1", "A1 (Beginner)", "26-202"), SheetTimetable.findStudent(list, "260002")) // carried down
+        assertEquals("Beginner 2", SheetTimetable.findStudent(list, " 260003 ")?.englishGroup)
+        assertEquals("2-kurs", SheetTimetable.findStudent(list, "250004")?.course)
+        assertNull(SheetTimetable.findStudent(list, "111"))
+        val tabs = listOf(
+            SheetTab("1", "1-kurs 1-semestr"), SheetTab("2", "2-kurs 1-semestr"), SheetTab("3", "Ingliz tili guruhlari ro'yxati"),
+            SheetTab("4", "1-kurs ingliz tili jadvali"), SheetTab("5", "2-kurs ingliz tili jadvali")
+        )
+        assertEquals("1", SheetTimetable.courseTab(tabs, "1-kurs", english = false)?.gid)
+        assertEquals("5", SheetTimetable.courseTab(tabs, "2-kurs", english = true)?.gid)
+        assertEquals("3", SheetTimetable.studentListTab(tabs)?.gid)
+    }
 }

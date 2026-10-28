@@ -124,6 +124,19 @@ class SheetSyncViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun setupFromId(link: String, id: String, onDone: () -> Unit) {
+        if (link.isBlank() || id.isBlank()) { _state.value = _state.value.copy(message = "Havola va talaba ID ni yozing"); return }
+        _state.value = _state.value.copy(busy = true, message = null)
+        viewModelScope.launch {
+            val r = repo.setupFromStudentId(link, id)
+            _state.value = read().copy(message = r.fold(
+                onSuccess = { s -> "✓ ${s.student.course} · ${s.student.academicGroup} · ingliz: ${s.student.englishGroup}" + (s.student.level?.let { " ($it)" } ?: "") + "\n" + s.connected.joinToString(", ") },
+                onFailure = { it.message ?: "Topilmadi" }
+            ))
+            if (r.isSuccess) onDone()
+        }
+    }
+
     fun disconnect(c: SheetConnection) {
         viewModelScope.launch { repo.disconnect(c); _state.value = read().copy(message = "${c.group} uzildi") }
     }
@@ -176,6 +189,7 @@ fun SheetSyncRow() {
 private fun SheetConnectSheet(s: SheetSyncState, vm: SheetSyncViewModel, onDismiss: () -> Unit) {
     val colors = LocalOnIkkiColors.current
     var link by remember { mutableStateOf("") }
+    var studentId by remember { mutableStateOf("") }
     var tab by remember { mutableStateOf<SheetTab?>(null) }
     var picked by remember { mutableStateOf<String?>(null) }
     OnIkkiSheet(title = "Google Sheets jadvali", onDismiss = onDismiss) {
@@ -208,6 +222,24 @@ private fun SheetConnectSheet(s: SheetSyncState, vm: SheetSyncViewModel, onDismi
             )
         }
         OutlinedTextField(value = link, onValueChange = { link = it.trim(); tab = null; picked = null }, label = { Text("https://docs.google.com/spreadsheets/…") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        // Fastest: the student ID finds the course, the academic group and the English group.
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = studentId,
+                onValueChange = { studentId = it.filter(Char::isDigit).take(12) },
+                label = { Text("Talaba ID") },
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                modifier = Modifier.weight(1f)
+            )
+            OnIkkiButton(text = if (s.busy) "…" else "Avto ulash", onClick = { if (!s.busy) vm.setupFromId(link, studentId, onDone = {}) })
+        }
+        Text(
+            text = "ID bo'yicha: kursingiz, akademik guruhingiz va ingliz tili guruhingiz ro'yxatdan topiladi, ikkala jadval o'zi ulanadi. Yoki pastda varaq va guruhni qo'lda tanlang.",
+            color = colors.text.muted(0.5f),
+            fontSize = 11.sp,
+            fontFamily = OnIkkiFontFamily
+        )
         OnIkkiButton(text = if (s.busy && s.tabs.isEmpty()) "Yuklanmoqda…" else "Varaqlarni ko'rsatish", onClick = { if (link.isNotBlank() && !s.busy) vm.findTabs(link) }, variant = OnIkkiButtonVariant.SECONDARY, modifier = Modifier.fillMaxWidth())
         if (s.tabs.isNotEmpty()) {
             Text(text = "Varaq:", color = colors.text.muted(0.6f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily)
@@ -231,6 +263,6 @@ private fun SheetConnectSheet(s: SheetSyncState, vm: SheetSyncViewModel, onDismi
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
             )
         }
-        if (s.connections.isEmpty() || s.tabs.isNotEmpty()) s.message?.let { Text(text = it, color = colors.warmAccent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily) }
+        if (s.connections.isEmpty() || s.tabs.isNotEmpty()) s.message?.let { Text(text = it, color = if (it.startsWith("✓")) colors.accent else colors.warmAccent, fontSize = 13.sp, fontFamily = OnIkkiFontFamily) }
     }
 }

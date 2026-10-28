@@ -25,6 +25,9 @@ sealed interface SheetSyncResult {
     data class Failed(val message: String) : SheetSyncResult
 }
 
+/** What setting up from a student ID connected. */
+data class StudentSetup(val student: com.onikki.app.domain.timetable.StudentGroups, val connected: List<String>)
+
 /**
  * One connected tab of a sheet and the group read from it (the main timetable, the English timetable…).
  * [source] tags its rows in timetable_entries, so each connection replaces only its own lessons.
@@ -109,6 +112,49 @@ class SheetSyncRepository(private val context: Context, private val db: AppDatab
         return syncOne(conn, notify = false)
     }
 
+    /** The student ID the timetables were set up from (re-checked once a day: groups change by semester). */
+    val studentId: String? get() = prefs.getString(KEY_STUDENT, null)
+
+    /**
+     * Sets everything up from a student ID: finds the student in the group list, then connects the
+     * course's timetable for the academic group and the English timetable for the English group.
+     */
+    suspend fun setupFromStudentId(link: String, id: String): Result<StudentSetup> = runCatching {
+        val (sheet, _) = SheetTimetable.ids(link) ?: throw IllegalArgumentException("Bu Google Sheets havolasi emas")
+        val tabs = SheetTimetable.tabs(get("https://docs.google.com/spreadsheets/d/$sheet/htmlview"))
+        val listTab = SheetTimetable.studentListTab(tabs) ?: throw IllegalStateException("Jadvalda talabalar ro'yxati varag'i topilmadi")
+        val student = SheetTimetable.findStudent(rows(sheet, listTab.gid), id) ?: throw IllegalStateException("ID $id ro'yxatdan topilmadi — raqamni tekshiring")
+        val messages = mutableListOf<String>()
+        SheetTimetable.courseTab(tabs, student.course, english = false)?.let { tab ->
+            val group = SheetTimetable.groups(rows(sheet, tab.gid)).firstOrNull { it.startsWith(student.academicGroup) }
+            if (group != null) {
+                val r = connect(link, tab.gid, tab.name, group)
+                messages += if (r is SheetSyncResult.Updated) "$group: ${r.lessons} ta dars" else "$group: ulanmadi"
+            }
+        }
+        SheetTimetable.courseTab(tabs, student.course, english = true)?.let { tab ->
+            val r = connect(link, tab.gid, tab.name, student.englishGroup)
+            messages += if (r is SheetSyncResult.Updated) "${student.englishGroup}: ${r.lessons} ta dars" else "${student.englishGroup}: ulanmadi"
+        }
+        prefs.edit().putString(KEY_STUDENT, id.trim()).putString(KEY_STUDENT_LINK, link.trim()).putLong(KEY_STUDENT_CHECK, System.currentTimeMillis()).apply()
+        StudentSetup(student, messages)
+    }
+
+    /** Once a day: if the student's groups changed in the list (new semester), connect the new ones. */
+    private suspend fun recheckStudent() {
+        val id = studentId ?: return
+        val link = prefs.getString(KEY_STUDENT_LINK, null) ?: return
+        if (System.currentTimeMillis() - prefs.getLong(KEY_STUDENT_CHECK, 0) < 24 * 3_600_000L) return
+        prefs.edit().putLong(KEY_STUDENT_CHECK, System.currentTimeMillis()).apply()
+        val (sheet, _) = SheetTimetable.ids(link) ?: return
+        val tabs = runCatching { SheetTimetable.tabs(get("https://docs.google.com/spreadsheets/d/$sheet/htmlview")) }.getOrNull() ?: return
+        val listTab = SheetTimetable.studentListTab(tabs) ?: return
+        val student = runCatching { SheetTimetable.findStudent(rows(sheet, listTab.gid), id) }.getOrNull() ?: return
+        val groups = connections.map { it.group }
+        val stale = groups.none { it.startsWith(student.academicGroup) } || student.englishGroup !in groups
+        if (stale) runCatching { setupFromStudentId(link, id) }
+    }
+
     /** Removes one connection and its lessons. */
     suspend fun disconnect(conn: SheetConnection) {
         db.timetableDao().deleteBySource(conn.source)
@@ -117,9 +163,11 @@ class SheetSyncRepository(private val context: Context, private val db: AppDatab
 
     /** Syncs every connection (at most every [MIN_GAP_MS] unless [force]). */
     suspend fun sync(force: Boolean = false, notify: Boolean = true): SheetSyncResult {
+        if (connections.isEmpty() && studentId == null) return SheetSyncResult.NotConnected
+        if (!force && System.currentTimeMillis() - lastSync < MIN_GAP_MS) return SheetSyncResult.Skipped
+        recheckStudent()
         val list = connections
         if (list.isEmpty()) return SheetSyncResult.NotConnected
-        if (!force && System.currentTimeMillis() - lastSync < MIN_GAP_MS) return SheetSyncResult.Skipped
         var lessons = 0
         val changes = mutableListOf<String>()
         var failure: SheetSyncResult.Failed? = null
@@ -195,6 +243,9 @@ class SheetSyncRepository(private val context: Context, private val db: AppDatab
         private const val KEY_CONNECTIONS = "connections"
         private const val KEY_LAST = "last_sync"
         private const val KEY_ERROR = "error"
+        private const val KEY_STUDENT = "student_id"
+        private const val KEY_STUDENT_LINK = "student_link"
+        private const val KEY_STUDENT_CHECK = "student_check"
         private const val DEFAULT_REMIND = 10
         /** Background syncs at most every 3 hours (the screen and a pull refresh force one). */
         const val MIN_GAP_MS = 3 * 60 * 60 * 1000L
