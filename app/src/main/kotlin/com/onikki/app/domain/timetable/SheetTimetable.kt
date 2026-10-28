@@ -15,6 +15,9 @@ data class SheetLesson(
     val key: String get() = "$dayOfWeek-$slot"
 }
 
+/** A tab of a spreadsheet ("1-kurs ingliz tili jadvali"). */
+data class SheetTab(val gid: String, val name: String)
+
 /**
  * A university timetable published as a Google Sheet: row 1 = days (each spanning its slot columns),
  * row 2 = slots ("1. 08:00 - 09:20"), then per group a block of four rows — subject, teacher, room,
@@ -26,14 +29,25 @@ object SheetTimetable {
         "dushanba" to 1, "seshanba" to 2, "chorshanba" to 3, "payshanba" to 4, "juma" to 5, "shanba" to 6, "yakshanba" to 7
     )
     private val SLOT = Regex("""(\d+)\.?\s*(\d{1,2})[:.](\d{2})\s*[-–]\s*(\d{1,2})[:.](\d{2})""")
-    private val GROUP = Regex("""^\s*\d{2}-\d{2,4}""")
-
-    /** A share link ("…/d/<id>/edit?gid=<gid>#gid=<gid>") → its CSV export URL; null if it isn't a sheet link. */
-    fun csvUrl(shareLink: String): String? {
+    /** A share link ("…/d/<id>/edit?gid=<gid>#gid=<gid>") → sheet id and tab gid; null if it isn't a sheet link. */
+    fun ids(shareLink: String): Pair<String, String?>? {
         val id = Regex("""/spreadsheets/d/([A-Za-z0-9_-]{20,})""").find(shareLink)?.groupValues?.get(1) ?: return null
-        val gid = Regex("""[#?&]gid=(\d+)""").find(shareLink)?.groupValues?.get(1)
-        return "https://docs.google.com/spreadsheets/d/$id/export?format=csv" + (gid?.let { "&gid=$it" } ?: "")
+        return id to Regex("""[#?&]gid=(\d+)""").find(shareLink)?.groupValues?.get(1)
     }
+
+    fun csvUrl(sheetId: String, gid: String?): String =
+        "https://docs.google.com/spreadsheets/d/$sheetId/export?format=csv" + (gid?.let { "&gid=$it" } ?: "")
+
+    /** A share link → its CSV export URL; null if it isn't a sheet link. */
+    fun csvUrl(shareLink: String): String? = ids(shareLink)?.let { (id, gid) -> csvUrl(id, gid) }
+
+    /** The tabs listed in the sheet's public "htmlview" page ({name: "…", pageUrl: "…gid=N"}). */
+    fun tabs(html: String): List<SheetTab> =
+        Regex("""\{name: "((?:[^"\\]|\\.)*)", pageUrl: "[^"]*?gid=(\d+)""").findAll(html).map { m ->
+            val name = m.groupValues[1].replace(Regex("""\\x([0-9a-fA-F]{2})""")) { it.groupValues[1].toInt(16).toChar().toString() }
+                .replace("\\/", "/").replace("\\\"", "\"")
+            SheetTab(m.groupValues[2], name)
+        }.distinctBy { it.gid }.toList()
 
     /** RFC 4180 CSV: quoted cells may hold commas, quotes ("") and line breaks. */
     fun parseCsv(text: String): List<List<String>> {
@@ -60,9 +74,23 @@ object SheetTimetable {
         return rows
     }
 
-    /** The group names in the sheet, in order ("26-202 (UZ)"). */
+    /** The group names in the sheet, in order ("26-202 (UZ)", "Beginner 2"): every labelled row below the headers. */
     fun groups(rows: List<List<String>>): List<String> =
-        rows.drop(2).map { it.firstOrNull().orEmpty().trim() }.filter { GROUP.containsMatchIn(it) }.distinct()
+        rows.drop(2).map { it.firstOrNull().orEmpty().trim() }.filter { it.isNotEmpty() && !it.equals("class", true) }.distinct()
+
+    /**
+     * Groups whose lessons list [academicGroup] in their last row — on the English tab, the English groups
+     * that have students of "26-202" ("26-202 (20)"), so the user's can be suggested.
+     */
+    fun groupsWith(rows: List<List<String>>, academicGroup: String): List<String> {
+        val key = academicGroup.trim().substringBefore(' ').lowercase()
+        if (key.isEmpty()) return emptyList()
+        return groups(rows).filter { g ->
+            val start = rows.indexOfFirst { it.firstOrNull().orEmpty().trim() == g }
+            val block = rows.drop(start).take(4)
+            block.size == 4 && block[3].drop(1).any { it.lowercase().contains(key) } && !g.lowercase().startsWith(key)
+        }
+    }
 
     /** Day and slot of every column (null for the label column or an unreadable header). */
     private fun columns(rows: List<List<String>>): List<Triple<Int, Int, Pair<LocalTime, LocalTime>>?> {

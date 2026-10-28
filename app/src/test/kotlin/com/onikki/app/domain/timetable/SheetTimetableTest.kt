@@ -64,4 +64,26 @@ class SheetTimetableTest {
         assertTrue(c.any { it.startsWith("＋") && it.contains("Chorshanba") })
         assertTrue(SheetTimetable.changes(old, old).isEmpty())
     }
+
+    @Test
+    fun tabsGroupsWithStudentsAndIds() {
+        val html = """x {name: "1-kurs 1-semestr", pageUrl: "https://docs.google.com/x/htmlview/sheet?headers=true&gid=121259130"}, {name: "Ingliz tili guruhlari ro\x27yxati", pageUrl: "https://x?gid=368002780"}"""
+        assertEquals(listOf(SheetTab("121259130", "1-kurs 1-semestr"), SheetTab("368002780", "Ingliz tili guruhlari ro'yxati")), SheetTimetable.tabs(html))
+        assertEquals("abcdefghijklmnopqrstuvwxyz" to "5", SheetTimetable.ids("https://docs.google.com/spreadsheets/d/abcdefghijklmnopqrstuvwxyz/edit#gid=5"))
+        val english = SheetTimetable.parseCsv(listOf(
+            ",Tuesday,",
+            "Class,1. 08:00 - 09:20,2. 09:30 - 10:50",
+            "Beginner 1,English,",
+            ",T1,",
+            ",230 Room,",
+            ",26-201 (20),",
+            "Beginner 2,,English",
+            ",,T2",
+            ",,231 Room",
+            ",,\"26-202 (18), 26-205 (2)\""
+        ).joinToString("\n"))
+        assertEquals(listOf("Beginner 1", "Beginner 2"), SheetTimetable.groups(english))
+        assertEquals(listOf("Beginner 2"), SheetTimetable.groupsWith(english, "26-202 (UZ)"))
+        assertEquals("231 Room", SheetTimetable.lessons(english, "Beginner 2").single().room)
+    }
 }
