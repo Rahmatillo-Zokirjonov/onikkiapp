@@ -11,7 +11,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, NOTE, PLANNED_EXPENSE, TIMETABLE, HOMEWORK, REFRESH }
+enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, NOTE, PLANNED_EXPENSE, TIMETABLE, HOMEWORK, HOMEWORK_ASK, REFRESH }
 
 /**
  * One alarm to set. [key] is stable across re-plans so the same reminder is replaced, not duplicated.
@@ -124,6 +124,11 @@ object ReminderPlanner {
                         "timetable:${entry.id}:${startAt}:${entry.remindMinutes}",
                         ReminderType.TIMETABLE, at, refId = entry.id, label = entry.title, eventTime = entry.start
                     )
+                }
+                // When it ends: "vazifa berildimi?" (answered right in the notification).
+                val endAt = startAt.toLocalDate().atTime(entry.end)
+                if (inWindow(endAt)) {
+                    result += PlannedReminder("hwask:${entry.id}:$endAt", ReminderType.HOMEWORK_ASK, endAt, refId = entry.id, label = entry.title)
                 }
             }
         }

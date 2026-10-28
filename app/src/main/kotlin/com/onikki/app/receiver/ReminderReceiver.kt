@@ -43,6 +43,9 @@ class ReminderReceiver : BroadcastReceiver() {
                     ACTION_SMS_NOTE -> handleSmsNote(context, intent)
                     ACTION_NOTE_SNOOZE -> snoozeNote(context, intent.getLongExtra(EXTRA_REF_ID, 0))
                     ACTION_NOTE_DISMISS -> NoteReminderNotifier.cancel(context, intent.getLongExtra(EXTRA_REF_ID, 0))
+                    ACTION_HOMEWORK_ADD -> handleHomeworkAdd(context, intent)
+                    ACTION_HOMEWORK_DONE -> handleHomeworkDone(context, intent)
+                    ACTION_DISMISS -> androidx.core.app.NotificationManagerCompat.from(context).cancel(intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0))
                 }
                 ReminderScheduler(context).resync()
             } finally {
@@ -76,13 +79,22 @@ class ReminderReceiver : BroadcastReceiver() {
                 )
             }
 
+            ReminderType.HOMEWORK_ASK -> {
+                val entry = db.timetableDao().findById(refId) ?: return
+                // Skip if homework for this subject was already added in the last hours.
+                val recent = db.homeworkDao().pending().any { it.subject.equals(entry.title, true) && System.currentTimeMillis() - it.createdAt < 3 * 3_600_000L }
+                if (recent) return
+                val next = com.onikki.app.domain.timetable.HomeworkRules.nextLesson(db.timetableDao().observeAll().first(), entry.title, LocalDateTime.now())
+                com.onikki.app.domain.notifications.HomeworkNotifier.askAfterLesson(context, entry, next?.let { whenShort(it) })
+            }
+
             ReminderType.HOMEWORK -> {
                 val hw = db.homeworkDao().findById(refId) ?: return
                 if (hw.status != com.onikki.app.data.db.entity.HomeworkStatus.PENDING) return
                 val left = com.onikki.app.domain.timetable.HomeworkRules.formatLeft(java.time.Duration.between(LocalDateTime.now(), hw.dueAt))
                 val danger = intent.getStringExtra(EXTRA_LABEL) == "danger"
-                ReminderNotifier.show(
-                    context, key, ReminderChannel.HOMEWORK,
+                com.onikki.app.domain.notifications.HomeworkNotifier.reminder(
+                    context, key, hw,
                     title = if (danger) "⚠ ${hw.subject}: ${hw.title}" else "📝 ${hw.subject}: ${hw.title}",
                     text = if (danger) "Muddatga $left qoldi — bajarilmaguncha ilovalar bloklandi"
                     else "Muddatga $left qoldi" + (com.onikki.app.domain.timetable.HomeworkRules.dangerStart(hw)?.let { " · ${hhmm(it.toLocalTime())} dan bloklanadi" } ?: "")
@@ -182,6 +194,38 @@ class ReminderReceiver : BroadcastReceiver() {
         }
     }
 
+    /** "Vazifa yozish" reply after a lesson: saved as homework due at the subject's next lesson. */
+    private suspend fun handleHomeworkAdd(context: Context, intent: Intent) {
+        val entryId = intent.getLongExtra(EXTRA_REF_ID, 0)
+        val text = androidx.core.app.RemoteInput.getResultsFromIntent(intent)
+            ?.getCharSequence(com.onikki.app.domain.notifications.HomeworkNotifier.KEY_TEXT)?.toString()?.trim()
+        if (entryId == 0L || text.isNullOrBlank()) return
+        val db = (context.applicationContext as OnIkkiApplication).database
+        val entry = db.timetableDao().findById(entryId) ?: return
+        val hw = com.onikki.app.domain.timetable.HomeworkQuick.make(entry.title, text, db.timetableDao().observeAll().first(), LocalDateTime.now())
+        db.homeworkDao().insert(hw)
+        com.onikki.app.domain.notifications.HomeworkNotifier.saved(context, entryId, hw, whenShort(hw.dueAt))
+    }
+
+    /** "✓ Bajardim" on a homework reminder. */
+    private suspend fun handleHomeworkDone(context: Context, intent: Intent) {
+        val id = intent.getLongExtra(EXTRA_REF_ID, 0)
+        if (id == 0L) return
+        (context.applicationContext as OnIkkiApplication).database.homeworkDao()
+            .setStatus(id, com.onikki.app.data.db.entity.HomeworkStatus.DONE, System.currentTimeMillis())
+        com.onikki.app.domain.notifications.HomeworkNotifier.cancel(context, id)
+    }
+
+    private fun whenShort(at: LocalDateTime): String {
+        val days = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), at.toLocalDate())
+        val day = when (days) {
+            0L -> "bugun"
+            1L -> "ertaga"
+            else -> listOf("Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba", "Yakshanba")[at.dayOfWeek.value - 1]
+        }
+        return "$day ${hhmm(at.toLocalTime())}"
+    }
+
     /** Inline reply on a bank-SMS notification: the typed text becomes the transaction's note. */
     private suspend fun handleSmsNote(context: Context, intent: Intent) {
         val id = intent.getLongExtra(EXTRA_REF_ID, 0)
@@ -229,6 +273,10 @@ class ReminderReceiver : BroadcastReceiver() {
         const val ACTION_PLANNED_PAID = "com.onikki.app.action.PLANNED_PAID"
         const val ACTION_NOTE_SNOOZE = "com.onikki.app.action.NOTE_SNOOZE"
         const val ACTION_NOTE_DISMISS = "com.onikki.app.action.NOTE_DISMISS"
+        const val ACTION_HOMEWORK_ADD = "com.onikki.app.action.HOMEWORK_ADD"
+        const val ACTION_HOMEWORK_DONE = "com.onikki.app.action.HOMEWORK_DONE"
+        const val ACTION_DISMISS = "com.onikki.app.action.DISMISS"
+        const val EXTRA_NOTIFICATION_ID = "notification_id"
         const val EXTRA_KEY = "key"
         const val EXTRA_TYPE = "type"
         const val EXTRA_REF_ID = "ref_id"

@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -143,6 +144,15 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
             val db = db.homeworkDao()
             if (existing == null) db.insert(draft.copy(id = 0)) else db.update(draft.copy(id = existing.id, createdAt = existing.createdAt))
             ui.update { it.copy(homeworkSheet = null) }
+        }
+    }
+
+    /** The one-line add: due at the subject's next lesson, reminded the evening before. */
+    fun quickHomework(subject: String, text: String) {
+        if (subject.isBlank() || text.isBlank()) return
+        viewModelScope.launch {
+            val entries = db.timetableDao().observeAll().first()
+            db.homeworkDao().insert(com.onikki.app.domain.timetable.HomeworkQuick.make(subject, text, entries, java.time.LocalDateTime.now()))
         }
     }
 

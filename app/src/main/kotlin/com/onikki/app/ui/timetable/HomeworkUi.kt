@@ -75,6 +75,57 @@ private fun whenText(at: LocalDateTime, now: LocalDateTime): String {
 
 // ---------------------------------------------------------------- list
 
+/**
+ * One line to add homework: the subject is picked for you (the lesson going on or just over), you
+ * type what was given; it's due at that subject's next lesson and reminded the evening before.
+ */
+@Composable
+private fun QuickHomework(state: TimetableUiState, now: LocalDateTime, viewModel: TimetableViewModel) {
+    val colors = LocalOnIkkiColors.current
+    val subjects = remember(state.entries) { HomeworkRules.subjects(state.entries) }
+    if (subjects.isEmpty()) return
+    var subject by rememberSaveable { mutableStateOf<String?>(null) }
+    var text by rememberSaveable { mutableStateOf("") }
+    var saved by remember { mutableStateOf<String?>(null) }
+    val chosen = subject ?: com.onikki.app.domain.timetable.HomeworkQuick.suggestSubject(state.entries, now) ?: subjects.first()
+    val next = remember(chosen, state.entries, now.toLocalDate()) { HomeworkRules.nextLesson(state.entries, chosen, now) }
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (listOf(chosen) + subjects.filter { it != chosen }).forEach { s ->
+                FilterChip(selected = s == chosen, onClick = { subject = s }, label = { Text(s, maxLines = 1) })
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it; saved = null },
+                placeholder = { Text("Vazifa: masalan 12-mashq") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            OnIkkiButton(
+                text = "＋",
+                onClick = {
+                    if (text.isNotBlank()) {
+                        viewModel.quickHomework(chosen, text)
+                        saved = "✓ $chosen: ${text.trim()}"
+                        text = ""
+                    }
+                }
+            )
+        }
+        Text(
+            text = saved ?: next?.let { "Muddat: keyingi dars — ${whenText(it, now)}" } ?: "Muddat: ertaga 09:00",
+            color = if (saved != null) colors.accent else colors.text.muted(0.5f),
+            fontSize = 11.sp,
+            fontFamily = OnIkkiFontFamily
+        )
+    }
+}
+
 @Composable
 fun HomeworkList(state: TimetableUiState, now: LocalDateTime, viewModel: TimetableViewModel) {
     val colors = LocalOnIkkiColors.current
@@ -89,6 +140,7 @@ fun HomeworkList(state: TimetableUiState, now: LocalDateTime, viewModel: Timetab
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(top = 6.dp, bottom = 90.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        QuickHomework(state, now, viewModel)
         if (blocking.isNotEmpty()) {
             Text(
                 text = "⚠ ${blocking.size} ta vazifa xavfli zonada — bajarilmaguncha ilovalar bloklangan",
