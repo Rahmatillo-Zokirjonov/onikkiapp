@@ -140,6 +140,12 @@ class ReminderReceiver : BroadcastReceiver() {
                 // The key carries the time it was planned for; an edited/cleared reminder must not fire.
                 if (note.remindAt == null || key != "note:${note.id}:${note.remindAt}") return
                 NoteReminderNotifier.show(context, note)
+                if (note.remindGate) com.onikki.app.domain.notifications.ReminderGate.add(context, note.id)
+                // A repeating reminder moves to its next time right away (the sync re-plans the alarm).
+                note.remindRepeat?.next(note.remindAt, LocalDateTime.now())?.let { next ->
+                    db.noteDao().setRemindAt(note.id, next)
+                    com.onikki.app.domain.notifications.ReminderScheduler(context).resync()
+                }
             }
 
             ReminderType.PLANNED_EXPENSE -> {

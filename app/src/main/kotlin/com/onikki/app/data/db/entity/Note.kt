@@ -50,7 +50,11 @@ data class Note(
     /** Optional link to a big goal or a stage (Maqsadlar). */
     val goalId: Long? = null,
     /** Optional link to a task (Kunlik reja). */
-    val taskId: Long? = null
+    val taskId: Long? = null,
+    /** Reminder repeat: null / NONE = once (see ReminderRepeat). */
+    val remindRepeat: com.onikki.app.domain.notifications.ReminderRepeat? = null,
+    /** "Ilovaga kirishdan oldin": when it fires, the next app opened shows it first. */
+    @ColumnInfo(defaultValue = "0") val remindGate: Boolean = false
 ) {
     val isDeleted: Boolean get() = deletedAt != null
 }

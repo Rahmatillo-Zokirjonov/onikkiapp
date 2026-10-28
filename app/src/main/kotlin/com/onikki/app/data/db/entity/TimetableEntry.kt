@@ -37,5 +37,9 @@ data class TimetableEntry(
     val color: NoteColor? = null,
     @ColumnInfo(defaultValue = "'ALL'") val parity: WeekParity = WeekParity.ALL,
     /** Minutes before the start to remind; null = no reminder, 0 = at the start. */
-    val remindMinutes: Int? = 10
+    val remindMinutes: Int? = 10,
+    /** null = typed in by the user; "SHEET" = synced from a Google Sheets timetable (replaced on each sync). */
+    val source: String? = null,
+    /** The synced lesson's identity in the sheet (day + slot), to tell changes from new lessons. */
+    val externalKey: String? = null
 )

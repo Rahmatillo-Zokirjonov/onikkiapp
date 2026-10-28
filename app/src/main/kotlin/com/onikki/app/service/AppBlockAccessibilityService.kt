@@ -67,6 +67,14 @@ class AppBlockAccessibilityService : AccessibilityService() {
         // before this app's own gate is checked, so coming back to the unlocked app asks again.
         if (BlockOverrides.hasSessions() && isLeaving(packageName)) BlockOverrides.endSessionsExcept(packageName)
 
+        // "Ilovaga kirishdan oldin" reminders: the next real app (not the home screen or a keyboard) shows it first.
+        if (com.onikki.app.domain.notifications.ReminderGate.hasPending(this) && isRealApp(packageName)) {
+            com.onikki.app.domain.notifications.ReminderGate.take(this)?.let { noteId ->
+                runCatching { startActivity(com.onikki.app.ui.notes.NoteAlertActivity.intent(applicationContext, noteId)) }
+                return
+            }
+        }
+
         // Every event is evaluated to the end — cancelling an earlier evaluation when an app opens a second
         // window (Chrome does, ~20 ms apart) killed an in-flight location fetch and let the app through.
         // Launches for the same app within SETTLE_MS are delayed so the last one lands on top.
@@ -82,6 +90,10 @@ class AppBlockAccessibilityService : AccessibilityService() {
     }
 
     private val launchable = mutableMapOf<String, Boolean>()
+
+    private fun isRealApp(packageName: String): Boolean =
+        launchable.getOrPut(packageName) { packageManager.getLaunchIntentForPackage(packageName) != null } &&
+            packageName !in homePackages() && packageName !in keyboardPackages()
 
     private fun isLeaving(packageName: String): Boolean {
         val hasLauncher = launchable.getOrPut(packageName) { packageManager.getLaunchIntentForPackage(packageName) != null }

@@ -25,7 +25,7 @@ import com.onikki.app.ui.theme.OnIkkiFontFamily
 import com.onikki.app.ui.theme.OnIkkiType
 import com.onikki.app.ui.theme.muted
 
-private enum class ProfileDestination { MENU, APP_CONTROL, SETTINGS, VOCABULARY, LEARN }
+private enum class ProfileDestination { MENU, APP_CONTROL, SETTINGS, VOCABULARY, LEARN, REMINDERS }
 
 @Composable
 fun ProfileSectionRoute() {
@@ -39,7 +39,8 @@ fun ProfileSectionRoute() {
             onOpenAppControl = { destination = ProfileDestination.APP_CONTROL },
             onOpenVocabulary = { openVocabulary(ProfileDestination.MENU) },
             onOpenSettings = { destination = ProfileDestination.SETTINGS },
-            onOpenLearn = { destination = ProfileDestination.LEARN }
+            onOpenLearn = { destination = ProfileDestination.LEARN },
+            onOpenReminders = { destination = ProfileDestination.REMINDERS }
         )
         ProfileDestination.APP_CONTROL -> ScreenTimeRoute(
             onBack = { destination = ProfileDestination.MENU },
@@ -52,11 +53,12 @@ fun ProfileSectionRoute() {
         )
         ProfileDestination.VOCABULARY -> VocabularyRoute(onBack = { destination = vocabularyReturn })
         ProfileDestination.LEARN -> com.onikki.app.ui.learn.LearnRoute(onBack = { destination = ProfileDestination.MENU })
+        ProfileDestination.REMINDERS -> com.onikki.app.ui.reminders.RemindersRoute(onBack = { destination = ProfileDestination.MENU })
     }
 }
 
 @Composable
-private fun ProfileMenu(onOpenAppControl: () -> Unit, onOpenVocabulary: () -> Unit, onOpenSettings: () -> Unit, onOpenLearn: () -> Unit) {
+private fun ProfileMenu(onOpenAppControl: () -> Unit, onOpenVocabulary: () -> Unit, onOpenSettings: () -> Unit, onOpenLearn: () -> Unit, onOpenReminders: () -> Unit) {
     val colors = LocalOnIkkiColors.current
     Column(
         modifier = Modifier
@@ -68,6 +70,7 @@ private fun ProfileMenu(onOpenAppControl: () -> Unit, onOpenVocabulary: () -> Un
     ) {
         Text(text = "Profil", color = colors.text, style = OnIkkiType.screenTitle)
 
+        MenuRow(title = "⏰ Eslatmalar", subtitle = "Istalgan narsaga: tepada, ilovadan oldin yoki to'liq ekran", onClick = onOpenReminders)
         MenuRow(title = "O'rganish", subtitle = "Ingliz tili: darslar, takrorlash, XP va streak", onClick = onOpenLearn)
         MenuRow(title = "Ilovalar nazorati", subtitle = "Limit, vaqt va hudud bo'yicha blok", onClick = onOpenAppControl)
         MenuRow(title = "So'z yodlash", subtitle = "Inglizcha so'zlar va ilova ochish sharti", onClick = onOpenVocabulary)

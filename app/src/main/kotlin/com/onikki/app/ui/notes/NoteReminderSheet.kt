@@ -129,7 +129,7 @@ private fun priorityFill(priority: NotePriority) = LocalOnIkkiColors.current.let
  * without them it still rings as a persistent pop-up banner. Rechecked each time the user comes back.
  */
 @Composable
-private fun UrgentPermissions() {
+internal fun UrgentPermissions() {
     val context = LocalContext.current
     var overlay by remember { mutableStateOf(PermissionChecker.canDrawOverlays(context)) }
     var fullScreen by remember { mutableStateOf(PermissionChecker.canUseFullScreenIntent(context)) }
@@ -177,7 +177,7 @@ private fun PermissionLine(granted: Boolean, text: String, onGrant: () -> Unit) 
 }
 
 /** Next full hour — tomorrow 09:00 if that would land after 22:00. */
-private fun defaultReminderTime(now: LocalDateTime = LocalDateTime.now()): LocalDateTime {
+internal fun defaultReminderTime(now: LocalDateTime = LocalDateTime.now()): LocalDateTime {
     val nextHour = now.plusHours(1).withMinute(0).withSecond(0).withNano(0)
     return if (nextHour.hour >= 22 || nextHour.toLocalDate() != now.toLocalDate()) {
         now.toLocalDate().plusDays(1).atTime(9, 0)
