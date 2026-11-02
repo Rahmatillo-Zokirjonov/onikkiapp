@@ -2,60 +2,65 @@ package com.onikki.app.domain.vocab
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 
 class WordChainTest {
-    private val start = LocalDate.of(2026, 10, 26)
+    private fun w(e: String) = ImportedWord(e, "uz-$e", null, null)
+    private val small = (1..10).map { w("word$it") }
 
     @Test
-    fun ninetyUniqueWords_enoughFromTheEarliestStart() {
-        assertEquals(90, WordChain.WORDS.size)
-        assertEquals(90, WordChain.WORDS.map { it.english }.toSet().size)
-        assertTrue(WordChain.WORDS.all { it.uzbek.isNotBlank() && !it.example.isNullOrBlank() })
-        assertEquals(90, WordChain.totalDays(WordChain.earliestStart))
+    fun dayNBringsNNewWords() {
+        assertEquals(listOf(1, 3, 6, 10, 15), (1..5).map { WordChain.totalUpTo(it) })
+        assertEquals(listOf("word1"), WordChain.wordsFor(1, small).map { it.english })
+        assertEquals(listOf("word2", "word3"), WordChain.wordsFor(2, small).map { it.english })
+        assertEquals(listOf("word4", "word5", "word6"), WordChain.wordsFor(3, small).map { it.english })
+        assertEquals(4, WordChain.wordsFor(4, small).size)
+        assertTrue(WordChain.wordsFor(0, small).isEmpty())
+        // No word appears on two days.
+        val all = (1..4).flatMap { WordChain.wordsFor(it, small) }
+        assertEquals(all.size, all.distinct().size)
     }
 
     @Test
-    fun dayCountsFromTheStartToFifteenthOfJanuary() {
-        assertEquals(82, WordChain.totalDays(start)) // 26 Oct … 15 Jan
-        assertEquals(1, WordChain.dayNumber(start, start))
-        assertEquals(2, WordChain.dayNumber(start, start.plusDays(1)))
-        assertEquals(82, WordChain.dayNumber(start, LocalDate.of(2027, 1, 15)))
-        assertEquals(82, WordChain.dayNumber(start, LocalDate.of(2027, 2, 1))) // stays on the last day
-        assertEquals(0, WordChain.dayNumber(start, start.minusDays(1)))
-        assertEquals(LocalDate.of(2027, 1, 15), WordChain.days(start, start, emptySet()).last().date)
+    fun shortListIsReported() {
+        val start = LocalDate.of(2026, 11, 2)
+        assertEquals(5, WordChain.firstShortDay(start, small)) // 15 > 10
+        val day5 = WordChain.days(start, start, emptySet(), small)[4]
+        assertFalse(day5.complete)
+        assertEquals(15, day5.total)
+        assertNull(WordChain.firstShortDay(start, (1..10_000).map { w("x$it") }))
     }
 
     @Test
-    fun eachDayAddsOneWord_chainIsInOrder() {
-        assertEquals(listOf("achieve"), WordChain.chain(1).map { it.english })
-        assertEquals(listOf("achieve", "weather", "dangerous"), WordChain.chain(3).map { it.english })
-        assertEquals(WordChain.chain(5), WordChain.chain(6).take(5))
+    fun poolStartsWithCuratedWordsWithoutRepeats() {
+        val pool = WordChain.pool(listOf(w("Weather"), w("brandnew")))
+        assertEquals(WordChain.WORDS.size + 1, pool.size)
+        assertEquals("achieve", pool.first().english)
+        assertEquals("brandnew", pool.last().english)
     }
 
     @Test
-    fun statesAndStreak() {
-        val today = start.plusDays(4) // day 5
-        val days = WordChain.days(start, today, setOf(1, 2, 4))
-        assertEquals(
-            listOf(ChainDayState.DONE, ChainDayState.DONE, ChainDayState.MISSED, ChainDayState.DONE, ChainDayState.TODAY, ChainDayState.FUTURE),
-            days.take(6).map { it.state }
-        )
-        assertEquals(1, WordChain.streak(setOf(1, 2, 4), 5)) // only day 4 before today
-        assertEquals(3, WordChain.streak(setOf(3, 4, 5), 5))
+    fun daysUntilJanuary15WithStates() {
+        val start = LocalDate.of(2026, 11, 2)
+        val today = LocalDate.of(2026, 11, 4)
+        val days = WordChain.days(start, today, setOf(1), WordChain.pool(emptyList()))
+        assertEquals(WordChain.END, days.last().date)
+        assertEquals(75, days.size)
+        assertEquals(listOf(ChainDayState.DONE, ChainDayState.MISSED, ChainDayState.TODAY, ChainDayState.FUTURE), days.take(4).map { it.state })
+        assertEquals(3, days[2].words.size)
+        assertEquals(3, WordChain.dayNumber(start, today))
     }
 
     @Test
-    fun recitingIsStrictAndInOrder() {
-        val chain = WordChain.chain(3)
-        assertTrue(WordChain.passed(WordChain.check(listOf("Achieve", " weather ", "dangerous"), chain)))
-        // Wrong order fails.
-        assertFalse(WordChain.passed(WordChain.check(listOf("weather", "achieve", "dangerous"), chain)))
-        // A spelling slip is not enough.
-        val slip = WordChain.check(listOf("achieve", "wether", "dangerous"), chain)
-        assertFalse(WordChain.passed(slip))
-        assertEquals(Verdict.CORRECT, slip[0])
+    fun checkAndStreak() {
+        val words = WordChain.wordsFor(2, small)
+        assertTrue(WordChain.passed(WordChain.check(listOf("word2", " Word3 "), words)))
+        assertFalse(WordChain.passed(WordChain.check(listOf("word2", ""), words)))
+        assertEquals(3, WordChain.streak(setOf(1, 2, 3), 3))
+        assertEquals(2, WordChain.streak(setOf(1, 2), 3))
+        assertEquals(0, WordChain.streak(setOf(1), 3))
     }
 }

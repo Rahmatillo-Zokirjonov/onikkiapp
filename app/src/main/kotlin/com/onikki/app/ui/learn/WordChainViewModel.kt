@@ -10,6 +10,7 @@ import com.onikki.app.domain.vocab.ChainDay
 import com.onikki.app.domain.vocab.ImportedWord
 import com.onikki.app.domain.vocab.Verdict
 import com.onikki.app.domain.vocab.WordChain
+import com.onikki.app.ui.vocabulary.DictionaryStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -21,17 +22,21 @@ data class ChainState(
     val today: Int = 1,
     val days: List<ChainDay> = emptyList(),
     val done: Set<Int> = emptySet(),
-    val streak: Int = 0
+    val streak: Int = 0,
+    /** First day the word list can't fill (more words are needed from then on). */
+    val shortDay: Int? = null,
+    val loaded: Boolean = false
 ) {
     val todayDay: ChainDay? get() = days.getOrNull(today - 1)
     val finishedAll: Boolean get() = days.isNotEmpty() && days.all { it.number in done }
+    val learned: Int get() = done.sumOf { it }
 }
 
-/** Reciting today's chain from memory, position by position. */
+/** Writing a day's words from memory, in order (the Uzbek meaning is the prompt). */
 data class ChainCheck(
     val day: Int,
-    val chain: List<ImportedWord>,
-    val inputs: List<String> = List(chain.size) { "" },
+    val words: List<ImportedWord>,
+    val inputs: List<String> = List(words.size) { "" },
     val hinted: Set<Int> = emptySet(),
     val verdicts: List<Verdict> = emptyList()
 ) {
@@ -43,6 +48,7 @@ class WordChainViewModel(application: Application) : AndroidViewModel(applicatio
     private val db = (application as OnIkkiApplication).database
     private val prefs = LearnPrefs(application)
     private val repository = LearnRepository(db)
+    private var pool: List<ImportedWord> = WordChain.pool(emptyList())
 
     private val _state = MutableStateFlow(ChainState())
     val state: StateFlow<ChainState> = _state
@@ -53,6 +59,14 @@ class WordChainViewModel(application: Application) : AndroidViewModel(applicatio
     init {
         if (prefs.chainStart() == null) prefs.setChainStart(LocalDate.now())
         refresh()
+        // The dictionary (by frequency) continues the list after the curated words.
+        viewModelScope.launch {
+            val dict = runCatching { DictionaryStore.get(application) }.getOrNull()
+            if (dict != null) {
+                pool = WordChain.pool(dict.popularMissing(emptySet(), 10_000).map { ImportedWord(it.english, it.uzbek, null, null) })
+                refresh()
+            }
+        }
     }
 
     fun refresh() {
@@ -60,10 +74,13 @@ class WordChainViewModel(application: Application) : AndroidViewModel(applicatio
         val today = LocalDate.now()
         val done = prefs.chainDone()
         val n = WordChain.dayNumber(start, today)
-        _state.value = ChainState(start, n, WordChain.days(start, today, done), done, WordChain.streak(done, n))
+        _state.value = ChainState(
+            start, n, WordChain.days(start, today, done, pool), done, WordChain.streak(done, n),
+            shortDay = WordChain.firstShortDay(start, pool), loaded = true
+        )
         // Words reached so far also go into the "Study Skills" deck, so lessons and reviews keep them fresh.
         if (n > 0) viewModelScope.launch {
-            repository.importWords(repository.createDeck(WordChain.DECK), WordChain.chain(n))
+            repository.importWords(repository.createDeck(WordChain.DECK), (1..n).flatMap { WordChain.wordsFor(it, pool) })
         }
     }
 
@@ -71,15 +88,16 @@ class WordChainViewModel(application: Application) : AndroidViewModel(applicatio
     fun shiftStart(days: Long) {
         val current = prefs.chainStart() ?: LocalDate.now()
         val next = current.plusDays(days)
-        if (next.isBefore(WordChain.earliestStart) || next.isAfter(LocalDate.now())) return
+        if (next.isBefore(LocalDate.now().minusDays(120)) || next.isAfter(LocalDate.now())) return
         prefs.setChainStart(next)
         refresh()
     }
 
-    fun startCheck() {
-        val n = _state.value.today
-        if (n <= 0) return
-        _check.value = ChainCheck(n, WordChain.chain(n))
+    /** Write day [day]'s words from memory (today by default; a missed day can be caught up). */
+    fun startCheck(day: Int = _state.value.today) {
+        val words = WordChain.wordsFor(day, pool)
+        if (day <= 0 || words.isEmpty()) return
+        _check.value = ChainCheck(day, words)
     }
 
     fun type(i: Int, text: String) = _check.update { c ->
@@ -90,9 +108,9 @@ class WordChainViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun submit() {
         val c = _check.value ?: return
-        val verdicts = WordChain.check(c.inputs, c.chain)
+        val verdicts = WordChain.check(c.inputs, c.words)
         _check.value = c.copy(verdicts = verdicts)
-        // A position recalled only with its Uzbek hint doesn't count as from memory.
+        // A word recalled only with its hint doesn't count as from memory.
         if (WordChain.passed(verdicts) && c.hinted.isEmpty()) {
             prefs.setChainDone(prefs.chainDone() + c.day)
             refresh()

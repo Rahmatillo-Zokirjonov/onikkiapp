@@ -5,13 +5,18 @@ import java.time.temporal.ChronoUnit
 
 enum class ChainDayState { DONE, TODAY, MISSED, FUTURE }
 
-/** One day of the chain: its new word and how many words are recited that day (= the day number). */
-data class ChainDay(val number: Int, val date: LocalDate, val word: ImportedWord, val state: ChainDayState)
+/** One day of the chain: day n brings n new words (1, 2, 3 …); [words] may be short if the list runs out. */
+data class ChainDay(val number: Int, val date: LocalDate, val words: List<ImportedWord>, val state: ChainDayState) {
+    /** Words learned up to and including this day. */
+    val total: Int get() = WordChain.totalUpTo(number)
+    val complete: Boolean get() = words.size == number
+}
 
 /**
- * Study Skills "so'z zanjiri": every day one new word joins the chain, and every day the whole chain is
- * recited in order from memory — day 1 one word, day 2 two, … until the end date (15 January).
- * Pure; the start date and finished days are stored by the caller.
+ * Study Skills "so'z zanjiri": the number of new words grows by one every day — day 1 one new word,
+ * day 2 two, day 3 three … until the end date (15 January). Each day's words are learned and written
+ * from memory in order. Words come from a fixed list (curated words, then the dictionary by frequency),
+ * so a day's words never change. Pure; the start date and finished days are stored by the caller.
  */
 object WordChain {
     val END: LocalDate = LocalDate.of(2027, 1, 15)
@@ -21,12 +26,24 @@ object WordChain {
     fun dayNumber(start: LocalDate, today: LocalDate): Int =
         if (today.isBefore(start)) 0 else ChronoUnit.DAYS.between(start, minOf(today, END)).toInt() + 1
 
-    fun totalDays(start: LocalDate): Int = (ChronoUnit.DAYS.between(start, END).toInt() + 1).coerceIn(1, WORDS.size)
+    fun totalDays(start: LocalDate): Int = (ChronoUnit.DAYS.between(start, END).toInt() + 1).coerceAtLeast(1)
 
-    /** The earliest start the word list covers. */
-    val earliestStart: LocalDate get() = END.minusDays((WORDS.size - 1).toLong())
+    /** Words learned by the end of [day]: 1 + 2 + … + day. */
+    fun totalUpTo(day: Int): Int = day * (day + 1) / 2
 
-    fun days(start: LocalDate, today: LocalDate, done: Set<Int>): List<ChainDay> {
+    /** Day [day]'s new words: the next [day] words of [pool] after the earlier days'. */
+    fun wordsFor(day: Int, pool: List<ImportedWord>): List<ImportedWord> =
+        if (day <= 0) emptyList() else pool.drop(totalUpTo(day - 1)).take(day)
+
+    /** The chain's word list: the curated words, then [more] (the dictionary by frequency), no repeats. */
+    fun pool(more: List<ImportedWord>): List<ImportedWord> =
+        (WORDS + more).distinctBy { AnswerCheck.normalize(it.english) }
+
+    /** The first day the list can't fill (null if it covers the whole chain). */
+    fun firstShortDay(start: LocalDate, pool: List<ImportedWord>): Int? =
+        (1..totalDays(start)).firstOrNull { totalUpTo(it) > pool.size }
+
+    fun days(start: LocalDate, today: LocalDate, done: Set<Int>, pool: List<ImportedWord>): List<ChainDay> {
         val current = dayNumber(start, today)
         return (1..totalDays(start)).map { n ->
             val state = when {
@@ -35,16 +52,13 @@ object WordChain {
                 n < current -> ChainDayState.MISSED
                 else -> ChainDayState.FUTURE
             }
-            ChainDay(n, start.plusDays((n - 1).toLong()), WORDS[n - 1], state)
+            ChainDay(n, start.plusDays((n - 1).toLong()), wordsFor(n, pool), state)
         }
     }
 
-    /** The chain to recite on day [n]: its first n words, in order. */
-    fun chain(n: Int): List<ImportedWord> = WORDS.take(n.coerceIn(0, WORDS.size))
-
-    /** Each position checked against its word; the day counts only when every one is exactly right. */
-    fun check(inputs: List<String>, chain: List<ImportedWord>): List<Verdict> =
-        chain.mapIndexed { i, w -> AnswerCheck.judge(inputs.getOrElse(i) { "" }, listOf(w.english)) }
+    /** Each word checked in order; the day counts only when every one is exactly right. */
+    fun check(inputs: List<String>, words: List<ImportedWord>): List<Verdict> =
+        words.mapIndexed { i, w -> AnswerCheck.judge(inputs.getOrElse(i) { "" }, listOf(w.english)) }
 
     fun passed(verdicts: List<Verdict>): Boolean = verdicts.isNotEmpty() && verdicts.all { it == Verdict.CORRECT }
 

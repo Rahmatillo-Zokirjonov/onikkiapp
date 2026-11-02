@@ -724,7 +724,6 @@ private fun WordChainCard(onClick: () -> Unit) {
     val start = prefs.chainStart() ?: today
     val n = com.onikki.app.domain.vocab.WordChain.dayNumber(start, today)
     val done = n in prefs.chainDone()
-    val word = com.onikki.app.domain.vocab.WordChain.WORDS.getOrNull(n - 1)
     OnIkkiRowCard(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         borderColor = if (!done) colors.accent700 else colors.cardBorder
@@ -732,13 +731,13 @@ private fun WordChainCard(onClick: () -> Unit) {
         Text(text = if (done) "✅" else "🔗", fontSize = 20.sp)
         Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
             Text(
-                text = if (n > 0) "So'z zanjiri · $n-kun" + if (done) " · bajarildi" else " · bugun $n ta so'z" else "So'z zanjiri · 15-yanvargacha",
+                text = if (n > 0) "So'z zanjiri · $n-kun" + if (done) " · bajarildi" else " · bugun $n ta yangi so'z" else "So'z zanjiri · 15-yanvargacha",
                 color = colors.text,
                 fontSize = 14.sp,
                 fontFamily = OnIkkiFontFamily
             )
             Text(
-                text = word?.let { "Yangi so'z: ${it.english} — ${com.onikki.app.domain.vocab.Exercises.primary(it.uzbek)}" } ?: "Har kuni +1 so'z, butun zanjirni tartib bilan aytasiz",
+                text = if (n > 0) "Har kuni so'zlar bittaga ko'payadi · jami ${com.onikki.app.domain.vocab.WordChain.totalUpTo(n)} ta so'z" else "1, 2, 3 … ta yangi so'z, har kuni bittaga ko'p",
                 color = if (done) colors.text.muted(0.5f) else colors.accent,
                 fontSize = 11.sp,
                 fontFamily = OnIkkiFontFamily

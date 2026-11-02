@@ -205,9 +205,8 @@ private fun LearnHome(
             val doneToday = n in prefs.chainDone()
             BigAction(
                 kicker = "🔗 STUDY SKILLS · SO'Z ZANJIRI",
-                title = if (n > 0) "$n-kun: bugun $n ta so'z" + if (doneToday) " ✓" else "" else "So'z zanjirini boshlash",
-                subtitle = com.onikki.app.domain.vocab.WordChain.WORDS.getOrNull(n - 1)?.let { "Yangi so'z: ${it.english} — ${com.onikki.app.domain.vocab.Exercises.primary(it.uzbek)}" }
-                    ?: "Har kuni +1 so'z, 15-yanvargacha",
+                title = if (n > 0) "$n-kun: bugun $n ta yangi so'z" + if (doneToday) " ✓" else "" else "So'z zanjirini boshlash",
+                subtitle = if (n > 0) "Har kuni so'zlar bittaga ko'payadi · jami ${com.onikki.app.domain.vocab.WordChain.totalUpTo(n)} ta" else "1, 2, 3 … ta yangi so'z, 15-yanvargacha",
                 enabled = true,
                 primary = false,
                 onClick = onChain
