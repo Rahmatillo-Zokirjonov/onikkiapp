@@ -63,6 +63,37 @@ class LearnPrefs(context: Context) {
     }
 
     /** Best score of the 60-second verb sprint. */
+    /** Chain words the user put in place (position → word), stored as "pos\tenglish\tuzbek\texample". */
+    fun chainOverrides(): Map<Int, com.onikki.app.domain.vocab.ImportedWord> =
+        prefs.getStringSet("chain_overrides", emptySet()).orEmpty().mapNotNull { line ->
+            val p = line.split('\t')
+            val pos = p.getOrNull(0)?.toIntOrNull() ?: return@mapNotNull null
+            val en = p.getOrNull(1)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            pos to com.onikki.app.domain.vocab.ImportedWord(en, p.getOrNull(2).orEmpty(), p.getOrNull(3)?.takeIf { it.isNotBlank() }, null)
+        }.toMap()
+
+    fun setChainOverrides(map: Map<Int, com.onikki.app.domain.vocab.ImportedWord>) {
+        val clean = { s: String? -> s.orEmpty().replace('\t', ' ').replace('\n', ' ') }
+        prefs.edit().putStringSet("chain_overrides", map.map { (pos, w) -> "$pos\t${clean(w.english)}\t${clean(w.uzbek)}\t${clean(w.example)}" }.toSet()).apply()
+    }
+
+    /** Chain words taken out (normalized English); they never come back. */
+    fun chainRemoved(): Set<String> = prefs.getStringSet("chain_removed", emptySet()).orEmpty()
+
+    fun setChainRemoved(words: Set<String>) {
+        prefs.edit().putStringSet("chain_removed", words).apply()
+    }
+
+    /** Weak links of the sequence practice: "from>to" → misses. */
+    fun chainWeak(): Map<String, Int> = prefs.getStringSet("chain_weak", emptySet()).orEmpty().mapNotNull { line ->
+        val i = line.lastIndexOf('\t')
+        if (i <= 0) null else line.substring(i + 1).toIntOrNull()?.let { line.substring(0, i) to it }
+    }.toMap()
+
+    fun setChainWeak(map: Map<String, Int>) {
+        prefs.edit().putStringSet("chain_weak", map.map { "${it.key}\t${it.value}" }.toSet()).apply()
+    }
+
     fun sprintBest(): Int = prefs.getInt("sprint_best", 0)
 
     fun setSprintBest(score: Int) {

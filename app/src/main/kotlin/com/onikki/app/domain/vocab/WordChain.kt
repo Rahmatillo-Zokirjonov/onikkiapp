@@ -39,6 +39,39 @@ object WordChain {
     fun pool(more: List<ImportedWord>): List<ImportedWord> =
         (WORDS + more).distinctBy { AnswerCheck.normalize(it.english) }
 
+    fun key(w: ImportedWord): String = AnswerCheck.normalize(w.english)
+
+    /**
+     * The chain with the user's changes: [overrides] put a word at a position (0-based), [removed] words
+     * never appear. Replacing a word = override at its place + the old word removed, so no other
+     * position moves (only the far end, when a word is borrowed from there).
+     */
+    fun arrange(base: List<ImportedWord>, overrides: Map<Int, ImportedWord>, removed: Set<String>): List<ImportedWord> {
+        val skip = removed + overrides.values.map(::key)
+        val rest = base.filter { key(it) !in skip }.iterator()
+        val last = overrides.keys.maxOrNull() ?: -1
+        val out = ArrayList<ImportedWord>()
+        var p = 0
+        while (true) {
+            val w = overrides[p] ?: if (rest.hasNext()) rest.next() else null
+            if (w == null) { if (p > last) break } else out += w
+            p++
+        }
+        return out
+    }
+
+    /** "Boshqa so'z ber": a not yet used word from the far end of the list (null if none is left). */
+    fun autoPick(base: List<ImportedWord>, overrides: Map<Int, ImportedWord>, removed: Set<String>, old: ImportedWord): ImportedWord? {
+        val taken = removed + overrides.values.map(::key) + key(old)
+        return base.lastOrNull { key(it) !in taken }
+    }
+
+    /** Whether [english] can go to [position] without the same word being in the chain twice. */
+    fun canUse(english: String, chain: List<ImportedWord>, position: Int): Boolean {
+        val k = AnswerCheck.normalize(english)
+        return k.isNotEmpty() && chain.withIndex().none { it.index != position && key(it.value) == k }
+    }
+
     /** The first day the list can't fill (null if it covers the whole chain). */
     fun firstShortDay(start: LocalDate, pool: List<ImportedWord>): Int? =
         (1..totalDays(start)).firstOrNull { totalUpTo(it) > pool.size }

@@ -68,21 +68,29 @@ fun WordChainRoute(onBack: () -> Unit) {
     val viewModel: WordChainViewModel = viewModel()
     val state by viewModel.state.collectAsState()
     val check by viewModel.check.collectAsState()
+    val seq by viewModel.seq.collectAsState()
+    val edit by viewModel.edit.collectAsState()
     val speaker = rememberSpeaker()
+    val mic = rememberSpeechInput()
     LaunchedEffect(Unit) { viewModel.refresh() }
     val c = check
-    if (c != null) {
+    val q = seq
+    if (q != null) {
+        BackHandler { mic.cancel(); viewModel.closeSeq() }
+        SeqScreen(q, speaker, mic, viewModel)
+    } else if (c != null) {
         BackHandler(onBack = viewModel::closeCheck)
         ChainCheckScreen(c, speaker, viewModel)
     } else {
         BackHandler(onBack = onBack)
         ChainHome(state, speaker, viewModel, onBack)
+        edit?.let { EditSheet(it, viewModel) }
     }
 }
 
-/** A word to learn: English (tap to hear), meaning, example. */
+/** A word to learn: English (tap to hear), meaning, example; ✎ replaces it. */
 @Composable
-private fun WordRow(i: Int, w: ImportedWord, speaker: Speaker) {
+private fun WordRow(i: Int, w: ImportedWord, speaker: Speaker, onEdit: (() -> Unit)? = null) {
     val colors = LocalOnIkkiColors.current
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.background).clickable(enabled = speaker.ready) { speaker.speak(w.english) }.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -97,6 +105,9 @@ private fun WordRow(i: Int, w: ImportedWord, speaker: Speaker) {
             w.example?.let { Text(text = it, color = colors.text.muted(0.55f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily) }
         }
         Text(text = "🔊", fontSize = 15.sp)
+        if (onEdit != null) {
+            Text(text = "✎", color = colors.text.muted(0.6f), fontSize = 17.sp, modifier = Modifier.padding(start = 6.dp).clip(CircleShape).clickable(onClick = onEdit).padding(horizontal = 8.dp, vertical = 2.dp))
+        }
     }
 }
 
@@ -141,7 +152,7 @@ private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewM
                     )
                     Text(text = "Jami ${day.total} ta so'z · bajarilgan kunlarda ${s.learned} ta", color = colors.text.muted(0.55f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
                     LinearProgressTrack(progress = s.done.size / s.days.size.coerceAtLeast(1).toFloat(), trackColor = colors.neutral800, progressColor = colors.accent, height = 6.dp)
-                    day.words.forEachIndexed { i, w -> WordRow(i, w, speaker) }
+                    day.words.forEachIndexed { i, w -> WordRow(i, w, speaker) { viewModel.startEdit(WordChain.totalUpTo(day.number - 1) + i) } }
                     if (!day.complete) MoreWordsNote(day)
                     OnIkkiButton(
                         text = if (day.state == ChainDayState.DONE) "Yana bir bor yozib ko'rish" else "Yodladim — yozib tekshirish",
@@ -151,6 +162,7 @@ private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewM
                 }
             }
         }
+        item { SeqCard(s, viewModel) }
         // Start date (if the task began on another day).
         item {
             Row(
@@ -185,7 +197,7 @@ private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewM
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 TableRow(d, open = openDay == d.number) { openDay = if (openDay == d.number) null else d.number }
                 if (openDay == d.number) {
-                    d.words.forEachIndexed { i, w -> WordRow(i, w, speaker) }
+                    d.words.forEachIndexed { i, w -> WordRow(i, w, speaker) { viewModel.startEdit(WordChain.totalUpTo(d.number - 1) + i) } }
                     if (!d.complete) MoreWordsNote(d)
                     if (d.state != ChainDayState.FUTURE && d.words.isNotEmpty()) {
                         OnIkkiButton(
