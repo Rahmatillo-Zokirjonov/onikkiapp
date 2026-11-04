@@ -75,7 +75,12 @@ data class ChallengeSpec(
     val needed: Int,
     val type: QuestionType,
     val phrase: String?,
-    val graceMinutes: Int
+    val graceMinutes: Int,
+    /** "So'z zanjiri" words reached so far; [chainCount] order questions on them come after the task. */
+    val chain: List<com.onikki.app.domain.vocab.ImportedWord> = emptyList(),
+    val chainCount: Int = 0,
+    /** The chain questions replace the word / phrase task. */
+    val chainOnly: Boolean = false
 )
 
 /**
@@ -105,10 +110,17 @@ fun ChallengeScreen(
     ) {
         OnIkkiCard(modifier = Modifier.fillMaxWidth(), padding = androidx.compose.foundation.layout.PaddingValues(18.dp), gap = 12.dp) {
             Text(text = "$appName ni ochish uchun".uppercase(), color = colors.accent, style = OnIkkiType.kicker)
-            if (spec.words.isNotEmpty()) {
-                LearnQuiz(spec, onAnswer, onPassed)
-            } else {
-                PhraseTask(spec.phrase.orEmpty(), onPassed)
+            val hasChain = spec.chain.size >= 2 && spec.chainCount > 0
+            // Phase 0: the usual task; phase 1: the chain questions (if on).
+            var phase by remember { mutableIntStateOf(if (hasChain && spec.chainOnly) 1 else 0) }
+            val taskDone = { if (hasChain) phase = 1 else onPassed() }
+            when {
+                phase == 1 -> ChainQuizTask(spec.chain, spec.chainCount, onPassed)
+                spec.words.isNotEmpty() -> LearnQuiz(spec, onAnswer, taskDone)
+                else -> PhraseTask(spec.phrase.orEmpty(), taskDone)
+            }
+            if (hasChain && phase == 0) {
+                Text(text = "🔗 Keyin ${spec.chainCount} ta zanjir savoli", color = colors.text.muted(0.45f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
             }
             Text(
                 text = if (spec.graceMinutes <= 0) "To'g'ri bajarsangiz, ilovadan chiqquningizcha ochiq turadi."

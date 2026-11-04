@@ -28,12 +28,18 @@ data class ChallengeSettings(
     val graceMinutes: Int = 0,
     /** Lets a (non-strict) blocked app be opened by passing the challenge. */
     val unlockBlockedApps: Boolean = true,
-    val phrase: String = DEFAULT_PHRASE
+    val phrase: String = DEFAULT_PHRASE,
+    /** Questions on the order of the "so'z zanjiri" (what comes after / before, which place). */
+    val chainEnabled: Boolean = false,
+    val chainCount: Int = 3,
+    /** Only the chain questions (no word / phrase task). */
+    val chainOnly: Boolean = false
 ) {
     companion object {
         const val DEFAULT_PHRASE = "Men vaqtimni foydali ishlarga sarflayman"
         val WORD_COUNT_OPTIONS = listOf(1, 3, 5, 10)
         val GRACE_OPTIONS = listOf(0, 5, 15, 30, 60)
+        val CHAIN_COUNT_OPTIONS = listOf(3, 4, 5, 10)
     }
 }
 
@@ -49,6 +55,9 @@ class ChallengeSettingsStore(private val context: Context) {
         val grace = intPreferencesKey("grace_minutes")
         val unlockBlocked = booleanPreferencesKey("unlock_blocked")
         val phrase = stringPreferencesKey("phrase")
+        val chainEnabled = booleanPreferencesKey("chain_enabled")
+        val chainCount = intPreferencesKey("chain_count")
+        val chainOnly = booleanPreferencesKey("chain_only")
     }
 
     val settings: Flow<ChallengeSettings> = context.challengeDataStore.data.map { it.toSettings() }
@@ -64,6 +73,9 @@ class ChallengeSettingsStore(private val context: Context) {
             prefs[Keys.grace] = next.graceMinutes
             prefs[Keys.unlockBlocked] = next.unlockBlockedApps
             prefs[Keys.phrase] = next.phrase
+            prefs[Keys.chainEnabled] = next.chainEnabled
+            prefs[Keys.chainCount] = next.chainCount
+            prefs[Keys.chainOnly] = next.chainOnly
         }
     }
 
@@ -77,7 +89,10 @@ class ChallengeSettingsStore(private val context: Context) {
             questionType = this[Keys.questionType]?.let { runCatching { QuestionType.valueOf(it) }.getOrNull() } ?: defaults.questionType,
             graceMinutes = this[Keys.grace] ?: defaults.graceMinutes,
             unlockBlockedApps = this[Keys.unlockBlocked] ?: defaults.unlockBlockedApps,
-            phrase = this[Keys.phrase]?.takeIf { it.isNotBlank() } ?: defaults.phrase
+            phrase = this[Keys.phrase]?.takeIf { it.isNotBlank() } ?: defaults.phrase,
+            chainEnabled = this[Keys.chainEnabled] ?: defaults.chainEnabled,
+            chainCount = this[Keys.chainCount] ?: defaults.chainCount,
+            chainOnly = this[Keys.chainOnly] ?: defaults.chainOnly
         )
     }
 }

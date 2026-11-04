@@ -12,7 +12,6 @@ import com.onikki.app.domain.vocab.ImportedWord
 import com.onikki.app.domain.vocab.SeqDirection
 import com.onikki.app.domain.vocab.Verdict
 import com.onikki.app.domain.vocab.WordChain
-import com.onikki.app.ui.vocabulary.DictionaryStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -113,11 +112,8 @@ class WordChainViewModel(application: Application) : AndroidViewModel(applicatio
         refresh()
         // The dictionary (by frequency) continues the list after the curated words.
         viewModelScope.launch {
-            val dict = runCatching { DictionaryStore.get(application) }.getOrNull()
-            if (dict != null) {
-                base = WordChain.pool(dict.popularMissing(emptySet(), 10_000).map { ImportedWord(it.english, it.uzbek, null, null) })
-                refresh()
-            }
+            base = ChainWords.base(application)
+            refresh()
         }
     }
 
@@ -202,7 +198,7 @@ class WordChainViewModel(application: Application) : AndroidViewModel(applicatio
         val s = _seq.value ?: return
         val target = s.current ?: return
         if (s.input.isBlank()) return
-        answer(s, listOf(SeqAnswer(s.targets[s.step], s.input.trim(), ChainSequence.judge(s.input, target), s.hinted)), heard = null)
+        answer(s, listOf(SeqAnswer(s.targets[s.step], s.input.trim(), ChainSequence.judge(s.input, target, s.words), s.hinted)), heard = null)
     }
 
     /** "Bilmayman": shows the word, counts as a miss. */

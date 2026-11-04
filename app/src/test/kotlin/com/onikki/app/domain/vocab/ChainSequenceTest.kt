@@ -57,6 +57,15 @@ class ChainSequenceTest {
     }
 
     @Test
+    fun anotherChainWordIsNotASlip() {
+        val chain = listOf(w("advice"), w("advise"), w("interested"))
+        assertEquals(Verdict.WRONG, ChainSequence.judge("advise", chain[0], chain))
+        assertEquals(Verdict.ALMOST, ChainSequence.judge("advicee", chain[0], chain))
+        assertEquals(Verdict.ALMOST, ChainSequence.judge("intrested", chain[2], chain))
+        assertEquals(Verdict.CORRECT, ChainSequence.judge("Advice", chain[0], chain))
+    }
+
+    @Test
     fun weakLinksGrowAndHeal() {
         var weak = ChainSequence.updateWeak(emptyMap(), "a>b", missed = true)
         weak = ChainSequence.updateWeak(weak, "a>b", missed = true)

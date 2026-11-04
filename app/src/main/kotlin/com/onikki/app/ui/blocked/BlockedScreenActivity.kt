@@ -118,12 +118,16 @@ class BlockedScreenActivity : ComponentActivity() {
     private suspend fun loadChallenge(app: OnIkkiApplication, store: ChallengeSettingsStore): ChallengeSpec {
         val settings = store.settings.first()
         val words = app.database.vocabWordDao().getAll()
+        // The chain questions need at least two reached words; otherwise the usual task alone.
+        val chain = if (settings.chainEnabled) com.onikki.app.ui.learn.ChainWords.learned(app).takeIf { it.size >= 2 }.orEmpty() else emptyList()
+        val chainOnly = settings.chainOnly && chain.isNotEmpty()
         // No words yet → the typed phrase still works as a challenge.
-        return if (settings.mode == ChallengeMode.WORDS && words.isNotEmpty()) {
+        val spec = if (settings.mode == ChallengeMode.WORDS && words.isNotEmpty()) {
             ChallengeSpec(words = words, needed = settings.wordCount, type = settings.questionType, phrase = null, graceMinutes = settings.graceMinutes)
         } else {
             ChallengeSpec(words = emptyList(), needed = 0, type = settings.questionType, phrase = settings.phrase, graceMinutes = settings.graceMinutes)
         }
+        return spec.copy(chain = chain, chainCount = settings.chainCount, chainOnly = chainOnly)
     }
 
     /** Back to the app the user was opening (its existing task, not a fresh start). */

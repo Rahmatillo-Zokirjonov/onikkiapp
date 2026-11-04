@@ -230,6 +230,34 @@ private fun ChallengeSettingsCard(settings: ChallengeSettings, update: ((Challen
             }
         }
 
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp).clickable { update { it.copy(chainEnabled = !it.chainEnabled) } }) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "🔗 So'z zanjiri savollari", color = colors.text, fontSize = 15.sp, fontFamily = OnIkkiFontFamily)
+                Text(
+                    text = if (settings.chainEnabled) "\"…dan keyin qaysi so'z?\", \"7-o'rinda nima?\", \"…nechanchi o'rinda?\""
+                    else "O'chiq — zanjir tartibi so'ralmaydi",
+                    color = colors.text.muted(0.5f),
+                    fontSize = 11.sp,
+                    fontFamily = OnIkkiFontFamily
+                )
+            }
+            Switch(checked = settings.chainEnabled, onCheckedChange = { on -> update { it.copy(chainEnabled = on) } })
+        }
+        if (settings.chainEnabled) {
+            SheetFieldLabel("Nechta zanjir savoli")
+            ChipRow(ChallengeSettings.CHAIN_COUNT_OPTIONS.map { it to "$it ta" }, settings.chainCount) { n -> update { it.copy(chainCount = n) } }
+            SheetFieldLabel("Qanday")
+            ChipRow(listOf(false to "So'zlar bilan birga", true to "Faqat zanjir"), settings.chainOnly) { only -> update { it.copy(chainOnly = only) } }
+            Text(
+                text = (if (settings.chainOnly) "Faqat zanjir savollari so'raladi."
+                else "Avval odatdagi vazifa, keyin zanjir savollari.") +
+                    " Bugungacha chiqqan so'zlardan so'raladi, adashgan joylaringiz ko'proq keladi. Zanjirda 2 tadan kam so'z bo'lsa, odatdagi vazifa o'zi qoladi.",
+                color = colors.text.muted(0.5f),
+                fontSize = 11.sp,
+                fontFamily = OnIkkiFontFamily
+            )
+        }
+
         SheetFieldLabel("To'g'ri bajargach ilova qancha ochiq tursin")
         ChipRow(ChallengeSettings.GRACE_OPTIONS.map { it to if (it == 0) "Chiqquncha" else "$it daq" }, settings.graceMinutes) { g -> update { it.copy(graceMinutes = g) } }
         Text(

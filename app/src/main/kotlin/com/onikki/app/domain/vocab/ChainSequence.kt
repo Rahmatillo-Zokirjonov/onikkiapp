@@ -62,8 +62,16 @@ object ChainSequence {
         else random.nextInt(0, maxOf(1, size - length))
     }
 
-    /** A typed answer; a small slip counts (it's the order being trained), the spelling is shown. */
-    fun judge(input: String, target: ImportedWord): Verdict = AnswerCheck.judge(input, listOf(target.english))
+    /**
+     * A typed answer; a small slip counts (it's the order being trained), the spelling is shown — but
+     * another chain word written exactly (advise for advice) is the wrong word, not a slip.
+     */
+    fun judge(input: String, target: ImportedWord, chain: List<ImportedWord> = emptyList()): Verdict {
+        val v = AnswerCheck.judge(input, listOf(target.english))
+        if (v != Verdict.ALMOST) return v
+        val given = AnswerCheck.letters(input)
+        return if (chain.any { AnswerCheck.letters(it.english) == given }) Verdict.WRONG else v
+    }
 
     /**
      * Spoken answer: how many of [targets] were said, in order, from the start — several words may come
