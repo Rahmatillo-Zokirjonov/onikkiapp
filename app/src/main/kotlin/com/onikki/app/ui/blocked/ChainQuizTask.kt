@@ -129,7 +129,7 @@ private fun QuestionText(q: ChainQuestion, quiz: ChainQuiz) {
             }
             ChainQuestionKind.AT_POSITION -> {
                 Text(text = "Zanjirda ${q.target + 1}-o'rinda qaysi so'z turibdi?", color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
-                Text(text = "${ChainQuiz.dayOf(q.target)}-kun so'zlaridan", color = colors.text.muted(0.55f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+                Text(text = "Zanjirda hozir ${quiz.size} ta so'z", color = colors.text.muted(0.55f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
             }
             ChainQuestionKind.POSITION_OF -> {
                 Text(text = "\"${given?.english}\" zanjirda nechanchi o'rinda?", color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)

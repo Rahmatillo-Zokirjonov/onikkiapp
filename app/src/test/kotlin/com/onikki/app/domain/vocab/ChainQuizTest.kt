@@ -67,10 +67,4 @@ class ChainQuizTest {
         assertTrue("weak link first in $hits of 100", hits >= 40)
         assertTrue(quiz.next() != null)
     }
-
-    @Test
-    fun positionsBelongToDays() {
-        // Day 1: position 0; day 2: 1..2; day 3: 3..5; day 4: 6..9.
-        assertEquals(listOf(1, 2, 2, 3, 3, 3, 4), (0..6).map(ChainQuiz::dayOf))
-    }
 }

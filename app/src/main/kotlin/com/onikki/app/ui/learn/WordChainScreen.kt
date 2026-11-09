@@ -123,7 +123,7 @@ private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewM
         item { SubScreenHeader(title = "So'z zanjiri", onBack = onBack) }
         item {
             Text(
-                text = "Study Skills topshirig'i: har kuni yangi so'zlar bittaga ko'payadi — 1-kun 1 ta, 2-kun 2 ta, 3-kun 3 ta … ${uzDate(WordChain.END)}gacha. Har kuni o'sha kunning so'zlarini yodlab, tartib bilan yozasiz.",
+                text = "Study Skills topshirig'i: ${uzDate(WordChain.END)}gacha ${s.goal} ta so'z. Zanjir har kuni teng uzayadi — har kuni yangi so'zlarni yodlab yozasiz, butun zanjirni esa tartib bilan (oldinga va orqaga) aytasiz.",
                 color = colors.text.muted(0.6f),
                 fontSize = 13.sp,
                 fontFamily = OnIkkiFontFamily
@@ -144,15 +144,15 @@ private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewM
                     Text(text = if (s.finishedAll) "Zanjir tugadi! 🎉" else "Zanjir ${uzDate(s.start)} boshlanadi", color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily)
                 } else {
                     Text(
-                        text = "Bugun ${day.number} ta yangi so'z" + if (day.state == ChainDayState.DONE) " ✓" else "",
+                        text = "Bugun +${day.expected} ta yangi so'z" + if (day.state == ChainDayState.DONE) " ✓" else "",
                         color = colors.text,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = OnIkkiFontFamily
                     )
-                    Text(text = "Jami ${day.total} ta so'z · bajarilgan kunlarda ${s.learned} ta", color = colors.text.muted(0.55f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
+                    Text(text = "Zanjir bugun ${day.total} / ${s.goal} ta so'z · bajarilgan kunlarda ${s.learned} ta", color = colors.text.muted(0.55f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily)
                     LinearProgressTrack(progress = s.done.size / s.days.size.coerceAtLeast(1).toFloat(), trackColor = colors.neutral800, progressColor = colors.accent, height = 6.dp)
-                    day.words.forEachIndexed { i, w -> WordRow(i, w, speaker) { viewModel.startEdit(WordChain.totalUpTo(day.number - 1) + i) } }
+                    day.words.forEachIndexed { i, w -> WordRow(day.total - day.expected + i, w, speaker) { viewModel.startEdit(day.total - day.expected + i) } }
                     if (!day.complete) MoreWordsNote(day)
                     OnIkkiButton(
                         text = if (day.state == ChainDayState.DONE) "Yana bir bor yozib ko'rish" else "Yodladim — yozib tekshirish",
@@ -172,6 +172,19 @@ private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewM
                 Text(text = "Boshlangan sana: ${uzDate(s.start)}", color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(1f))
                 Text(text = "−", color = colors.accent, fontSize = 22.sp, modifier = Modifier.clip(CircleShape).clickable { viewModel.shiftStart(-1) }.padding(horizontal = 12.dp, vertical = 2.dp))
                 Text(text = "+", color = colors.accent, fontSize = 22.sp, modifier = Modifier.clip(CircleShape).clickable { viewModel.shiftStart(1) }.padding(horizontal = 12.dp, vertical = 2.dp))
+            }
+        }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "Maqsad: ${s.goal} ta so'z", color = colors.text, fontSize = 14.sp, fontFamily = OnIkkiFontFamily)
+                    Text(text = "${uzDate(WordChain.END)}gacha · kuniga ~${"%.1f".format(s.goal / s.days.size.coerceAtLeast(1).toFloat())} ta", color = colors.text.muted(0.5f), fontSize = 11.sp, fontFamily = OnIkkiFontFamily)
+                }
+                Text(text = "−10", color = colors.accent, fontSize = 16.sp, modifier = Modifier.clip(CircleShape).clickable { viewModel.shiftGoal(-10) }.padding(horizontal = 10.dp, vertical = 4.dp))
+                Text(text = "+10", color = colors.accent, fontSize = 16.sp, modifier = Modifier.clip(CircleShape).clickable { viewModel.shiftGoal(10) }.padding(horizontal = 10.dp, vertical = 4.dp))
             }
         }
         s.shortDay?.let { d ->
@@ -197,7 +210,7 @@ private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewM
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 TableRow(d, open = openDay == d.number) { openDay = if (openDay == d.number) null else d.number }
                 if (openDay == d.number) {
-                    d.words.forEachIndexed { i, w -> WordRow(i, w, speaker) { viewModel.startEdit(WordChain.totalUpTo(d.number - 1) + i) } }
+                    d.words.forEachIndexed { i, w -> WordRow(d.total - d.expected + i, w, speaker) { viewModel.startEdit(d.total - d.expected + i) } }
                     if (!d.complete) MoreWordsNote(d)
                     if (d.state != ChainDayState.FUTURE && d.words.isNotEmpty()) {
                         OnIkkiButton(
@@ -217,7 +230,7 @@ private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewM
 private fun MoreWordsNote(d: ChainDay) {
     val colors = LocalOnIkkiColors.current
     Text(
-        text = "Bu kunga ${d.number} ta so'z kerak, ilovada ${d.words.size} tasi qoldi.",
+        text = "Bu kunga ${d.expected} ta so'z kerak, ilovada ${d.words.size} tasi qoldi.",
         color = colors.warmAccent,
         fontSize = 12.sp,
         fontFamily = OnIkkiFontFamily
@@ -236,7 +249,7 @@ private fun TableRow(d: ChainDay, open: Boolean, onClick: () -> Unit) {
     ) {
         Text(text = "${d.number}", color = tint, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(0.6f))
         Text(text = uzDate(d.date), color = colors.text.muted(if (faded) 0.4f else 0.65f), fontSize = 12.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(1.2f))
-        Text(text = "+${d.number}", color = if (faded) tint else colors.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(0.9f))
+        Text(text = "+${d.expected}", color = if (faded) tint else colors.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(0.9f))
         Text(text = "${d.total}", color = colors.text.muted(0.6f), fontSize = 13.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(0.9f))
         Text(
             text = when (d.state) {

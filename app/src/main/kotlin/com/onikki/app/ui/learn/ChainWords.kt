@@ -21,6 +21,7 @@ object ChainWords {
         val start = prefs.chainStart() ?: return emptyList()
         val n = WordChain.dayNumber(start, LocalDate.now())
         if (n <= 0) return emptyList()
-        return WordChain.arrange(base(context), prefs.chainOverrides(), prefs.chainRemoved()).take(WordChain.totalUpTo(n))
+        val reached = WordChain.reached(n, WordChain.totalDays(start), prefs.chainGoal())
+        return WordChain.arrange(base(context), prefs.chainOverrides(), prefs.chainRemoved()).take(reached)
     }
 }

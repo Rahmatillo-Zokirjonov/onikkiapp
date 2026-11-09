@@ -723,6 +723,8 @@ private fun WordChainCard(onClick: () -> Unit) {
     val today = java.time.LocalDate.now()
     val start = prefs.chainStart() ?: today
     val n = com.onikki.app.domain.vocab.WordChain.dayNumber(start, today)
+    val chainDays = com.onikki.app.domain.vocab.WordChain.totalDays(start)
+    val chainGoal = prefs.chainGoal()
     val done = n in prefs.chainDone()
     OnIkkiRowCard(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
@@ -731,13 +733,13 @@ private fun WordChainCard(onClick: () -> Unit) {
         Text(text = if (done) "✅" else "🔗", fontSize = 20.sp)
         Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
             Text(
-                text = if (n > 0) "So'z zanjiri · $n-kun" + if (done) " · bajarildi" else " · bugun $n ta yangi so'z" else "So'z zanjiri · 15-yanvargacha",
+                text = if (n > 0) "So'z zanjiri · $n-kun" + if (done) " · bajarildi" else " · bugun +${com.onikki.app.domain.vocab.WordChain.newCount(n, chainDays, chainGoal)} ta so'z" else "So'z zanjiri · 15-yanvargacha",
                 color = colors.text,
                 fontSize = 14.sp,
                 fontFamily = OnIkkiFontFamily
             )
             Text(
-                text = if (n > 0) "Har kuni so'zlar bittaga ko'payadi · jami ${com.onikki.app.domain.vocab.WordChain.totalUpTo(n)} ta so'z" else "1, 2, 3 … ta yangi so'z, har kuni bittaga ko'p",
+                text = if (n > 0) "Zanjir: ${com.onikki.app.domain.vocab.WordChain.reached(n, chainDays, chainGoal)} / $chainGoal ta so'z · tartib bilan ayting" else "15-yanvargacha $chainGoal ta so'z, har kuni teng",
                 color = if (done) colors.text.muted(0.5f) else colors.accent,
                 fontSize = 11.sp,
                 fontFamily = OnIkkiFontFamily

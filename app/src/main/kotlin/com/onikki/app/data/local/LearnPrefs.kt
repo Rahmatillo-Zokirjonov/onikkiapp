@@ -63,6 +63,13 @@ class LearnPrefs(context: Context) {
     }
 
     /** Best score of the 60-second verb sprint. */
+    /** How many words the chain should have by its end date. */
+    fun chainGoal(): Int = prefs.getInt("chain_goal", com.onikki.app.domain.vocab.WordChain.DEFAULT_GOAL)
+
+    fun setChainGoal(goal: Int) {
+        prefs.edit().putInt("chain_goal", goal).apply()
+    }
+
     /** Chain words the user put in place (position → word), stored as "pos\tenglish\tuzbek\texample". */
     fun chainOverrides(): Map<Int, com.onikki.app.domain.vocab.ImportedWord> =
         prefs.getStringSet("chain_overrides", emptySet()).orEmpty().mapNotNull { line ->

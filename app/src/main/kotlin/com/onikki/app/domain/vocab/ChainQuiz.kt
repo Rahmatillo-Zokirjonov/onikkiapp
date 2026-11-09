@@ -74,12 +74,5 @@ class ChainQuiz(
             ?.let { ChainSequence.linkKey(words[it], words[q.target]) }
     }
 
-    companion object {
-        /** The day (1-based) a chain position (0-based) belongs to. */
-        fun dayOf(position: Int): Int {
-            var d = 1
-            while (WordChain.totalUpTo(d) <= position) d++
-            return d
-        }
-    }
+    val size: Int get() = words.size
 }

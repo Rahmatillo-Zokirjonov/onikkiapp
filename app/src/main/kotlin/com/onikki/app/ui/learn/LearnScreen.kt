@@ -202,11 +202,13 @@ private fun LearnHome(
             val start = prefs.chainStart() ?: java.time.LocalDate.now()
             val today = java.time.LocalDate.now()
             val n = com.onikki.app.domain.vocab.WordChain.dayNumber(start, today)
+            val chainDays = com.onikki.app.domain.vocab.WordChain.totalDays(start)
+            val chainGoal = prefs.chainGoal()
             val doneToday = n in prefs.chainDone()
             BigAction(
                 kicker = "🔗 STUDY SKILLS · SO'Z ZANJIRI",
-                title = if (n > 0) "$n-kun: bugun $n ta yangi so'z" + if (doneToday) " ✓" else "" else "So'z zanjirini boshlash",
-                subtitle = if (n > 0) "Har kuni so'zlar bittaga ko'payadi · jami ${com.onikki.app.domain.vocab.WordChain.totalUpTo(n)} ta" else "1, 2, 3 … ta yangi so'z, 15-yanvargacha",
+                title = if (n > 0) "$n-kun: bugun +${com.onikki.app.domain.vocab.WordChain.newCount(n, chainDays, chainGoal)} ta so'z" + if (doneToday) " ✓" else "" else "So'z zanjirini boshlash",
+                subtitle = if (n > 0) "Zanjir: ${com.onikki.app.domain.vocab.WordChain.reached(n, chainDays, chainGoal)} / $chainGoal ta so'z · tartib bilan ayting" else "15-yanvargacha $chainGoal ta so'z, har kuni teng",
                 enabled = true,
                 primary = false,
                 onClick = onChain

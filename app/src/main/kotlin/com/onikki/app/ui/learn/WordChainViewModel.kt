@@ -29,11 +29,13 @@ data class ChainState(
     /** Every word reached so far (days 1..today), in chain order — what the sequence practice uses. */
     val learnedWords: List<ImportedWord> = emptyList(),
     val weakLinks: Int = 0,
+    val goal: Int = WordChain.DEFAULT_GOAL,
     val loaded: Boolean = false
 ) {
     val todayDay: ChainDay? get() = days.getOrNull(today - 1)
     val finishedAll: Boolean get() = days.isNotEmpty() && days.all { it.number in done }
-    val learned: Int get() = done.sumOf { it }
+    /** Words of the finished days. */
+    val learned: Int get() = days.filter { it.number in done }.sumOf { it.expected }
 }
 
 /** Writing a day's words from memory, in order (the Uzbek meaning is the prompt). */
@@ -123,11 +125,12 @@ class WordChainViewModel(application: Application) : AndroidViewModel(applicatio
         val today = LocalDate.now()
         val done = prefs.chainDone()
         val n = WordChain.dayNumber(start, today)
-        val learned = chain.take(WordChain.totalUpTo(n))
+        val goal = prefs.chainGoal()
+        val learned = chain.take(WordChain.reached(n, WordChain.totalDays(start), goal))
         _state.value = ChainState(
-            start, n, WordChain.days(start, today, done, chain), done, WordChain.streak(done, n),
-            shortDay = WordChain.firstShortDay(start, chain), learnedWords = learned,
-            weakLinks = prefs.chainWeak().size, loaded = true
+            start, n, WordChain.days(start, today, done, chain, goal), done, WordChain.streak(done, n),
+            shortDay = WordChain.firstShortDay(start, chain, goal), learnedWords = learned,
+            weakLinks = prefs.chainWeak().size, goal = goal, loaded = true
         )
         _seqConfig.update { c -> c.copy(start = c.start?.takeIf { it < learned.size }) }
         // Words reached so far also go into the "Study Skills" deck, so lessons and reviews keep them fresh.
@@ -145,11 +148,17 @@ class WordChainViewModel(application: Application) : AndroidViewModel(applicatio
         refresh()
     }
 
+    /** Changes the goal (words by the end date) by [delta]; the days' shares follow. */
+    fun shiftGoal(delta: Int) {
+        prefs.setChainGoal((prefs.chainGoal() + delta).coerceIn(10, 2000))
+        refresh()
+    }
+
     // ------------------------------------------------------------ day check
 
     /** Write day [day]'s words from memory (today by default; a missed day can be caught up). */
     fun startCheck(day: Int = _state.value.today) {
-        val words = WordChain.wordsFor(day, chain)
+        val words = _state.value.days.getOrNull(day - 1)?.words.orEmpty()
         if (day <= 0 || words.isEmpty()) return
         _check.value = ChainCheck(day, words)
     }

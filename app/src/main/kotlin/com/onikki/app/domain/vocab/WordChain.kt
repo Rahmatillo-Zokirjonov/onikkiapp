@@ -5,22 +5,32 @@ import java.time.temporal.ChronoUnit
 
 enum class ChainDayState { DONE, TODAY, MISSED, FUTURE }
 
-/** One day of the chain: day n brings n new words (1, 2, 3 …); [words] may be short if the list runs out. */
-data class ChainDay(val number: Int, val date: LocalDate, val words: List<ImportedWord>, val state: ChainDayState) {
-    /** Words learned up to and including this day. */
-    val total: Int get() = WordChain.totalUpTo(number)
-    val complete: Boolean get() = words.size == number
+/**
+ * One day of the chain: [expected] new words join it (the goal spread evenly over the days), [total] the
+ * chain's length by the end of the day; [words] may be short if the list runs out.
+ */
+data class ChainDay(
+    val number: Int,
+    val date: LocalDate,
+    val words: List<ImportedWord>,
+    val state: ChainDayState,
+    val total: Int,
+    val expected: Int
+) {
+    val complete: Boolean get() = words.size == expected
 }
 
 /**
- * Study Skills "so'z zanjiri": the number of new words grows by one every day — day 1 one new word,
- * day 2 two, day 3 three … until the end date (15 January). Each day's words are learned and written
- * from memory in order. Words come from a fixed list (curated words, then the dictionary by frequency),
- * so a day's words never change. Pure; the start date and finished days are stored by the caller.
+ * Study Skills "so'z zanjiri": the chain grows every day by an even share of the goal (150 words by
+ * 15 January — 2 a day over 75 days), so it reaches the goal on the last day. Each day's new words are
+ * learned and written from memory, and the whole chain is said in order (ChainSequence). Words come
+ * from a fixed list (curated words, then the dictionary by frequency), so a day's words never change.
+ * Pure; the start date, goal and finished days are stored by the caller.
  */
 object WordChain {
     val END: LocalDate = LocalDate.of(2027, 1, 15)
     const val DECK = "Study Skills"
+    const val DEFAULT_GOAL = 150
 
     /** Day number of [today] counted from [start] (1-based); 0 before the start. */
     fun dayNumber(start: LocalDate, today: LocalDate): Int =
@@ -28,12 +38,16 @@ object WordChain {
 
     fun totalDays(start: LocalDate): Int = (ChronoUnit.DAYS.between(start, END).toInt() + 1).coerceAtLeast(1)
 
-    /** Words learned by the end of [day]: 1 + 2 + … + day. */
-    fun totalUpTo(day: Int): Int = day * (day + 1) / 2
+    /** The chain's length by the end of [day] of [days]: the [goal] spread evenly, all of it on the last day. */
+    fun reached(day: Int, days: Int, goal: Int): Int =
+        if (day <= 0 || days <= 0) 0 else minOf(goal, ((goal.toLong() * minOf(day, days) + days - 1) / days).toInt())
 
-    /** Day [day]'s new words: the next [day] words of [pool] after the earlier days'. */
-    fun wordsFor(day: Int, pool: List<ImportedWord>): List<ImportedWord> =
-        if (day <= 0) emptyList() else pool.drop(totalUpTo(day - 1)).take(day)
+    /** How many new words day [day] brings. */
+    fun newCount(day: Int, days: Int, goal: Int): Int = reached(day, days, goal) - reached(day - 1, days, goal)
+
+    /** Day [day]'s new words: the next ones of [pool] after the earlier days'. */
+    fun wordsFor(day: Int, pool: List<ImportedWord>, days: Int, goal: Int): List<ImportedWord> =
+        if (day <= 0) emptyList() else pool.drop(reached(day - 1, days, goal)).take(newCount(day, days, goal))
 
     /** The chain's word list: the curated words, then [more] (the dictionary by frequency), no repeats. */
     fun pool(more: List<ImportedWord>): List<ImportedWord> =
@@ -73,19 +87,22 @@ object WordChain {
     }
 
     /** The first day the list can't fill (null if it covers the whole chain). */
-    fun firstShortDay(start: LocalDate, pool: List<ImportedWord>): Int? =
-        (1..totalDays(start)).firstOrNull { totalUpTo(it) > pool.size }
+    fun firstShortDay(start: LocalDate, pool: List<ImportedWord>, goal: Int): Int? {
+        val days = totalDays(start)
+        return (1..days).firstOrNull { reached(it, days, goal) > pool.size }
+    }
 
-    fun days(start: LocalDate, today: LocalDate, done: Set<Int>, pool: List<ImportedWord>): List<ChainDay> {
+    fun days(start: LocalDate, today: LocalDate, done: Set<Int>, pool: List<ImportedWord>, goal: Int): List<ChainDay> {
         val current = dayNumber(start, today)
-        return (1..totalDays(start)).map { n ->
+        val days = totalDays(start)
+        return (1..days).map { n ->
             val state = when {
                 n in done -> ChainDayState.DONE
                 n == current -> ChainDayState.TODAY
                 n < current -> ChainDayState.MISSED
                 else -> ChainDayState.FUTURE
             }
-            ChainDay(n, start.plusDays((n - 1).toLong()), wordsFor(n, pool), state)
+            ChainDay(n, start.plusDays((n - 1).toLong()), wordsFor(n, pool, days, goal), state, reached(n, days, goal), newCount(n, days, goal))
         }
     }
 
