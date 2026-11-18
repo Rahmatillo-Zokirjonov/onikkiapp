@@ -45,6 +45,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.onikki.app.domain.vocab.ChainDay
 import com.onikki.app.domain.vocab.ChainDayState
 import com.onikki.app.domain.vocab.Exercises
+import com.onikki.app.domain.vocab.PathStep
 import com.onikki.app.domain.vocab.ImportedWord
 import com.onikki.app.domain.vocab.Verdict
 import com.onikki.app.domain.vocab.WordChain
@@ -72,15 +73,28 @@ fun WordChainRoute(onBack: () -> Unit) {
     val edit by viewModel.edit.collectAsState()
     val flashVm: FlashcardViewModel = viewModel()
     val flash by flashVm.session.collectAsState()
+    val pathVm: ChainPathViewModel = viewModel()
+    val path by pathVm.state.collectAsState()
     val speaker = rememberSpeaker()
     val mic = rememberSpeechInput()
     LaunchedEffect(Unit) { viewModel.refresh() }
     val c = check
     val q = seq
     val f = flash
+    val p = path
     if (f != null) {
         BackHandler(onBack = flashVm::close)
-        FlashcardScreen(f, speaker, flashVm)
+        // Inside the learning path the finished cards lead to the next step.
+        FlashcardScreen(f, speaker, flashVm, onFinished = if (p?.step == PathStep.CARDS) ({ flashVm.close(); pathVm.next() }) else null)
+    } else if (p != null && p.step == PathStep.WRITE) {
+        // The last step is the day's own check.
+        LaunchedEffect(p) { viewModel.startCheck(p.day); pathVm.close() }
+    } else if (p != null && p.step == PathStep.CARDS) {
+        BackHandler(onBack = pathVm::close)
+        PathIntro(p, onStart = { flashVm.startWords(p.words) }, onClose = pathVm::close)
+    } else if (p != null) {
+        BackHandler(onBack = pathVm::close)
+        ChainPathScreen(p, speaker, pathVm)
     } else if (q != null) {
         BackHandler { mic.cancel(); viewModel.closeSeq() }
         SeqScreen(q, speaker, mic, viewModel)
@@ -89,7 +103,7 @@ fun WordChainRoute(onBack: () -> Unit) {
         ChainCheckScreen(c, speaker, viewModel)
     } else {
         BackHandler(onBack = onBack)
-        ChainHome(state, speaker, viewModel, flashVm, onBack)
+        ChainHome(state, speaker, viewModel, flashVm, onBack) { day -> pathVm.start(day.number, day.words, state.wordsBefore(day.number)) }
         edit?.let { EditSheet(it, viewModel) }
     }
 }
@@ -118,7 +132,7 @@ private fun WordRow(i: Int, w: ImportedWord, speaker: Speaker, onEdit: (() -> Un
 }
 
 @Composable
-private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewModel, flashVm: FlashcardViewModel, onBack: () -> Unit) {
+private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewModel, flashVm: FlashcardViewModel, onBack: () -> Unit, onLearn: (ChainDay) -> Unit) {
     val colors = LocalOnIkkiColors.current
     var openDay by rememberSaveable { mutableStateOf<Int?>(null) }
     LazyColumn(
@@ -161,9 +175,15 @@ private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewM
                     day.words.forEachIndexed { i, w -> WordRow(day.total - day.expected + i, w, speaker) { viewModel.startEdit(day.total - day.expected + i) } }
                     if (!day.complete) MoreWordsNote(day)
                     OnIkkiButton(
+                        text = "📚 O'rganish yo'li (5 qadam)",
+                        onClick = { onLearn(day) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                    )
+                    OnIkkiButton(
                         text = if (day.state == ChainDayState.DONE) "Yana bir bor yozib ko'rish" else "Yodladim — yozib tekshirish",
                         onClick = { viewModel.startCheck(day.number) },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                        variant = OnIkkiButtonVariant.SECONDARY,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     )
                 }
             }
@@ -220,6 +240,12 @@ private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewM
                     d.words.forEachIndexed { i, w -> WordRow(d.total - d.expected + i, w, speaker) { viewModel.startEdit(d.total - d.expected + i) } }
                     if (!d.complete) MoreWordsNote(d)
                     if (d.state != ChainDayState.FUTURE && d.words.isNotEmpty()) {
+                        OnIkkiButton(
+                            text = "📚 ${d.number}-kunni o'rganish",
+                            onClick = { onLearn(d) },
+                            variant = OnIkkiButtonVariant.SECONDARY,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                         OnIkkiButton(
                             text = if (d.state == ChainDayState.DONE) "${d.number}-kunni qayta yozish" else "${d.number}-kunni yozib tekshirish",
                             onClick = { viewModel.startCheck(d.number) },

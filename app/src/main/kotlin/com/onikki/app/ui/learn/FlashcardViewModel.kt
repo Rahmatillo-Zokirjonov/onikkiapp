@@ -30,7 +30,7 @@ import java.time.LocalDate
 enum class FlashSource(val label: String) { DUE("Takrorlash vaqti kelgan"), WEAK("Qiyin so'zlar"), ALL("Barcha so'zlar") }
 
 /** The chain's flashcard sets. */
-enum class ChainFlash { TODAY, CHAIN_ORDER, CHAIN_MIXED, WEAK }
+enum class ChainFlash { TODAY, REVIEW, CHAIN_ORDER, CHAIN_MIXED, WEAK }
 
 data class FlashSetup(
     val decks: List<VocabDeck> = emptyList(),
@@ -61,32 +61,42 @@ class FlashcardViewModel(application: Application) : AndroidViewModel(applicatio
     private var lastCards: List<FlashCard> = emptyList()
     /** Words already put into the review schedule in this run (once per word, like lessons). */
     private val scheduled = HashSet<String>()
+    /** The chain set being run (to mark the day's review done when it ends). */
+    private var running: ChainFlash? = null
+
+    private val _reviewedToday = MutableStateFlow(prefs.chainReviewedOn() == LocalDate.now())
+    val reviewedToday: StateFlow<Boolean> = _reviewedToday
 
     fun setDirection(d: FlashDirection) { _direction.value = d }
 
     // ------------------------------------------------------------ the chain
 
-    fun chainCount(kind: ChainFlash, today: List<ImportedWord>, learned: List<ImportedWord>): Int = when (kind) {
+    fun chainCount(kind: ChainFlash, today: List<ImportedWord>, learned: List<ImportedWord>, review: List<ImportedWord>): Int = when (kind) {
         ChainFlash.TODAY -> today.size
+        ChainFlash.REVIEW -> review.size
         ChainFlash.CHAIN_ORDER -> learned.size
         ChainFlash.CHAIN_MIXED -> minOf(learned.size, Flashcards.SESSION)
         ChainFlash.WEAK -> Flashcards.weak(learned.map(::card), _boxes.value, chainWeakWords()).size
     }
 
-    fun startChain(kind: ChainFlash, today: List<ImportedWord>, learned: List<ImportedWord>) {
+    fun startChain(kind: ChainFlash, today: List<ImportedWord>, learned: List<ImportedWord>, review: List<ImportedWord>) {
         val all = learned.map(::card)
         val cards = when (kind) {
             ChainFlash.TODAY -> today.map(::card)
+            ChainFlash.REVIEW -> review.map(::card)
             ChainFlash.CHAIN_ORDER -> all
             ChainFlash.CHAIN_MIXED -> Flashcards.weakestFirst(all, _boxes.value).take(Flashcards.SESSION)
             ChainFlash.WEAK -> Flashcards.weakestFirst(Flashcards.weak(all, _boxes.value, chainWeakWords()), _boxes.value).take(Flashcards.SESSION)
         }
         if (cards.isEmpty()) return
-        // Chain words are in the "Study Skills" deck too, so their reviews count there as well.
-        viewModelScope.launch {
-            val ids = db.vocabWordDao().getAll().associate { AnswerCheck.normalize(it.english) to it.id }
-            begin(cards.map { it.copy(wordId = ids[it.key]) }, shuffle = kind == ChainFlash.TODAY)
-        }
+        begin(cards, shuffle = kind == ChainFlash.TODAY || kind == ChainFlash.REVIEW)
+        running = kind
+    }
+
+    /** Any chain words as cards (the learning path's first step). */
+    fun startWords(words: List<ImportedWord>) {
+        if (words.isEmpty()) return
+        begin(words.map(::card), shuffle = true)
     }
 
     /** Words the sequence practice found weak (the word after a weak link). */
@@ -138,7 +148,15 @@ class FlashcardViewModel(application: Application) : AndroidViewModel(applicatio
     private fun begin(cards: List<FlashCard>, shuffle: Boolean) {
         lastCards = cards
         scheduled.clear()
+        running = null
         _session.value = Flashcards.start(if (shuffle) cards.shuffled() else cards, _direction.value)
+        // Chain words are in the "Study Skills" deck too: link them, so their answers count there as well.
+        if (cards.any { it.wordId == null }) viewModelScope.launch {
+            val ids = db.vocabWordDao().getAll().associate { AnswerCheck.normalize(it.english) to it.id }
+            val link = { c: FlashCard -> if (c.wordId != null) c else c.copy(wordId = ids[c.key]) }
+            lastCards = lastCards.map(link)
+            _session.update { s -> s?.copy(queue = s.queue.map(link), struggled = s.struggled.map(link)) }
+        }
     }
 
     fun flip() = _session.update { s -> s?.let(Flashcards::flip) }
@@ -146,7 +164,12 @@ class FlashcardViewModel(application: Application) : AndroidViewModel(applicatio
     fun grade(g: FlashGrade) {
         val s = _session.value ?: return
         val c = s.current ?: return
-        _session.value = Flashcards.grade(s, g)
+        val next = Flashcards.grade(s, g)
+        _session.value = next
+        if (next.finished && running == ChainFlash.REVIEW) {
+            prefs.setChainReviewedOn(LocalDate.now())
+            _reviewedToday.value = true
+        }
         val boxes = _boxes.value.let { it + (c.key to Flashcards.nextBox(it[c.key] ?: 0, g)) }
         _boxes.value = boxes
         prefs.setFlashBoxes(boxes)

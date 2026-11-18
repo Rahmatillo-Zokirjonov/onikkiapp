@@ -164,6 +164,8 @@ internal fun ChainFlashCard(s: ChainState, viewModel: FlashcardViewModel) {
     val colors = LocalOnIkkiColors.current
     val today = s.todayDay?.words.orEmpty()
     val learned = s.learnedWords
+    val review = s.reviewWords
+    val reviewed by viewModel.reviewedToday.collectAsState()
     // Re-read when the boxes change, so the weak count follows the answers.
     val boxes by viewModel.boxes.collectAsState()
     Column(
@@ -175,14 +177,15 @@ internal fun ChainFlashCard(s: ChainState, viewModel: FlashcardViewModel) {
         DirectionChips(viewModel)
         listOf(
             ChainFlash.TODAY to "Bugungi yangi so'zlar",
+            ChainFlash.REVIEW to (if (reviewed) "✓ Takrorlash bajarildi (1, 3, 7 kun oldingi)" else "🔁 Takrorlash: 1, 3 va 7 kun oldingi so'zlar"),
             ChainFlash.CHAIN_ORDER to "Butun zanjir — tartib bilan",
             ChainFlash.CHAIN_MIXED to "Butun zanjir — aralash",
             ChainFlash.WEAK to "Qiyin so'zlar"
         ).forEach { (kind, title) ->
-            val n = remember(kind, boxes, today, learned) { viewModel.chainCount(kind, today, learned) }
+            val n = remember(kind, boxes, today, learned, review) { viewModel.chainCount(kind, today, learned, review) }
             Row(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.background)
-                    .clickable(enabled = n > 0) { viewModel.startChain(kind, today, learned) }.padding(horizontal = 14.dp, vertical = 10.dp),
+                    .clickable(enabled = n > 0) { viewModel.startChain(kind, today, learned, review) }.padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(text = title, color = if (n > 0) colors.text else colors.text.muted(0.4f), fontSize = 14.sp, fontFamily = OnIkkiFontFamily, modifier = Modifier.weight(1f))
@@ -194,9 +197,13 @@ internal fun ChainFlashCard(s: ChainState, viewModel: FlashcardViewModel) {
 
 /** The run: one flip card at a time, graded by the user. */
 @Composable
-internal fun FlashcardScreen(s: FlashSession, speaker: Speaker, viewModel: FlashcardViewModel) {
+internal fun FlashcardScreen(s: FlashSession, speaker: Speaker, viewModel: FlashcardViewModel, onFinished: (() -> Unit)? = null) {
     val colors = LocalOnIkkiColors.current
     val boxes by viewModel.boxes.collectAsState()
+    if (s.finished && onFinished != null) {
+        LaunchedEffect(Unit) { onFinished() }
+        return
+    }
     if (s.finished) { FlashResult(s, speaker, viewModel); return }
     val card = s.current ?: return
     val uzFirst = s.currentUzFirst

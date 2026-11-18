@@ -73,6 +73,13 @@ class LearnPrefs(context: Context) {
         prefs.edit().putStringSet("flash_boxes", map.map { "${it.key}\t${it.value}" }.toSet()).apply()
     }
 
+    /** The day the chain's spaced review (1, 3, 7 days ago) was last finished. */
+    fun chainReviewedOn(): java.time.LocalDate? = prefs.getLong("chain_reviewed_on", Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let(java.time.LocalDate::ofEpochDay)
+
+    fun setChainReviewedOn(date: java.time.LocalDate) {
+        prefs.edit().putLong("chain_reviewed_on", date.toEpochDay()).apply()
+    }
+
     /** How many words the chain should have by its end date. */
     fun chainGoal(): Int = prefs.getInt("chain_goal", com.onikki.app.domain.vocab.WordChain.DEFAULT_GOAL)
 

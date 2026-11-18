@@ -33,6 +33,10 @@ data class ChainState(
     val loaded: Boolean = false
 ) {
     val todayDay: ChainDay? get() = days.getOrNull(today - 1)
+    /** Words of the days due for spaced review today (1, 3 and 7 days ago). */
+    val reviewWords: List<ImportedWord> get() = com.onikki.app.domain.vocab.ChainPath.reviewDays(today).flatMap { days.getOrNull(it - 1)?.words.orEmpty() }
+    /** The chain words before day [day]'s (for the learning path's options and matching). */
+    fun wordsBefore(day: Int): List<ImportedWord> = days.take((day - 1).coerceAtLeast(0)).flatMap { it.words }
     val finishedAll: Boolean get() = days.isNotEmpty() && days.all { it.number in done }
     /** Words of the finished days. */
     val learned: Int get() = days.filter { it.number in done }.sumOf { it.expected }
