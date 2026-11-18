@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -207,6 +208,7 @@ internal fun FlashcardScreen(s: FlashSession, speaker: Speaker, viewModel: Flash
     if (s.finished) { FlashResult(s, speaker, viewModel); return }
     val card = s.current ?: return
     val uzFirst = s.currentUzFirst
+    var editing by androidx.compose.runtime.saveable.rememberSaveable(card.key) { androidx.compose.runtime.mutableStateOf(false) }
     // The English side is read out when it shows.
     LaunchedEffect(card.key, s.flipped, s.done) {
         if (speaker.ready && (uzFirst == s.flipped)) speaker.speak(card.english)
@@ -224,6 +226,16 @@ internal fun FlashcardScreen(s: FlashSession, speaker: Speaker, viewModel: Flash
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             FlipCard(card, uzFirst, s.flipped, boxes[card.key] ?: 0, speaker, viewModel::flip)
+            if (s.flipped && card.wordId != null) {
+                Text(
+                    text = if (card.mnemonic == null) "✎ Eslab qolish uchun o'z eslatmangizni yozing" else "✎ Eslatmani o'zgartirish",
+                    color = colors.habitAccent,
+                    fontSize = 13.sp,
+                    fontFamily = OnIkkiFontFamily,
+                    modifier = Modifier.padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).clickable { editing = true }.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+            if (editing) MnemonicDialog(card, onSave = { viewModel.saveMnemonic(it); editing = false }, onDismiss = { editing = false })
             Text(
                 text = if (s.flipped) "O'zingizni tekshiring: bildingizmi?" else "Eslab ko'ring, keyin kartani bosing",
                 color = colors.text.muted(0.5f),
@@ -244,6 +256,26 @@ internal fun FlashcardScreen(s: FlashSession, speaker: Speaker, viewModel: Flash
             }
         }
     }
+}
+
+@Composable
+private fun MnemonicDialog(card: FlashCard, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by androidx.compose.runtime.saveable.rememberSaveable(card.key) { androidx.compose.runtime.mutableStateOf(card.mnemonic.orEmpty()) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${card.english} — eslatma") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "So'zni nima bilan bog'lasangiz eslab qolasiz? Tovush, rasm yoki hazil — masalan: achieve → \"a, chiv-chiv erishdi!\"",
+                    fontSize = 13.sp
+                )
+                androidx.compose.material3.OutlinedTextField(value = text, onValueChange = { text = it.take(160) }, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { onSave(text) }) { Text("Saqlash") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Bekor") } }
+    )
 }
 
 @Composable
@@ -296,6 +328,9 @@ private fun FlipCard(card: FlashCard, uzFirst: Boolean, flipped: Boolean, box: I
                 Text(text = card.uzbek, color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center)
                 card.example?.let {
                     Text(text = it, color = colors.text.muted(0.6f), fontSize = 14.sp, fontStyle = FontStyle.Italic, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center)
+                }
+                card.mnemonic?.let {
+                    Text(text = "💡 $it", color = colors.habitAccent, fontSize = 15.sp, fontFamily = OnIkkiFontFamily, textAlign = TextAlign.Center)
                 }
             }
         }

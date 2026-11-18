@@ -6,8 +6,11 @@ enum class FlashDirection(val label: String) { EN_UZ("EN → UZ"), UZ_EN("UZ →
 
 enum class FlashGrade { AGAIN, HARD, GOOD }
 
-/** One card: [wordId] links it to a learning word (its answers then go into the review schedule). */
-data class FlashCard(val english: String, val uzbek: String, val example: String?, val wordId: Long? = null) {
+/**
+ * One card: [wordId] links it to a learning word (its answers then go into the review schedule);
+ * [mnemonic] is the user's own memory hook, shown on the back.
+ */
+data class FlashCard(val english: String, val uzbek: String, val example: String?, val wordId: Long? = null, val mnemonic: String? = null) {
     val key: String get() = AnswerCheck.normalize(english)
 }
 

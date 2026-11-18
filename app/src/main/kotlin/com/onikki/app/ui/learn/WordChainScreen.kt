@@ -74,6 +74,7 @@ fun WordChainRoute(onBack: () -> Unit) {
     val flashVm: FlashcardViewModel = viewModel()
     val flash by flashVm.session.collectAsState()
     val pathVm: ChainPathViewModel = viewModel()
+    val storyVm: ChainStoryViewModel = viewModel()
     val path by pathVm.state.collectAsState()
     val speaker = rememberSpeaker()
     val mic = rememberSpeechInput()
@@ -103,7 +104,7 @@ fun WordChainRoute(onBack: () -> Unit) {
         ChainCheckScreen(c, speaker, viewModel)
     } else {
         BackHandler(onBack = onBack)
-        ChainHome(state, speaker, viewModel, flashVm, onBack) { day -> pathVm.start(day.number, day.words, state.wordsBefore(day.number)) }
+        ChainHome(state, speaker, viewModel, flashVm, storyVm, onBack) { day -> pathVm.start(day.number, day.words, state.wordsBefore(day.number)) }
         edit?.let { EditSheet(it, viewModel) }
     }
 }
@@ -132,7 +133,7 @@ private fun WordRow(i: Int, w: ImportedWord, speaker: Speaker, onEdit: (() -> Un
 }
 
 @Composable
-private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewModel, flashVm: FlashcardViewModel, onBack: () -> Unit, onLearn: (ChainDay) -> Unit) {
+private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewModel, flashVm: FlashcardViewModel, storyVm: ChainStoryViewModel, onBack: () -> Unit, onLearn: (ChainDay) -> Unit) {
     val colors = LocalOnIkkiColors.current
     var openDay by rememberSaveable { mutableStateOf<Int?>(null) }
     LazyColumn(
@@ -190,6 +191,8 @@ private fun ChainHome(s: ChainState, speaker: Speaker, viewModel: WordChainViewM
         }
         item { ChainFlashCard(s, flashVm) }
         item { SeqCard(s, viewModel) }
+        item { ChainStoryCard(s, storyVm, speaker) }
+        item { ChainNotifyRow(storyVm) }
         // Start date (if the task began on another day).
         item {
             Row(

@@ -139,7 +139,7 @@ class FlashcardViewModel(application: Application) : AndroidViewModel(applicatio
                 it.status != WordStatus.NEW && (it.wrongCount > it.correctCount || it.lapses > 0 || (boxes[AnswerCheck.normalize(it.english)] ?: 0) in 1..2)
             }
             FlashSource.ALL -> words
-        }.map { FlashCard(it.english, it.uzbek.trim(), it.example, it.id) }
+        }.map { FlashCard(it.english, it.uzbek.trim(), it.example, it.id, it.mnemonic) }
         return (if (source == FlashSource.DUE) cards else Flashcards.weakestFirst(cards, boxes)).take(Flashcards.SESSION)
     }
 
@@ -152,8 +152,8 @@ class FlashcardViewModel(application: Application) : AndroidViewModel(applicatio
         _session.value = Flashcards.start(if (shuffle) cards.shuffled() else cards, _direction.value)
         // Chain words are in the "Study Skills" deck too: link them, so their answers count there as well.
         if (cards.any { it.wordId == null }) viewModelScope.launch {
-            val ids = db.vocabWordDao().getAll().associate { AnswerCheck.normalize(it.english) to it.id }
-            val link = { c: FlashCard -> if (c.wordId != null) c else c.copy(wordId = ids[c.key]) }
+            val byKey = db.vocabWordDao().getAll().associateBy { AnswerCheck.normalize(it.english) }
+            val link = { c: FlashCard -> if (c.wordId != null) c else byKey[c.key]?.let { c.copy(wordId = it.id, mnemonic = it.mnemonic) } ?: c }
             lastCards = lastCards.map(link)
             _session.update { s -> s?.copy(queue = s.queue.map(link), struggled = s.struggled.map(link)) }
         }
@@ -183,6 +183,19 @@ class FlashcardViewModel(application: Application) : AndroidViewModel(applicatio
                 exercise = ExerciseType.CARD.name,
                 hardExercise = false
             )
+        }
+    }
+
+    /** Saves the user's memory hook for the card on screen (into the word, so lessons show it too). */
+    fun saveMnemonic(text: String) {
+        val c = _session.value?.current ?: return
+        val hook = text.trim().take(160).ifBlank { null }
+        val update = { x: FlashCard -> if (x.key == c.key) x.copy(mnemonic = hook) else x }
+        _session.update { s -> s?.copy(queue = s.queue.map(update), struggled = s.struggled.map(update)) }
+        lastCards = lastCards.map(update)
+        val id = c.wordId ?: return
+        viewModelScope.launch {
+            db.vocabWordDao().findById(id)?.let { db.vocabWordDao().update(it.copy(mnemonic = hook)) }
         }
     }
 

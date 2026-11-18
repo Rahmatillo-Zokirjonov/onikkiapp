@@ -28,6 +28,7 @@ enum class ReminderChannel(
     HABITS("habits", "Odatlar", "Kechqurun belgilanmagan odatlar"),
     DAY_REVIEW("day_review", "Kun yakuni", "Kunni yakunlash eslatmasi"),
     FINANCE("finance", "Moliya", "Qarz qaytarish muddati"),
+    LEARNING("learning", "So'z zanjiri", "Kun davomida zanjirdan bitta so'z", NotificationManager.IMPORTANCE_DEFAULT),
     // One channel per note priority: the level is exactly the channel's importance, and the user can
     // still tune each level separately in Android's own notification settings.
     NOTES("notes", "Qaydlar — oddiy", "Ovoz bilan, lekin ekranga chiqmaydi", NotificationManager.IMPORTANCE_DEFAULT),

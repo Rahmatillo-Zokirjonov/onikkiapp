@@ -80,6 +80,21 @@ class LearnPrefs(context: Context) {
         prefs.edit().putLong("chain_reviewed_on", date.toEpochDay()).apply()
     }
 
+    /** A saved chain story for the part starting at [from]: the words' stamp, then the text. */
+    fun chainStory(from: Int, signature: String): String? =
+        prefs.getString("chain_story_$from", null)?.takeIf { it.startsWith("$signature\n") }?.substringAfter('\n')
+
+    fun setChainStory(from: Int, signature: String, text: String) {
+        prefs.edit().putString("chain_story_$from", "$signature\n$text").apply()
+    }
+
+    /** Chain words in notifications through the day. */
+    fun chainNotify(): Boolean = prefs.getBoolean("chain_notify", false)
+
+    fun setChainNotify(on: Boolean) {
+        prefs.edit().putBoolean("chain_notify", on).apply()
+    }
+
     /** How many words the chain should have by its end date. */
     fun chainGoal(): Int = prefs.getInt("chain_goal", com.onikki.app.domain.vocab.WordChain.DEFAULT_GOAL)
 

@@ -11,7 +11,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, NOTE, PLANNED_EXPENSE, TIMETABLE, HOMEWORK, HOMEWORK_ASK, REFRESH }
+enum class ReminderType { TASK, PRAYER, HABITS, DAY_REVIEW, DEBT, NOTE, PLANNED_EXPENSE, TIMETABLE, HOMEWORK, HOMEWORK_ASK, CHAIN_WORD, REFRESH }
 
 /**
  * One alarm to set. [key] is stable across re-plans so the same reminder is replaced, not duplicated.

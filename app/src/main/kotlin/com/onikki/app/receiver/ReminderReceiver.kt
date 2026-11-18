@@ -64,6 +64,22 @@ class ReminderReceiver : BroadcastReceiver() {
         when (type) {
             ReminderType.REFRESH -> runCatching { com.onikki.app.data.repository.SheetSyncRepository(context, db).sync() }
 
+            ReminderType.CHAIN_WORD -> {
+                val prefs = com.onikki.app.data.local.LearnPrefs(context)
+                if (!prefs.chainNotify()) return
+                val words = com.onikki.app.ui.learn.ChainWords.learned(context)
+                val hour = LocalDateTime.now().hour
+                val slot = com.onikki.app.domain.vocab.ChainMemory.REMINDER_HOURS.minByOrNull { kotlin.math.abs(it - hour) } ?: hour
+                val i = com.onikki.app.domain.vocab.ChainMemory.reminderWord(words, prefs.flashBoxes(), today, slot) ?: return
+                val w = words[i]
+                val next = if (i + 1 < words.size) "\nKeyingi so'z nima edi? Eslang, keyin ilovada tekshiring." else ""
+                ReminderNotifier.show(
+                    context, key, ReminderChannel.LEARNING,
+                    title = "🔗 ${i + 1}-so'z: ${w.english}",
+                    text = w.uzbek + (w.example?.let { "\n$it" } ?: "") + next
+                )
+            }
+
             ReminderType.TASK -> {
                 val task = db.taskDao().findById(refId) ?: return
                 val time = task.time ?: return

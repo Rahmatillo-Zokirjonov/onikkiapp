@@ -66,6 +66,12 @@ Foydalanuvchi katta maqsadini beradi. Uni ketma-ket bajariladigan 3–6 ta bosqi
 Foydalanuvchining moliyasi va boshqa maqsadlari ham beriladi — pul bosqichlarini real daromadga moslab qo'y.
 Barcha matnlar o'zbek tilida, lotin alifbosida."""
 
+private const val CHAIN_STORY_SYSTEM = """You write very short, simple English stories (A2–B1) for an Uzbek student who memorises a word list IN ORDER.
+Use EVERY given word exactly once and in EXACTLY the given order (a natural form such as past tense or plural is fine).
+Wrap each of those words in **double asterisks**; nothing else is bold. Make it vivid and easy to picture, about one short
+sentence per word, no title. After the story write a line containing only --- and then the Uzbek translation of the story
+(plain text, no asterisks)."""
+
 private const val NOTE_SUMMARY_SYSTEM = """Sen "On ikki" ilovasidagi qaydlarni qisqartiruvchisan. Foydalanuvchining qaydini o'qib,
 eng muhim fikrlarni 2–5 ta qisqa band qilib yoz (har biri "• " bilan). Qaydda bo'lmagan narsani qo'shma. Qayd tilida (odatda o'zbekcha, lotin) yoz.
 Markdown ishlatma."""
@@ -274,6 +280,11 @@ class AiRepository(private val context: Context, private val db: AppDatabase) {
             is ClaudeResult.Success -> com.onikki.app.domain.ai.AiPlans.parseListening(r.text)?.let { AiOutcome.Ok(it) }
                 ?: AiOutcome.Failed("AI matn tuza olmadi, qayta urinib ko'ring")
         }
+    }
+
+    /** A story that uses [words] in their order (the chain method), with an Uzbek translation after "---". */
+    suspend fun writeChainStory(words: List<String>): AiOutcome<String> = call { client ->
+        client.sendMessage(CHAIN_STORY_SYSTEM, "Words in order: " + words.joinToString(", "), maxTokens = 4000).toOutcome { it.trim() }
     }
 
     suspend fun summarizeNote(title: String, content: String): AiOutcome<String> = call { client ->

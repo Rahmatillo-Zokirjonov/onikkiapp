@@ -44,7 +44,12 @@ class ReminderScheduler(private val context: Context) {
         val plan = ReminderPlanner.plan(now, settings, tasks, debts, notes, planned, timetable, homework) { day ->
             PrayerTimeCalculator.calculate(day, city.latitude, city.longitude, city.utcOffsetHours)
         }
-        apply(plan)
+        // Chain words through the day (O'rganish → So'z zanjiri), when turned on.
+        val chain = if (com.onikki.app.data.local.LearnPrefs(context).chainNotify()) {
+            com.onikki.app.domain.vocab.ChainMemory.reminderTimes(now, ReminderPlanner.HORIZON_HOURS)
+                .map { PlannedReminder("chain:${it.toLocalDate()}:${it.hour}", ReminderType.CHAIN_WORD, it) }
+        } else emptyList()
+        apply(plan + chain)
     }
 
     private fun apply(plan: List<PlannedReminder>) {
@@ -60,7 +65,7 @@ class ReminderScheduler(private val context: Context) {
         val triggerAt = reminder.at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val pi = pendingIntent(reminder.key, reminder)
         when {
-            reminder.type == ReminderType.REFRESH -> alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            reminder.type == ReminderType.REFRESH || reminder.type == ReminderType.CHAIN_WORD -> alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
             canScheduleExact() -> alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
             // Fallback when exact alarms were revoked: a bounded 10-minute window (the platform minimum)
             // instead of setAndAllowWhileIdle, which the system may defer by up to an hour.
