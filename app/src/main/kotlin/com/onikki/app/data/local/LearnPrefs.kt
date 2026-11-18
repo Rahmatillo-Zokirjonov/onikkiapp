@@ -63,6 +63,16 @@ class LearnPrefs(context: Context) {
     }
 
     /** Best score of the 60-second verb sprint. */
+    /** Flashcard Leitner boxes: normalized English → box 1..5 (shared by the chain and the dictionary). */
+    fun flashBoxes(): Map<String, Int> = prefs.getStringSet("flash_boxes", emptySet()).orEmpty().mapNotNull { line ->
+        val i = line.lastIndexOf('\t')
+        if (i <= 0) null else line.substring(i + 1).toIntOrNull()?.let { line.substring(0, i) to it }
+    }.toMap()
+
+    fun setFlashBoxes(map: Map<String, Int>) {
+        prefs.edit().putStringSet("flash_boxes", map.map { "${it.key}\t${it.value}" }.toSet()).apply()
+    }
+
     /** How many words the chain should have by its end date. */
     fun chainGoal(): Int = prefs.getInt("chain_goal", com.onikki.app.domain.vocab.WordChain.DEFAULT_GOAL)
 

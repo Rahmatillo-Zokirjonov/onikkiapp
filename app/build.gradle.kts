@@ -22,8 +22,8 @@ android {
         applicationId = "com.onikki.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 29
-        versionName = "2.7.5"
+        versionCode = 30
+        versionName = "2.7.6"
     }
 
     signingConfigs {

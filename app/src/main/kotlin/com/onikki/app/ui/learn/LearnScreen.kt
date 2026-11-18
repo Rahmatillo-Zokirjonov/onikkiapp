@@ -80,6 +80,7 @@ fun LearnRoute(onBack: () -> Unit) {
     var podcastsOpen by rememberSaveable { mutableStateOf(false) }
     var speakingOpen by rememberSaveable { mutableStateOf(false) }
     var chainOpen by rememberSaveable { mutableStateOf(false) }
+    var flashOpen by rememberSaveable { mutableStateOf(false) }
     var pairsOpen by rememberSaveable { mutableStateOf(false) }
     var familiesOpen by rememberSaveable { mutableStateOf(false) }
     val sort by viewModel.sort.collectAsState()
@@ -89,6 +90,8 @@ fun LearnRoute(onBack: () -> Unit) {
         ConfusingPairsRoute(onBack = { pairsOpen = false })
     } else if (s == null && familiesOpen) {
         WordFamiliesRoute(onBack = { familiesOpen = false })
+    } else if (s == null && flashOpen) {
+        FlashcardRoute(onBack = { flashOpen = false })
     } else if (s == null && chainOpen) {
         WordChainRoute(onBack = { chainOpen = false })
     } else if (s == null && speakingOpen) {
@@ -119,7 +122,7 @@ fun LearnRoute(onBack: () -> Unit) {
         LearnStatsScreen(stats, onBack = { statsOpen = false }, modes = modes)
     } else if (s == null) {
         BackHandler(onBack = onBack)
-        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true }, onPodcasts = { podcastsOpen = true }, onSpeaking = { speakingOpen = true }, onChain = { chainOpen = true }, onPairs = { pairsOpen = true }, onFamilies = { familiesOpen = true })
+        LearnHome(home, hearts, settings, viewModel, onBack, onStats = { statsOpen = true }, onListening = { listeningOpen = true }, onVerbs = { verbsOpen = true }, onGrammar = { grammarOpen = true }, onPodcasts = { podcastsOpen = true }, onSpeaking = { speakingOpen = true }, onChain = { chainOpen = true }, onFlash = { flashOpen = true }, onPairs = { pairsOpen = true }, onFamilies = { familiesOpen = true })
     } else {
         BackHandler(onBack = viewModel::close)
         when {
@@ -146,6 +149,7 @@ private fun LearnHome(
     onPodcasts: () -> Unit,
     onSpeaking: () -> Unit,
     onChain: () -> Unit,
+    onFlash: () -> Unit,
     onPairs: () -> Unit,
     onFamilies: () -> Unit
 ) {
@@ -212,6 +216,16 @@ private fun LearnHome(
                 enabled = true,
                 primary = false,
                 onClick = onChain
+            )
+        }
+        item {
+            BigAction(
+                kicker = "🃏 FLASHCARD",
+                title = "Lug'atni kartalar bilan yodlash",
+                subtitle = "Takrorlash vaqti kelganlar, qiyinlari yoki barcha so'zlar · Leitner qutilari",
+                enabled = true,
+                primary = false,
+                onClick = onFlash
             )
         }
         item {
